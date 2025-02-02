@@ -1,5 +1,4 @@
 FROM osrf/ros:humble-desktop
 
-
-
-ENTRYPOINT [ "/ros_entrypoint.sh" ]
+# see `cat /ros_entrypoint.sh` for more details
+# ENTRYPOINT [ "/ros_entrypoint.sh" ]

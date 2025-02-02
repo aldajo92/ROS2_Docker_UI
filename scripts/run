@@ -17,4 +17,4 @@ docker run -it \
     --volume ${PROJECT_ROOT}/ros2_ws:/ros2_ws \
     --network ${DOCKER_NETWORK} \
     --rm \
-    ${DOCKER_IMAGE_NAME} /bin/bash
+    ${DOCKER_IMAGE_NAME} 
