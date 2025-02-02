@@ -2,4 +2,4 @@ FROM osrf/ros:humble-desktop
 
 
 
-ENTRYPOINT [ "/bin/bash" ]
+ENTRYPOINT [ "/ros_entrypoint.sh" ]

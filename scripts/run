@@ -3,9 +3,18 @@
 PROJECT_ROOT="$(cd "$(dirname "$0")"; cd ..; pwd)"
 source ${PROJECT_ROOT}/config.sh
 
+# --gpus all \
+# --device /dev/dri:/dev/dri \
 docker run -it \
+    --privileged \
+    -e DISPLAY \
+    -e TERM \
+    -e QT_X11_NO_MITSHM=1 \
+    -e XAUTHORITY \
+    -v /tmp/.X11-unix:/tmp/.X11-unix \
+    -v $XAUTHORITY:$XAUTHORITY \
     --name ${DOCKER_CONTAINER_NAME} \
     --volume ${PROJECT_ROOT}/ros2_ws:/ros2_ws \
     --network ${DOCKER_NETWORK} \
     --rm \
-    ${DOCKER_IMAGE_NAME}
+    ${DOCKER_IMAGE_NAME} /bin/bash
