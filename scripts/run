@@ -1,0 +1,3 @@
+#!/bin/bash
+
+docker run -it ros2_waver_image
