@@ -5,6 +5,7 @@ source ${PROJECT_ROOT}/config.sh
 
 docker run -it \
     --name ${DOCKER_CONTAINER_NAME} \
+    --volume ${PROJECT_ROOT}/ros2_ws:/ros2_ws \
     --network ${DOCKER_NETWORK} \
     --rm \
     ${DOCKER_IMAGE_NAME}
