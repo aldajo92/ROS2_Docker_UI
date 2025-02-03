@@ -11,10 +11,21 @@ docker run -it \
     -e TERM \
     -e QT_X11_NO_MITSHM=1 \
     -e XAUTHORITY \
+    -e XDG_RUNTIME_DIR=/tmp/runtime-root \
     -v /tmp/.X11-unix:/tmp/.X11-unix \
+    --ipc="host" \
+    --device /dev/dri:/dev/dri \
     -v $XAUTHORITY:$XAUTHORITY \
     --name ${DOCKER_CONTAINER_NAME} \
     --volume ${PROJECT_ROOT}/ros2_ws:/ros2_ws \
     --network ${DOCKER_NETWORK} \
     --rm \
-    ${DOCKER_IMAGE_NAME} 
+    ${DOCKER_IMAGE_NAME}
+
+# rocker --x11 \
+#     --privileged \
+#     --devices /dev/dri \
+#     --name=${DOCKER_CONTAINER_NAME} \
+#     --volume="${PROJECT_ROOT}/ros2_ws:/ros2_ws" \
+#     --net=${DOCKER_NETWORK} \
+#     -- ${DOCKER_IMAGE_NAME}
