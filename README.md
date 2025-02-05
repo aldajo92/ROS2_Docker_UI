@@ -29,7 +29,6 @@ ros2 pkg create --build-type ament_cmake ros_example_package --dependencies rclc
 
 Open a new terminal, ouside of the container, located to this project, then run the following command to change the owner of the package to the current user:
 ```bash
-chown -R $USER:$USER ./ros2_ws
 chown -R $USER:$USER ./ros2_ws/src/ros_example_package
 ```
 
