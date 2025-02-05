@@ -14,11 +14,15 @@ ENV ROS_DISTRO=${ROS_DISTRO}
 #     ros-${ROS_DISTRO}-ros-gz
 
 RUN apt update && apt install -y \
-    ros-${ROS_DISTRO}-gazebo-ros-pkgs
+    ros-${ROS_DISTRO}-gazebo-ros-pkgs \
+    ros-${ROS_DISTRO}-gazebo-ros2-control \
+    ros-${ROS_DISTRO}-ros-gz \
+    ros-${ROS_DISTRO}-ros-ign-bridge
 
 RUN apt update && apt install -y \
     ros-${ROS_DISTRO}-robot-state-publisher \
-    ros-${ROS_DISTRO}-joint-state-publisher
+    ros-${ROS_DISTRO}-joint-state-publisher \
+    ros-${ROS_DISTRO}-urdf-tutorial
 
 WORKDIR /ros2_ws
 
