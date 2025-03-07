@@ -24,7 +24,13 @@ RUN apt update && apt install -y \
     ros-${ROS_DISTRO}-joint-state-publisher \
     ros-${ROS_DISTRO}-urdf-tutorial
 
+RUN apt update && apt install -y \
+    ros-${ROS_DISTRO}-navigation2 \
+    ros-${ROS_DISTRO}-nav2-bringup \
+    ros-${ROS_DISTRO}-slam-toolbox
+
+RUN apt update && apt install -y iputils-ping
+
 WORKDIR /ros2_ws
 
-# see `cat /ros_entrypoint.sh` for more details
 # ENTRYPOINT [ "/ros_entrypoint.sh" ]
