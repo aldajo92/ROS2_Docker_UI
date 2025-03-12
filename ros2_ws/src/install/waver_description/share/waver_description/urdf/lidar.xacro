@@ -1,0 +1,67 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="lidar">
+
+    <xacro:include filename="$(find waver_description)/urdf/materials.xacro" />
+    <xacro:include filename="$(find waver_description)/urdf/util.xacro" />
+
+    <link name="${lidar_link}">
+        <inertial>
+            <mass value="${mass_lidar}" />
+            <origin xyz="0 0 0" rpy="0 0 0" />
+            <inertia ixx="1.3010226e-05" iyy="1.6209553e-05" izz="2.1055697e-05" ixy="0.0" iyz="0.0"
+                ixz="0.0" />
+        </inertial>
+        <visual>
+            <origin xyz="0 0 -0.027" rpy="0 0 ${pi/2}" />
+            <geometry>
+                <mesh filename="file:///$(find waver_description)/meshes/LD19.stl" scale="${scale}" />
+            </geometry>
+            <xacro:black_material />
+        </visual>
+        <collision>
+            <origin xyz="0 0 -0.027" rpy="0 0 ${pi/2}" />
+            <geometry>
+                <mesh filename="file:///$(find waver_description)/meshes/LD19.stl" scale="${scale}" />
+            </geometry>
+        </collision>
+    </link>
+
+    <joint name="lidar_joint" type="fixed">
+        <origin xyz="0.04 0 ${base_to_top + 0.025}" rpy="0 0 0" />
+        <parent link="top_shell_link" />
+        <child link="${lidar_link}" />
+    </joint>
+
+    <gazebo reference="${lidar_link}">
+        <material>Gazebo/Black</material>
+        <sensor name="${lidar_model}" type="ray">
+            <pose>0 0 0 0 0 0</pose>
+            <visualize>false</visualize>
+            <topic>scan</topic>
+            <always_on>true</always_on>
+            <update_rate>${lidar_frequency}</update_rate>
+            <ray>
+                <scan>
+                    <horizontal>
+                        <samples>${lidar_samples}</samples>
+                        <resolution>1</resolution>
+                        <min_angle>${lidar_min_angle}</min_angle>
+                        <max_angle>${lidar_max_angle}</max_angle>
+                    </horizontal>
+                </scan>
+                <range>
+                    <min>${lidar_min_range}</min>
+                    <max>${lidar_max_range}</max>
+                </range>
+            </ray>
+            <plugin name="gazebo_ros_laser_controller" filename="libgazebo_ros_ray_sensor.so">
+                <ros>
+                    <namespace/>
+                    <argument>--ros-args --remap __ns:=/</argument>
+                    <argument>--ros-args --remap scan:=scan</argument>
+                </ros>
+                <frameName>${lidar_link}</frameName>
+            </plugin>
+        </sensor>
+    </gazebo>
+</robot>

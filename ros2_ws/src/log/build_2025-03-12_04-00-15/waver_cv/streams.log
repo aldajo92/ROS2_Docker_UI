@@ -1,0 +1,21 @@
+[0.447s] Invoking command in '/ros2_ws/src/waver_cv': PYTHONPATH=/ros2_ws/src/build/waver_cv/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/ros2_ws/src/install/waver_cv/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../build/waver_cv build --build-base /ros2_ws/src/build/waver_cv/build install --record /ros2_ws/src/build/waver_cv/install.log --single-version-externally-managed install_data
+[0.605s] running egg_info
+[0.605s] writing ../build/waver_cv/waver_cv.egg-info/PKG-INFO
+[0.605s] writing dependency_links to ../build/waver_cv/waver_cv.egg-info/dependency_links.txt
+[0.605s] writing entry points to ../build/waver_cv/waver_cv.egg-info/entry_points.txt
+[0.605s] writing requirements to ../build/waver_cv/waver_cv.egg-info/requires.txt
+[0.605s] writing top-level names to ../build/waver_cv/waver_cv.egg-info/top_level.txt
+[0.607s] reading manifest file '../build/waver_cv/waver_cv.egg-info/SOURCES.txt'
+[0.608s] writing manifest file '../build/waver_cv/waver_cv.egg-info/SOURCES.txt'
+[0.608s] running build
+[0.608s] running build_py
+[0.608s] running install
+[0.608s] running install_lib
+[0.610s] running install_data
+[0.610s] running install_egg_info
+[0.612s] removing '/ros2_ws/src/install/waver_cv/lib/python3.10/site-packages/waver_cv-0.0.1-py3.10.egg-info' (and everything under it)
+[0.612s] Copying ../build/waver_cv/waver_cv.egg-info to /ros2_ws/src/install/waver_cv/lib/python3.10/site-packages/waver_cv-0.0.1-py3.10.egg-info
+[0.612s] running install_scripts
+[0.629s] Installing yolo_person_detector script to /ros2_ws/src/install/waver_cv/lib/waver_cv
+[0.629s] writing list of installed files to '/ros2_ws/src/build/waver_cv/install.log'
+[0.650s] Invoked command in '/ros2_ws/src/waver_cv' returned '0': PYTHONPATH=/ros2_ws/src/build/waver_cv/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/ros2_ws/src/install/waver_cv/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../build/waver_cv build --build-base /ros2_ws/src/build/waver_cv/build install --record /ros2_ws/src/build/waver_cv/install.log --single-version-externally-managed install_data

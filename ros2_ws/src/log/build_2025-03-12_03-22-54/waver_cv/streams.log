@@ -1,0 +1,11 @@
+[0.443s] Invoking command in '/ros2_ws/src/waver_cv': PYTHONPATH=/ros2_ws/src/build/waver_cv/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/ros2_ws/src/install/waver_cv/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../build/waver_cv build --build-base /ros2_ws/src/build/waver_cv/build install --record /ros2_ws/src/build/waver_cv/install.log --single-version-externally-managed install_data
+[0.577s] running egg_info
+[0.577s] creating ../build/waver_cv/computer_vision.egg-info
+[0.577s] writing ../build/waver_cv/computer_vision.egg-info/PKG-INFO
+[0.578s] writing dependency_links to ../build/waver_cv/computer_vision.egg-info/dependency_links.txt
+[0.578s] writing entry points to ../build/waver_cv/computer_vision.egg-info/entry_points.txt
+[0.578s] writing requirements to ../build/waver_cv/computer_vision.egg-info/requires.txt
+[0.578s] writing top-level names to ../build/waver_cv/computer_vision.egg-info/top_level.txt
+[0.578s] writing manifest file '../build/waver_cv/computer_vision.egg-info/SOURCES.txt'
+[0.579s] error: package directory 'computer_vision' does not exist
+[0.593s] Invoked command in '/ros2_ws/src/waver_cv' returned '1': PYTHONPATH=/ros2_ws/src/build/waver_cv/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/ros2_ws/src/install/waver_cv/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../build/waver_cv build --build-base /ros2_ws/src/build/waver_cv/build install --record /ros2_ws/src/build/waver_cv/install.log --single-version-externally-managed install_data

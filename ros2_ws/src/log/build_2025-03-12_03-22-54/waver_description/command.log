@@ -1,0 +1,1 @@
+Invoking command in '/ros2_ws/src/build/waver_description': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake /ros2_ws/src/waver_description_ros2 -DCMAKE_INSTALL_PREFIX=/ros2_ws/src/install/waver_description

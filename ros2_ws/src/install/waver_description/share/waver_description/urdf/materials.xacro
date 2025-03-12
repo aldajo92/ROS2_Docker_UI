@@ -1,0 +1,46 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://ros.org/wiki/xacro" name="waver_material">
+
+    <xacro:macro name="dark_gray_material">
+        <material name="_dark_gray">
+            <color rgba="0.4 0.4 0.4 1" />
+        </material>
+    </xacro:macro>
+
+    <xacro:macro name="light_gray_material">
+        <material name="light_gray">
+            <color rgba="0.6 0.6 0.6 1" />
+        </material>
+    </xacro:macro>
+
+    <xacro:macro name="black_material">
+        <material name="black">
+            <color rgba="0 0 0 1" />
+        </material>
+    </xacro:macro>
+
+    <xacro:macro name="white_material">
+        <material name="white">
+            <color rgba="1 1 1 1" />
+        </material>
+    </xacro:macro>
+
+    <xacro:macro name="dark_green_material">
+        <material name="dark_green">
+            <color rgba="0.86 0.625 0.52 1" />
+        </material>
+    </xacro:macro>
+
+    <xacro:macro name="dark_blue_material">
+        <material name="dark_blue">
+            <color rgba="0.0156 0.23 0.4 1" />
+        </material>
+    </xacro:macro>
+
+    <xacro:macro name="green_material">
+        <material name="green">
+            <color rgba="0.0 1.0 0.0 1.0"/>
+        </material>
+    </xacro:macro>
+
+</robot>

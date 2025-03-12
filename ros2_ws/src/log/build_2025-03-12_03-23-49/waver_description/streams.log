@@ -1,0 +1,56 @@
+[0.154s] Invoking command in '/ros2_ws/src/build/waver_description': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --build /ros2_ws/src/build/waver_description -- -j12 -l12
+[0.189s] Invoked command in '/ros2_ws/src/build/waver_description' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --build /ros2_ws/src/build/waver_description -- -j12 -l12
+[0.197s] Invoking command in '/ros2_ws/src/build/waver_description': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --install /ros2_ws/src/build/waver_description
+[0.202s] -- Install configuration: ""
+[0.202s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/launch
+[0.202s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/launch/view_gazebo.launch.py
+[0.202s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/launch/start_my_world.launch.py
+[0.203s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/launch/view_rviz.launch.py
+[0.203s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/launch/view_gazebo_rviz.launch.py
+[0.203s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/urdf
+[0.203s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/urdf/waver.gazebo.xacro
+[0.203s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/urdf/imu.xacro
+[0.203s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/urdf/materials.xacro
+[0.203s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/urdf/camera.xacro
+[0.203s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/urdf/util.xacro
+[0.204s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/urdf/waver.trans.xacro
+[0.204s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/urdf/waver.xacro
+[0.204s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/urdf/lidar.xacro
+[0.204s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/urdf/robot.urdf
+[0.204s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/meshes
+[0.204s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/meshes/board_link.stl
+[0.208s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/meshes/oled_screen_link.stl
+[0.208s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/meshes/base_link.stl
+[0.218s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/meshes/LD19.stl
+[0.220s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/meshes/wheel_front_right_link.stl
+[0.222s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/meshes/accessories_link.stl
+[0.223s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/meshes/wheel_front_left_link.stl
+[0.225s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/meshes/wheel_back_right_link.stl
+[0.227s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/meshes/accessories1_link.stl
+[0.227s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/meshes/top_shell_link.stl
+[0.230s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/meshes/wheel_back_left_link.stl
+[0.232s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/rviz
+[0.232s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/rviz/config.rviz
+[0.232s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/worlds
+[0.232s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/worlds/world.world
+[0.232s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/worlds/coworking.world
+[0.233s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/worlds/my_empty_world.world
+[0.233s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/worlds/walls
+[0.233s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/worlds/walls/model.sdf
+[0.233s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/worlds/walls/model.config
+[0.233s] -- Installing: /ros2_ws/src/install/waver_description/share/ament_index/resource_index/package_run_dependencies/waver_description
+[0.233s] -- Installing: /ros2_ws/src/install/waver_description/share/ament_index/resource_index/parent_prefix_path/waver_description
+[0.233s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/environment/ament_prefix_path.sh
+[0.233s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/environment/ament_prefix_path.dsv
+[0.234s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/environment/path.sh
+[0.234s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/environment/path.dsv
+[0.234s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/local_setup.bash
+[0.234s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/local_setup.sh
+[0.234s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/local_setup.zsh
+[0.234s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/local_setup.dsv
+[0.234s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/package.dsv
+[0.234s] -- Installing: /ros2_ws/src/install/waver_description/share/ament_index/resource_index/packages/waver_description
+[0.234s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/cmake/waver_descriptionConfig.cmake
+[0.234s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/cmake/waver_descriptionConfig-version.cmake
+[0.234s] -- Installing: /ros2_ws/src/install/waver_description/share/waver_description/package.xml
+[0.235s] Invoked command in '/ros2_ws/src/build/waver_description' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --install /ros2_ws/src/build/waver_description

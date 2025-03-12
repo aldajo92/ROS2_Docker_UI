@@ -1,0 +1,24 @@
+[0.463s] Invoking command in '/ros2_ws/src/waver_cv': PYTHONPATH=/ros2_ws/src/build/waver_cv/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/ros2_ws/src/install/waver_cv/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../build/waver_cv build --build-base /ros2_ws/src/build/waver_cv/build install --record /ros2_ws/src/build/waver_cv/install.log --single-version-externally-managed install_data
+[0.623s] running egg_info
+[0.623s] writing ../build/waver_cv/waver_cv.egg-info/PKG-INFO
+[0.624s] writing dependency_links to ../build/waver_cv/waver_cv.egg-info/dependency_links.txt
+[0.624s] writing entry points to ../build/waver_cv/waver_cv.egg-info/entry_points.txt
+[0.624s] writing requirements to ../build/waver_cv/waver_cv.egg-info/requires.txt
+[0.624s] writing top-level names to ../build/waver_cv/waver_cv.egg-info/top_level.txt
+[0.625s] reading manifest file '../build/waver_cv/waver_cv.egg-info/SOURCES.txt'
+[0.626s] writing manifest file '../build/waver_cv/waver_cv.egg-info/SOURCES.txt'
+[0.626s] running build
+[0.626s] running build_py
+[0.626s] copying waver_cv/yolo_person_detector.py -> /ros2_ws/src/build/waver_cv/build/lib/waver_cv
+[0.626s] running install
+[0.627s] running install_lib
+[0.627s] copying /ros2_ws/src/build/waver_cv/build/lib/waver_cv/yolo_person_detector.py -> /ros2_ws/src/install/waver_cv/lib/python3.10/site-packages/waver_cv
+[0.628s] byte-compiling /ros2_ws/src/install/waver_cv/lib/python3.10/site-packages/waver_cv/yolo_person_detector.py to yolo_person_detector.cpython-310.pyc
+[0.628s] running install_data
+[0.629s] running install_egg_info
+[0.630s] removing '/ros2_ws/src/install/waver_cv/lib/python3.10/site-packages/waver_cv-0.0.1-py3.10.egg-info' (and everything under it)
+[0.631s] Copying ../build/waver_cv/waver_cv.egg-info to /ros2_ws/src/install/waver_cv/lib/python3.10/site-packages/waver_cv-0.0.1-py3.10.egg-info
+[0.631s] running install_scripts
+[0.647s] Installing yolo_person_detector script to /ros2_ws/src/install/waver_cv/lib/waver_cv
+[0.647s] writing list of installed files to '/ros2_ws/src/build/waver_cv/install.log'
+[0.670s] Invoked command in '/ros2_ws/src/waver_cv' returned '0': PYTHONPATH=/ros2_ws/src/build/waver_cv/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/ros2_ws/src/install/waver_cv/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../build/waver_cv build --build-base /ros2_ws/src/build/waver_cv/build install --record /ros2_ws/src/build/waver_cv/install.log --single-version-externally-managed install_data

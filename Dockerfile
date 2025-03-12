@@ -29,7 +29,17 @@ RUN apt update && apt install -y \
     ros-${ROS_DISTRO}-nav2-bringup \
     ros-${ROS_DISTRO}-slam-toolbox
 
+RUN apt update && apt install -y \
+    python3-pip \
+    python3-opencv \
+    ros-${ROS_DISTRO}-cv-bridge \
+    ros-${ROS_DISTRO}-image-transport 
+
+RUN pip3 install opencv-python ultralytics
+
 RUN apt update && apt install -y iputils-ping
+
+RUN pip uninstall -y numpy && pip install "numpy<2"
 
 WORKDIR /ros2_ws
 

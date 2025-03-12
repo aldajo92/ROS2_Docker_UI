@@ -1,0 +1,22 @@
+running egg_info
+writing ../build/waver_cv/waver_cv.egg-info/PKG-INFO
+writing dependency_links to ../build/waver_cv/waver_cv.egg-info/dependency_links.txt
+writing entry points to ../build/waver_cv/waver_cv.egg-info/entry_points.txt
+writing requirements to ../build/waver_cv/waver_cv.egg-info/requires.txt
+writing top-level names to ../build/waver_cv/waver_cv.egg-info/top_level.txt
+reading manifest file '../build/waver_cv/waver_cv.egg-info/SOURCES.txt'
+writing manifest file '../build/waver_cv/waver_cv.egg-info/SOURCES.txt'
+running build
+running build_py
+copying waver_cv/yolo_person_detector.py -> /ros2_ws/src/build/waver_cv/build/lib/waver_cv
+running install
+running install_lib
+copying /ros2_ws/src/build/waver_cv/build/lib/waver_cv/yolo_person_detector.py -> /ros2_ws/src/install/waver_cv/lib/python3.10/site-packages/waver_cv
+byte-compiling /ros2_ws/src/install/waver_cv/lib/python3.10/site-packages/waver_cv/yolo_person_detector.py to yolo_person_detector.cpython-310.pyc
+running install_data
+running install_egg_info
+removing '/ros2_ws/src/install/waver_cv/lib/python3.10/site-packages/waver_cv-0.0.1-py3.10.egg-info' (and everything under it)
+Copying ../build/waver_cv/waver_cv.egg-info to /ros2_ws/src/install/waver_cv/lib/python3.10/site-packages/waver_cv-0.0.1-py3.10.egg-info
+running install_scripts
+Installing yolo_person_detector script to /ros2_ws/src/install/waver_cv/lib/waver_cv
+writing list of installed files to '/ros2_ws/src/build/waver_cv/install.log'

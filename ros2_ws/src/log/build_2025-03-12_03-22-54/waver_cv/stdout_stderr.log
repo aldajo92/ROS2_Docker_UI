@@ -1,0 +1,9 @@
+running egg_info
+creating ../build/waver_cv/computer_vision.egg-info
+writing ../build/waver_cv/computer_vision.egg-info/PKG-INFO
+writing dependency_links to ../build/waver_cv/computer_vision.egg-info/dependency_links.txt
+writing entry points to ../build/waver_cv/computer_vision.egg-info/entry_points.txt
+writing requirements to ../build/waver_cv/computer_vision.egg-info/requires.txt
+writing top-level names to ../build/waver_cv/computer_vision.egg-info/top_level.txt
+writing manifest file '../build/waver_cv/computer_vision.egg-info/SOURCES.txt'
+error: package directory 'computer_vision' does not exist

@@ -1,0 +1,67 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="imu">
+
+    <xacro:include filename="$(find waver_description)/urdf/materials.xacro" />
+    <xacro:include filename="$(find waver_description)/urdf/util.xacro" />
+
+    <link name="imu_link">
+        <inertial>
+            <mass value="${mass_imu}" />
+            <origin xyz="${mass_center_imu}" rpy="0 0 ${pi/2}" />
+            <inertia ixx="5.313564367625195e-06" iyy="5.192849578266062e-06" izz="8.832425081682543e-06" ixy="0.0" iyz="0.0" ixz="0.0" />
+        </inertial>
+        <visual>
+            <origin xyz="${position_imu}" rpy="0 0 ${pi/2}" />
+            <geometry>
+                <mesh filename="file:///$(find waver_description)/meshes/board_link.stl" scale="${scale}" />
+            </geometry>
+            <xacro:dark_green_material />
+        </visual>
+        <collision>
+            <origin xyz="${position_imu}" rpy="0 0 ${pi/2}" />
+            <geometry>
+                <mesh filename="file:///$(find waver_description)/meshes/board_link.stl" scale="${scale}" />
+            </geometry>
+        </collision>
+    </link>
+
+    <joint name="top_imu_joint" type="fixed">
+        <origin xyz="${positions_imu_joint}" rpy="0 0 0" />
+        <parent link="top_shell_link" />
+        <child link="imu_link" />
+    </joint>
+
+    <gazebo reference="imu_link">
+        <!-- <sensor name="imu_sensor" type="imu">
+            <always_on>true</always_on>
+            <update_rate>100</update_rate>
+            <visualize>true</visualize>
+            <plugin filename="libgazebo_ros_imu_sensor.so" name="gazebo_ros_imu_sensor">
+                <ros>
+                    <namespace></namespace>
+                    <remapping>imu:=imu/data_raw</remapping>
+                </ros>
+                <frame_name>imu_link</frame_name>
+                <update_rate>100.0</update_rate>
+                <orientation_reference_frame>world</orientation_reference_frame>
+                <imu_parameters>
+                    <noise_density>0.0025</noise_density>
+                    <bias_correlation_time>1000000.0</bias_correlation_time>
+                    <random_walk>0.0002</random_walk>
+                </imu_parameters>
+            </plugin>
+        </sensor> -->
+        <sensor name="imu_sensor" type="imu">
+        <!-- ensure the sensor is active (required) -->
+        <always_on>true</always_on>
+        <update_rate>50</update_rate>
+        <plugin name="my_imu_plugin" filename="libgazebo_ros_imu_sensor.so">
+            <ros>
+            <!-- publish to /imu/data -->
+            <namespace>/imu</namespace>
+            <remapping>~/out:=data</remapping>
+            </ros>
+        </plugin>
+        </sensor>
+    </gazebo>
+</robot>

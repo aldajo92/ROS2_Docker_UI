@@ -1,0 +1,107 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="waver_gazebo">
+
+  <xacro:include filename="$(find waver_description)/urdf/util.xacro" />
+
+  <gazebo reference="base_link">
+    <mu1>0.2</mu1>
+    <mu2>0.2</mu2>
+    <selfCollide>false</selfCollide>
+    <material>Gazebo/DarkGrey</material>
+  </gazebo>
+
+  <gazebo reference="top_shell_link">
+    <mu1>0.2</mu1>
+    <mu2>0.2</mu2>
+    <selfCollide>false</selfCollide>
+    <material>Gazebo/DarkGrey</material>
+  </gazebo>
+
+  <gazebo reference="accessories_link">
+    <mu1>0.2</mu1>
+    <mu2>0.2</mu2>
+    <selfCollide>false</selfCollide>
+    <material>Gazebo/Black</material>
+  </gazebo>
+
+  <gazebo reference="accessories1_link">
+    <mu1>0.2</mu1>
+    <mu2>0.2</mu2>
+    <selfCollide>false</selfCollide>
+    <material>Gazebo/Black</material>
+  </gazebo>
+
+  <gazebo reference="imu_link">
+    <mu1>0.2</mu1>
+    <mu2>0.2</mu2>
+    <selfCollide>false</selfCollide>
+    <material>Gazebo/Orange</material>
+  </gazebo>
+
+  <gazebo reference="oled_screen_link">
+    <mu1>0.2</mu1>
+    <mu2>0.2</mu2>
+    <selfCollide>false</selfCollide>
+    <material>Gazebo/BlueGlow</material>
+  </gazebo>
+
+  <gazebo reference="wheel_back_left_link">
+    <mu1>0.2</mu1>
+    <mu2>0.2</mu2>
+    <selfCollide>false</selfCollide>
+    <material>Gazebo/Black</material>
+  </gazebo>
+
+  <gazebo reference="wheel_front_left_link">
+    <mu1>0.2</mu1>
+    <mu2>0.2</mu2>
+    <selfCollide>false</selfCollide>
+    <material>Gazebo/Black</material>
+  </gazebo>
+
+  <gazebo reference="wheel_front_right_link">
+    <mu1>0.2</mu1>
+    <mu2>0.2</mu2>
+    <selfCollide>false</selfCollide>
+    <material>Gazebo/Black</material>
+  </gazebo>
+
+  <gazebo reference="wheel_back_right_link">
+    <mu1>0.2</mu1>
+    <mu2>0.2</mu2>
+    <selfCollide>false</selfCollide>
+    <material>Gazebo/Black</material>
+  </gazebo>
+
+    <gazebo>
+      <plugin name="gazebo_ros_diff_drive" filename="libgazebo_ros_diff_drive.so">
+        <ros>
+          <namespace>/</namespace>
+          <argument>cmd_vel:=cmd_vel</argument>
+        </ros>
+        <always_on>true</always_on>
+        <legacy_mode>true</legacy_mode>
+        <update_rate>20</update_rate>
+        <num_wheel_pairs>2</num_wheel_pairs>
+        <left_joint>wheel_front_left_joint</left_joint>
+        <left_joint>wheel_back_left_joint</left_joint>
+        <right_joint>wheel_front_right_joint</right_joint>
+        <right_joint>wheel_back_right_joint</right_joint>
+        <wheel_separation>${wheel_separation}</wheel_separation>
+        <wheel_diameter>${wheel_radius * 2}</wheel_diameter>
+
+          <!-- Output -->
+        <!-- <odometry_frame>odom</odometry_frame> -->
+        <!-- <robot_base_frame>base_link</robot_base_frame> -->
+        <!-- <odometrySource>1</odometrySource> -->
+
+        <!-- <publish_odom>true</publish_odom> -->
+        <!-- <publish_odom_tf>true</publish_odom_tf> -->
+        <!-- <publish_wheel_tf>true</publish_wheel_tf> -->
+        <!-- <publish_wheel_joint_state>true</publish_wheel_joint_state> -->
+
+        <torque>30.0</torque>
+      </plugin>
+    </gazebo>
+
+</robot>

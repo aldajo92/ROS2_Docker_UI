@@ -1,0 +1,174 @@
+[0.071s] DEBUG:colcon:Command line arguments: ['/usr/bin/colcon', 'build']
+[0.071s] DEBUG:colcon:Parsed command line arguments: Namespace(log_base=None, log_level=None, verb_name='build', build_base='build', install_base='install', merge_install=False, symlink_install=False, test_result_base=None, continue_on_error=False, executor='parallel', parallel_workers=12, event_handlers=None, ignore_user_meta=False, metas=['./colcon.meta'], base_paths=['.'], packages_ignore=None, packages_ignore_regex=None, paths=None, packages_up_to=None, packages_up_to_regex=None, packages_above=None, packages_above_and_dependencies=None, packages_above_depth=None, packages_select_by_dep=None, packages_skip_by_dep=None, packages_skip_up_to=None, packages_select_build_failed=False, packages_skip_build_finished=False, packages_select_test_failures=False, packages_skip_test_passed=False, packages_select=None, packages_skip=None, packages_select_regex=None, packages_skip_regex=None, packages_start=None, packages_end=None, cmake_args=None, cmake_target=None, cmake_target_skip_unavailable=False, cmake_clean_cache=False, cmake_clean_first=False, cmake_force_configure=False, ament_cmake_args=None, catkin_cmake_args=None, catkin_skip_building_tests=False, mixin_files=None, mixin=None, verb_parser=<colcon_mixin.mixin.mixin_argument.MixinArgumentDecorator object at 0x75cb06287220>, verb_extension=<colcon_core.verb.build.BuildVerb object at 0x75cb063cc1f0>, main=<bound method BuildVerb.main of <colcon_core.verb.build.BuildVerb object at 0x75cb063cc1f0>>, mixin_verb=('build',))
+[0.153s] Level 1:colcon.colcon_core.package_discovery:discover_packages(colcon_meta) check parameters
+[0.154s] INFO:colcon.colcon_metadata.package_discovery.colcon_meta:Using configuration from '/root/.colcon/metadata/default/Gazebo.meta'
+[0.154s] INFO:colcon.colcon_metadata.package_discovery.colcon_meta:Using configuration from '/root/.colcon/metadata/default/fastrtps.meta'
+[0.154s] Level 1:colcon.colcon_core.package_discovery:discover_packages(recursive) check parameters
+[0.154s] Level 1:colcon.colcon_core.package_discovery:discover_packages(ignore) check parameters
+[0.154s] Level 1:colcon.colcon_core.package_discovery:discover_packages(path) check parameters
+[0.154s] Level 1:colcon.colcon_core.package_discovery:discover_packages(colcon_meta) discover
+[0.154s] Level 1:colcon.colcon_core.package_discovery:discover_packages(recursive) discover
+[0.154s] INFO:colcon.colcon_core.package_discovery:Crawling recursively for packages in '/ros2_ws/src'
+[0.154s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extensions ['ignore', 'ignore_ament_install']
+[0.154s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'ignore'
+[0.154s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'ignore_ament_install'
+[0.154s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extensions ['colcon_pkg']
+[0.154s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'colcon_pkg'
+[0.154s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extensions ['colcon_meta']
+[0.154s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'colcon_meta'
+[0.155s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extensions ['ros']
+[0.155s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'ros'
+[0.162s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extensions ['cmake', 'python']
+[0.162s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'cmake'
+[0.162s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'python'
+[0.162s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extensions ['python_setup_py']
+[0.162s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'python_setup_py'
+[0.162s] Level 1:colcon.colcon_core.package_identification:_identify(build) by extensions ['ignore', 'ignore_ament_install']
+[0.162s] Level 1:colcon.colcon_core.package_identification:_identify(build) by extension 'ignore'
+[0.163s] Level 1:colcon.colcon_core.package_identification:_identify(build) ignored
+[0.163s] Level 1:colcon.colcon_core.package_identification:_identify(install) by extensions ['ignore', 'ignore_ament_install']
+[0.163s] Level 1:colcon.colcon_core.package_identification:_identify(install) by extension 'ignore'
+[0.163s] Level 1:colcon.colcon_core.package_identification:_identify(install) ignored
+[0.163s] Level 1:colcon.colcon_core.package_identification:_identify(log) by extensions ['ignore', 'ignore_ament_install']
+[0.163s] Level 1:colcon.colcon_core.package_identification:_identify(log) by extension 'ignore'
+[0.163s] Level 1:colcon.colcon_core.package_identification:_identify(log) ignored
+[0.163s] Level 1:colcon.colcon_core.package_identification:_identify(waver_cv) by extensions ['ignore', 'ignore_ament_install']
+[0.163s] Level 1:colcon.colcon_core.package_identification:_identify(waver_cv) by extension 'ignore'
+[0.163s] Level 1:colcon.colcon_core.package_identification:_identify(waver_cv) by extension 'ignore_ament_install'
+[0.163s] Level 1:colcon.colcon_core.package_identification:_identify(waver_cv) by extensions ['colcon_pkg']
+[0.163s] Level 1:colcon.colcon_core.package_identification:_identify(waver_cv) by extension 'colcon_pkg'
+[0.163s] Level 1:colcon.colcon_core.package_identification:_identify(waver_cv) by extensions ['colcon_meta']
+[0.163s] Level 1:colcon.colcon_core.package_identification:_identify(waver_cv) by extension 'colcon_meta'
+[0.163s] Level 1:colcon.colcon_core.package_identification:_identify(waver_cv) by extensions ['ros']
+[0.163s] Level 1:colcon.colcon_core.package_identification:_identify(waver_cv) by extension 'ros'
+[0.165s] DEBUG:colcon.colcon_core.package_identification:Package 'waver_cv' with type 'ros.ament_python' and name 'waver_cv'
+[0.165s] Level 1:colcon.colcon_core.package_identification:_identify(waver_description_ros2) by extensions ['ignore', 'ignore_ament_install']
+[0.165s] Level 1:colcon.colcon_core.package_identification:_identify(waver_description_ros2) by extension 'ignore'
+[0.165s] Level 1:colcon.colcon_core.package_identification:_identify(waver_description_ros2) by extension 'ignore_ament_install'
+[0.165s] Level 1:colcon.colcon_core.package_identification:_identify(waver_description_ros2) by extensions ['colcon_pkg']
+[0.165s] Level 1:colcon.colcon_core.package_identification:_identify(waver_description_ros2) by extension 'colcon_pkg'
+[0.165s] Level 1:colcon.colcon_core.package_identification:_identify(waver_description_ros2) by extensions ['colcon_meta']
+[0.165s] Level 1:colcon.colcon_core.package_identification:_identify(waver_description_ros2) by extension 'colcon_meta'
+[0.165s] Level 1:colcon.colcon_core.package_identification:_identify(waver_description_ros2) by extensions ['ros']
+[0.165s] Level 1:colcon.colcon_core.package_identification:_identify(waver_description_ros2) by extension 'ros'
+[0.166s] DEBUG:colcon.colcon_core.package_identification:Package 'waver_description_ros2' with type 'ros.ament_cmake' and name 'waver_description'
+[0.166s] Level 1:colcon.colcon_core.package_discovery:discover_packages(recursive) using defaults
+[0.166s] Level 1:colcon.colcon_core.package_discovery:discover_packages(ignore) discover
+[0.166s] Level 1:colcon.colcon_core.package_discovery:discover_packages(ignore) using defaults
+[0.166s] Level 1:colcon.colcon_core.package_discovery:discover_packages(path) discover
+[0.166s] Level 1:colcon.colcon_core.package_discovery:discover_packages(path) using defaults
+[0.178s] Level 5:colcon.colcon_core.verb:set package 'waver_cv' build argument 'cmake_args' from command line to 'None'
+[0.178s] Level 5:colcon.colcon_core.verb:set package 'waver_cv' build argument 'cmake_target' from command line to 'None'
+[0.178s] Level 5:colcon.colcon_core.verb:set package 'waver_cv' build argument 'cmake_target_skip_unavailable' from command line to 'False'
+[0.178s] Level 5:colcon.colcon_core.verb:set package 'waver_cv' build argument 'cmake_clean_cache' from command line to 'False'
+[0.178s] Level 5:colcon.colcon_core.verb:set package 'waver_cv' build argument 'cmake_clean_first' from command line to 'False'
+[0.178s] Level 5:colcon.colcon_core.verb:set package 'waver_cv' build argument 'cmake_force_configure' from command line to 'False'
+[0.178s] Level 5:colcon.colcon_core.verb:set package 'waver_cv' build argument 'ament_cmake_args' from command line to 'None'
+[0.178s] Level 5:colcon.colcon_core.verb:set package 'waver_cv' build argument 'catkin_cmake_args' from command line to 'None'
+[0.178s] Level 5:colcon.colcon_core.verb:set package 'waver_cv' build argument 'catkin_skip_building_tests' from command line to 'False'
+[0.178s] DEBUG:colcon.colcon_core.verb:Building package 'waver_cv' with the following arguments: {'ament_cmake_args': None, 'build_base': '/ros2_ws/src/build/waver_cv', 'catkin_cmake_args': None, 'catkin_skip_building_tests': False, 'cmake_args': None, 'cmake_clean_cache': False, 'cmake_clean_first': False, 'cmake_force_configure': False, 'cmake_target': None, 'cmake_target_skip_unavailable': False, 'install_base': '/ros2_ws/src/install/waver_cv', 'merge_install': False, 'path': '/ros2_ws/src/waver_cv', 'symlink_install': False, 'test_result_base': None}
+[0.179s] Level 5:colcon.colcon_core.verb:set package 'waver_description' build argument 'cmake_args' from command line to 'None'
+[0.179s] Level 5:colcon.colcon_core.verb:set package 'waver_description' build argument 'cmake_target' from command line to 'None'
+[0.179s] Level 5:colcon.colcon_core.verb:set package 'waver_description' build argument 'cmake_target_skip_unavailable' from command line to 'False'
+[0.179s] Level 5:colcon.colcon_core.verb:set package 'waver_description' build argument 'cmake_clean_cache' from command line to 'False'
+[0.179s] Level 5:colcon.colcon_core.verb:set package 'waver_description' build argument 'cmake_clean_first' from command line to 'False'
+[0.179s] Level 5:colcon.colcon_core.verb:set package 'waver_description' build argument 'cmake_force_configure' from command line to 'False'
+[0.179s] Level 5:colcon.colcon_core.verb:set package 'waver_description' build argument 'ament_cmake_args' from command line to 'None'
+[0.179s] Level 5:colcon.colcon_core.verb:set package 'waver_description' build argument 'catkin_cmake_args' from command line to 'None'
+[0.179s] Level 5:colcon.colcon_core.verb:set package 'waver_description' build argument 'catkin_skip_building_tests' from command line to 'False'
+[0.179s] DEBUG:colcon.colcon_core.verb:Building package 'waver_description' with the following arguments: {'ament_cmake_args': None, 'build_base': '/ros2_ws/src/build/waver_description', 'catkin_cmake_args': None, 'catkin_skip_building_tests': False, 'cmake_args': None, 'cmake_clean_cache': False, 'cmake_clean_first': False, 'cmake_force_configure': False, 'cmake_target': None, 'cmake_target_skip_unavailable': False, 'install_base': '/ros2_ws/src/install/waver_description', 'merge_install': False, 'path': '/ros2_ws/src/waver_description_ros2', 'symlink_install': False, 'test_result_base': None}
+[0.179s] INFO:colcon.colcon_core.executor:Executing jobs using 'parallel' executor
+[0.180s] DEBUG:colcon.colcon_parallel_executor.executor.parallel:run_until_complete
+[0.180s] INFO:colcon.colcon_ros.task.ament_python.build:Building ROS package in '/ros2_ws/src/waver_cv' with build type 'ament_python'
+[0.180s] Level 1:colcon.colcon_core.shell:create_environment_hook('waver_cv', 'ament_prefix_path')
+[0.181s] INFO:colcon.colcon_core.plugin_system:Skipping extension 'colcon_core.shell.bat': Not used on non-Windows systems
+[0.181s] INFO:colcon.colcon_core.shell:Creating environment hook '/ros2_ws/src/install/waver_cv/share/waver_cv/hook/ament_prefix_path.ps1'
+[0.182s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/ros2_ws/src/install/waver_cv/share/waver_cv/hook/ament_prefix_path.dsv'
+[0.182s] INFO:colcon.colcon_core.shell:Creating environment hook '/ros2_ws/src/install/waver_cv/share/waver_cv/hook/ament_prefix_path.sh'
+[0.182s] INFO:colcon.colcon_core.shell:Skip shell extension 'powershell' for command environment: Not usable outside of PowerShell
+[0.183s] DEBUG:colcon.colcon_core.shell:Skip shell extension 'dsv' for command environment
+[0.185s] INFO:colcon.colcon_ros.task.ament_cmake.build:Building ROS package in '/ros2_ws/src/waver_description_ros2' with build type 'ament_cmake'
+[0.185s] INFO:colcon.colcon_cmake.task.cmake.build:Building CMake package in '/ros2_ws/src/waver_description_ros2'
+[0.186s] INFO:colcon.colcon_core.shell:Skip shell extension 'powershell' for command environment: Not usable outside of PowerShell
+[0.186s] DEBUG:colcon.colcon_core.shell:Skip shell extension 'dsv' for command environment
+[0.335s] INFO:colcon.colcon_core.task.python.build:Building Python package in '/ros2_ws/src/waver_cv'
+[0.335s] INFO:colcon.colcon_core.shell:Skip shell extension 'powershell' for command environment: Not usable outside of PowerShell
+[0.335s] DEBUG:colcon.colcon_core.shell:Skip shell extension 'dsv' for command environment
+[0.340s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoking command in '/ros2_ws/src/build/waver_description': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --build /ros2_ws/src/build/waver_description -- -j12 -l12
+[0.375s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoked command in '/ros2_ws/src/build/waver_description' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --build /ros2_ws/src/build/waver_description -- -j12 -l12
+[0.383s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoking command in '/ros2_ws/src/build/waver_description': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --install /ros2_ws/src/build/waver_description
+[0.421s] Level 1:colcon.colcon_core.environment:create_environment_scripts_only(waver_description)
+[0.421s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoked command in '/ros2_ws/src/build/waver_description' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --install /ros2_ws/src/build/waver_description
+[0.423s] Level 1:colcon.colcon_core.environment:checking '/ros2_ws/src/install/waver_description' for CMake module files
+[0.423s] Level 1:colcon.colcon_core.environment:checking '/ros2_ws/src/install/waver_description' for CMake config files
+[0.424s] Level 1:colcon.colcon_core.shell:create_environment_hook('waver_description', 'cmake_prefix_path')
+[0.424s] INFO:colcon.colcon_core.shell:Creating environment hook '/ros2_ws/src/install/waver_description/share/waver_description/hook/cmake_prefix_path.ps1'
+[0.424s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/ros2_ws/src/install/waver_description/share/waver_description/hook/cmake_prefix_path.dsv'
+[0.424s] INFO:colcon.colcon_core.shell:Creating environment hook '/ros2_ws/src/install/waver_description/share/waver_description/hook/cmake_prefix_path.sh'
+[0.425s] Level 1:colcon.colcon_core.environment:checking '/ros2_ws/src/install/waver_description/bin'
+[0.425s] Level 1:colcon.colcon_core.environment:checking '/ros2_ws/src/install/waver_description/lib/pkgconfig/waver_description.pc'
+[0.425s] Level 1:colcon.colcon_core.environment:checking '/ros2_ws/src/install/waver_description/lib/python3.10/site-packages'
+[0.425s] Level 1:colcon.colcon_core.environment:checking '/ros2_ws/src/install/waver_description/bin'
+[0.425s] INFO:colcon.colcon_core.shell:Creating package script '/ros2_ws/src/install/waver_description/share/waver_description/package.ps1'
+[0.427s] INFO:colcon.colcon_core.shell:Creating package descriptor '/ros2_ws/src/install/waver_description/share/waver_description/package.dsv'
+[0.427s] INFO:colcon.colcon_core.shell:Creating package script '/ros2_ws/src/install/waver_description/share/waver_description/package.sh'
+[0.427s] INFO:colcon.colcon_core.shell:Creating package script '/ros2_ws/src/install/waver_description/share/waver_description/package.bash'
+[0.428s] INFO:colcon.colcon_core.shell:Creating package script '/ros2_ws/src/install/waver_description/share/waver_description/package.zsh'
+[0.428s] Level 1:colcon.colcon_core.environment:create_file_with_runtime_dependencies(/ros2_ws/src/install/waver_description/share/colcon-core/packages/waver_description)
+[0.428s] Level 1:colcon.colcon_core.environment:create_environment_scripts_only(waver_description)
+[0.429s] Level 1:colcon.colcon_core.environment:checking '/ros2_ws/src/install/waver_description' for CMake module files
+[0.429s] Level 1:colcon.colcon_core.environment:checking '/ros2_ws/src/install/waver_description' for CMake config files
+[0.429s] Level 1:colcon.colcon_core.shell:create_environment_hook('waver_description', 'cmake_prefix_path')
+[0.429s] INFO:colcon.colcon_core.shell:Creating environment hook '/ros2_ws/src/install/waver_description/share/waver_description/hook/cmake_prefix_path.ps1'
+[0.429s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/ros2_ws/src/install/waver_description/share/waver_description/hook/cmake_prefix_path.dsv'
+[0.430s] INFO:colcon.colcon_core.shell:Creating environment hook '/ros2_ws/src/install/waver_description/share/waver_description/hook/cmake_prefix_path.sh'
+[0.430s] Level 1:colcon.colcon_core.environment:checking '/ros2_ws/src/install/waver_description/bin'
+[0.430s] Level 1:colcon.colcon_core.environment:checking '/ros2_ws/src/install/waver_description/lib/pkgconfig/waver_description.pc'
+[0.430s] Level 1:colcon.colcon_core.environment:checking '/ros2_ws/src/install/waver_description/lib/python3.10/site-packages'
+[0.430s] Level 1:colcon.colcon_core.environment:checking '/ros2_ws/src/install/waver_description/bin'
+[0.431s] INFO:colcon.colcon_core.shell:Creating package script '/ros2_ws/src/install/waver_description/share/waver_description/package.ps1'
+[0.431s] INFO:colcon.colcon_core.shell:Creating package descriptor '/ros2_ws/src/install/waver_description/share/waver_description/package.dsv'
+[0.431s] INFO:colcon.colcon_core.shell:Creating package script '/ros2_ws/src/install/waver_description/share/waver_description/package.sh'
+[0.431s] INFO:colcon.colcon_core.shell:Creating package script '/ros2_ws/src/install/waver_description/share/waver_description/package.bash'
+[0.432s] INFO:colcon.colcon_core.shell:Creating package script '/ros2_ws/src/install/waver_description/share/waver_description/package.zsh'
+[0.432s] Level 1:colcon.colcon_core.environment:create_file_with_runtime_dependencies(/ros2_ws/src/install/waver_description/share/colcon-core/packages/waver_description)
+[0.551s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoking command in '/ros2_ws/src/waver_cv': PYTHONPATH=/ros2_ws/src/build/waver_cv/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/ros2_ws/src/install/waver_cv/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../build/waver_cv build --build-base /ros2_ws/src/build/waver_cv/build install --record /ros2_ws/src/build/waver_cv/install.log --single-version-externally-managed install_data
+[0.724s] Level 1:colcon.colcon_core.environment:checking '/ros2_ws/src/install/waver_cv' for CMake module files
+[0.724s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoked command in '/ros2_ws/src/waver_cv' returned '0': PYTHONPATH=/ros2_ws/src/build/waver_cv/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/ros2_ws/src/install/waver_cv/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../build/waver_cv build --build-base /ros2_ws/src/build/waver_cv/build install --record /ros2_ws/src/build/waver_cv/install.log --single-version-externally-managed install_data
+[0.725s] Level 1:colcon.colcon_core.environment:checking '/ros2_ws/src/install/waver_cv' for CMake config files
+[0.725s] Level 1:colcon.colcon_core.environment:checking '/ros2_ws/src/install/waver_cv/lib'
+[0.725s] Level 1:colcon.colcon_core.environment:checking '/ros2_ws/src/install/waver_cv/bin'
+[0.725s] Level 1:colcon.colcon_core.environment:checking '/ros2_ws/src/install/waver_cv/lib/pkgconfig/waver_cv.pc'
+[0.725s] Level 1:colcon.colcon_core.environment:checking '/ros2_ws/src/install/waver_cv/lib/python3.10/site-packages'
+[0.725s] Level 1:colcon.colcon_core.shell:create_environment_hook('waver_cv', 'pythonpath')
+[0.726s] INFO:colcon.colcon_core.shell:Creating environment hook '/ros2_ws/src/install/waver_cv/share/waver_cv/hook/pythonpath.ps1'
+[0.726s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/ros2_ws/src/install/waver_cv/share/waver_cv/hook/pythonpath.dsv'
+[0.726s] INFO:colcon.colcon_core.shell:Creating environment hook '/ros2_ws/src/install/waver_cv/share/waver_cv/hook/pythonpath.sh'
+[0.727s] Level 1:colcon.colcon_core.environment:checking '/ros2_ws/src/install/waver_cv/bin'
+[0.727s] Level 1:colcon.colcon_core.environment:create_environment_scripts_only(waver_cv)
+[0.727s] INFO:colcon.colcon_core.shell:Creating package script '/ros2_ws/src/install/waver_cv/share/waver_cv/package.ps1'
+[0.727s] INFO:colcon.colcon_core.shell:Creating package descriptor '/ros2_ws/src/install/waver_cv/share/waver_cv/package.dsv'
+[0.727s] INFO:colcon.colcon_core.shell:Creating package script '/ros2_ws/src/install/waver_cv/share/waver_cv/package.sh'
+[0.728s] INFO:colcon.colcon_core.shell:Creating package script '/ros2_ws/src/install/waver_cv/share/waver_cv/package.bash'
+[0.728s] INFO:colcon.colcon_core.shell:Creating package script '/ros2_ws/src/install/waver_cv/share/waver_cv/package.zsh'
+[0.728s] Level 1:colcon.colcon_core.environment:create_file_with_runtime_dependencies(/ros2_ws/src/install/waver_cv/share/colcon-core/packages/waver_cv)
+[0.728s] DEBUG:colcon.colcon_parallel_executor.executor.parallel:closing loop
+[0.728s] DEBUG:colcon.colcon_parallel_executor.executor.parallel:loop closed
+[0.728s] DEBUG:colcon.colcon_parallel_executor.executor.parallel:run_until_complete finished with '0'
+[0.728s] DEBUG:colcon.colcon_core.event_reactor:joining thread
+[0.744s] INFO:colcon.colcon_core.plugin_system:Skipping extension 'colcon_notification.desktop_notification.notify_send': Could not find 'notify-send'
+[0.744s] INFO:colcon.colcon_core.plugin_system:Skipping extension 'colcon_notification.desktop_notification.terminal_notifier': Not used on non-Darwin systems
+[0.744s] INFO:colcon.colcon_core.plugin_system:Skipping extension 'colcon_notification.desktop_notification.win32': Not used on non-Windows systems
+[0.744s] INFO:colcon.colcon_notification.desktop_notification:Sending desktop notification using 'notify2'
+[0.746s] DEBUG:colcon.colcon_notification.desktop_notification.notify2:Failed to initialize notify2: org.freedesktop.DBus.Error.Spawn.ExecFailed: /usr/bin/dbus-launch terminated abnormally without any error message
+[0.747s] DEBUG:colcon.colcon_core.event_reactor:joined thread
+[0.747s] INFO:colcon.colcon_core.shell:Creating prefix script '/ros2_ws/src/install/local_setup.ps1'
+[0.748s] INFO:colcon.colcon_core.shell:Creating prefix util module '/ros2_ws/src/install/_local_setup_util_ps1.py'
+[0.749s] INFO:colcon.colcon_core.shell:Creating prefix chain script '/ros2_ws/src/install/setup.ps1'
+[0.751s] INFO:colcon.colcon_core.shell:Creating prefix script '/ros2_ws/src/install/local_setup.sh'
+[0.752s] INFO:colcon.colcon_core.shell:Creating prefix util module '/ros2_ws/src/install/_local_setup_util_sh.py'
+[0.753s] INFO:colcon.colcon_core.shell:Creating prefix chain script '/ros2_ws/src/install/setup.sh'
+[0.755s] INFO:colcon.colcon_core.shell:Creating prefix script '/ros2_ws/src/install/local_setup.bash'
+[0.756s] INFO:colcon.colcon_core.shell:Creating prefix chain script '/ros2_ws/src/install/setup.bash'
+[0.758s] INFO:colcon.colcon_core.shell:Creating prefix script '/ros2_ws/src/install/local_setup.zsh'
+[0.760s] INFO:colcon.colcon_core.shell:Creating prefix chain script '/ros2_ws/src/install/setup.zsh'

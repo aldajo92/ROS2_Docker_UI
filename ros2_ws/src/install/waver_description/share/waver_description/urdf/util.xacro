@@ -1,0 +1,117 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="waver_utils">
+
+    <!-- Utils -->
+    <xacro:property name="triple_zero" value="0 0 0" />
+    <xacro:property name="scale" value="0.001 0.001 0.001" />
+    <xacro:property name="floor_to_top" value="88.5e-03" />
+    <xacro:property name="floor_to_base" value="33.7e-03" />
+    <xacro:property name="base_to_top" value="${ floor_to_top - floor_to_base }" />
+    <xacro:property name="length" value="183e-03" />
+
+    <!-- Base specifications -->
+    <xacro:property name="pos_x_base" value="2.838767506182194e-05" />
+    <xacro:property name="pos_y_base" value="-6.582658272236586e-06" />
+    <xacro:property name="pos_z_base" value="0.002703800678253174" />
+    <xacro:property name="mass_base" value="1.37038398045076265" />
+    <xacro:property name="mass_center_base" value="${pos_x_base} ${pos_y_base} ${pos_z_base}" />
+    <xacro:property name="position_base" value="${-pos_x_base} ${-pos_y_base} ${-pos_z_base}" />
+
+    <!-- Top specifications -->
+    <xacro:property name="pos_x_top" value="0.00018196851015090943" />
+    <xacro:property name="pos_y_top" value="-0.0006833337545394898" />
+    <xacro:property name="pos_z_top" value="0.038709537506103515" />
+    <xacro:property name="mass_top" value="0.7277708834628859" />
+    <xacro:property name="mass_center_top" value="${pos_x_top} ${pos_y_top} ${pos_z_top}" />
+    <xacro:property name="position_top" value="${-pos_x_top} ${-pos_y_top} ${-pos_z_top}" />
+
+    <!-- Accessories specifications -->
+    <xacro:property name="pos_x_acces" value="-0.02246641731262207" />
+    <xacro:property name="pos_y_acces" value="0.08693458557128907" />
+    <xacro:property name="pos_z_acces" value="0.04861989974975586" />
+    <xacro:property name="mass_acces" value="0.0017616158924187116" />
+    <xacro:property name="mass_center_acces" value="${pos_x_acces} ${pos_y_acces} ${pos_z_acces}" />
+    <xacro:property name="position_acces" value="${pos_y_acces} ${-pos_x_acces} ${-pos_z_acces}" />
+    <xacro:property name="positions_acces_joint" value="${-pos_y_acces} ${pos_x_acces} ${pos_z_acces}"/>
+
+    <!-- Accessories1 specifications -->
+    <xacro:property name="pos_x_acces1" value="-0.002510018587112427" />
+    <xacro:property name="pos_y_acces1" value="0.07360986328125002" />
+    <xacro:property name="pos_z_acces1" value="0.035275302886962887" />
+    <xacro:property name="mass_acces1" value="0.0021489822783274555" />
+    <xacro:property name="mass_center_acces1" value="${pos_x_acces1} ${pos_y_acces1} ${pos_z_acces1}" />
+    <xacro:property name="position_acces1" value="${pos_y_acces1} ${-pos_x_acces1} ${-pos_z_acces1}" />
+    <xacro:property name="positions_acces1_joint" value="${-pos_y_acces1} ${pos_x_acces1} ${pos_z_acces1}"/>
+
+    <!-- IMU speficications -->
+    <xacro:property name="pos_x_imu" value="-0.009815516471862793" />
+    <xacro:property name="pos_y_imu" value="0.009279213905334474" />
+    <xacro:property name="pos_z_imu" value="0.04129100418090821" />
+    <xacro:property name="mass_imu" value="0.012365568710683028" />
+    <xacro:property name="mass_center_imu" value="${pos_x_imu} ${pos_y_imu} ${pos_z_imu}" />
+    <xacro:property name="position_imu" value="${pos_y_imu} ${-pos_x_imu} ${-pos_z_imu}" />
+    <xacro:property name="positions_imu_joint" value="${-pos_y_imu} ${pos_x_imu} ${pos_z_imu}"/>
+
+    <!-- Oled Screen speficications -->
+    <xacro:property name="pos_x_screen" value="-6.735318456776441e-07" />
+    <xacro:property name="pos_y_screen" value="0.05096461868286133" />
+    <xacro:property name="pos_z_screen" value="0.048232952117919926" />
+    <xacro:property name="mass_screen" value="0.0014091265350616076" />
+    <xacro:property name="mass_center_screen" value="${pos_x_screen} ${pos_y_screen} ${pos_z_screen}" />
+    <xacro:property name="position_screen" value="${pos_y_screen} ${-pos_x_screen} ${-pos_z_screen}" />
+    <xacro:property name="positions_screen_joint" value="${-pos_y_screen} ${pos_x_screen} ${pos_z_screen}"/>
+
+
+    <!-- Wheels specifications -->
+
+    <xacro:property name="wheel_separation" value="123e-3" />
+    <xacro:property name="wheel_radius" value="40.6e-3" />
+
+    <!-- WBL specifications -->
+    <xacro:property name="pos_x_wbl" value="0.06538582611083985" />
+    <xacro:property name="pos_y_wbl" value="0.04859128189086914" />
+    <xacro:property name="pos_z_wbl" value="0.004798986434936523" />
+    <xacro:property name="mass_wbl" value="1.01701435808657" />
+    <xacro:property name="mass_center_wbl" value="${pos_x_wbl} ${pos_y_wbl} ${pos_z_wbl}" />
+    <xacro:property name="position_wbl" value="${pos_y_wbl} ${-pos_x_wbl} ${-pos_z_wbl}" />
+    <xacro:property name="position_wbl_joint" value="${-pos_y_wbl} ${pos_x_wbl} ${pos_z_wbl}"/>
+
+    <!-- WFL specifications -->
+    <xacro:property name="pos_x_wfl" value="0.06538582611083985" />
+    <xacro:property name="pos_y_wfl" value="-0.048406845092773446" />
+    <xacro:property name="pos_z_wfl" value="0.004799012184143066" />
+    <xacro:property name="mass_wfl" value="1.0170155374515382" />
+    <xacro:property name="mass_center_wfl" value="${pos_x_wfl} ${pos_y_wfl} ${pos_z_wfl}" />
+    <xacro:property name="position_wfl" value="${pos_y_wfl} ${-pos_x_wfl} ${-pos_z_wfl}" />
+    <xacro:property name="position_wfl_joint" value="${-pos_y_wfl} ${pos_x_wfl} ${pos_z_wfl}"/>
+
+    <!-- WFR specifications -->
+    <xacro:property name="pos_x_wfr" value="-0.06528724670410156" />
+    <xacro:property name="pos_y_wfr" value="-0.048593093872070316" />
+    <xacro:property name="pos_z_wfr" value="0.004798998355865478" />
+    <xacro:property name="mass_wfr" value="1.0170123141691128" />
+    <xacro:property name="mass_center_wfr" value="${pos_x_wfr} ${pos_y_wfr} ${pos_z_wfr}" />
+    <xacro:property name="position_wfr" value="${pos_y_wfr} ${-pos_x_wfr} ${-pos_z_wfr}" />
+    <xacro:property name="position_wfr_joint" value="${-pos_y_wfr} ${pos_x_wfr} ${pos_z_wfr}"/>
+
+    <!-- WBR specifications -->
+    <xacro:property name="pos_x_wbr" value="-0.0652872543334961" />
+    <xacro:property name="pos_y_wbr" value="0.04840502166748047" />
+    <xacro:property name="pos_z_wbr" value="0.004799028396606446" />
+    <xacro:property name="mass_wbr" value="1.0170123141691128" />
+    <xacro:property name="mass_center_wbr" value="${pos_x_wbr} ${pos_y_wbr} ${pos_z_wbr}" />
+    <xacro:property name="position_wbr" value="${pos_y_wbr} ${-pos_x_wbr} ${-pos_z_wbr}" />
+    <xacro:property name="position_wbr_joint" value="${-pos_y_wbr} ${pos_x_wbr} ${pos_z_wbr}"/>
+    <!-- Lidar specifications -->
+    <xacro:property name="mass_lidar" value="0.05" />
+    <xacro:property name="lidar_model" value="HLS-LFCD-LDS" />
+    <xacro:property name="lidar_link" value="lidar_link" />
+    <xacro:property name="lidar_samples" value="720" />
+    <xacro:property name="lidar_max_range" value="12.0" />
+    <xacro:property name="lidar_min_range" value="0.03" />
+    <xacro:property name="lidar_max_angle" value="${pi}" />
+    <xacro:property name="lidar_min_angle" value="-${pi}" />
+    <xacro:property name="lidar_frequency" value="10" />
+    <xacro:property name="lidar_transform" value="0 0 0 0 0 0" />
+
+</robot>

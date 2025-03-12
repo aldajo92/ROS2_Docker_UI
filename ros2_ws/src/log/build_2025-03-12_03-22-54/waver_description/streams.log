@@ -1,0 +1,45 @@
+[0.168s] Invoking command in '/ros2_ws/src/build/waver_description': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake /ros2_ws/src/waver_description_ros2 -DCMAKE_INSTALL_PREFIX=/ros2_ws/src/install/waver_description
+[0.265s] -- The C compiler identification is GNU 11.4.0
+[0.334s] -- The CXX compiler identification is GNU 11.4.0
+[0.342s] -- Detecting C compiler ABI info
+[0.418s] -- Detecting C compiler ABI info - done
+[0.423s] -- Check for working C compiler: /usr/bin/cc - skipped
+[0.423s] -- Detecting C compile features
+[0.423s] -- Detecting C compile features - done
+[0.426s] -- Detecting CXX compiler ABI info
+[0.493s] -- Detecting CXX compiler ABI info - done
+[0.499s] -- Check for working CXX compiler: /usr/bin/c++ - skipped
+[0.499s] -- Detecting CXX compile features
+[0.499s] -- Detecting CXX compile features - done
+[0.502s] -- Found ament_cmake: 1.3.11 (/opt/ros/humble/share/ament_cmake/cmake)
+[0.614s] -- Found Python3: /usr/bin/python3 (found version "3.10.12") found components: Interpreter 
+[0.693s] -- Found rclcpp: 16.0.11 (/opt/ros/humble/share/rclcpp/cmake)
+[0.739s] -- Found rosidl_generator_c: 3.1.6 (/opt/ros/humble/share/rosidl_generator_c/cmake)
+[0.744s] -- Found rosidl_adapter: 3.1.6 (/opt/ros/humble/share/rosidl_adapter/cmake)
+[0.752s] -- Found rosidl_generator_cpp: 3.1.6 (/opt/ros/humble/share/rosidl_generator_cpp/cmake)
+[0.763s] -- Using all available rosidl_typesupport_c: rosidl_typesupport_fastrtps_c;rosidl_typesupport_introspection_c
+[0.777s] -- Using all available rosidl_typesupport_cpp: rosidl_typesupport_fastrtps_cpp;rosidl_typesupport_introspection_cpp
+[0.819s] -- Found rmw_implementation_cmake: 6.1.2 (/opt/ros/humble/share/rmw_implementation_cmake/cmake)
+[0.822s] -- Found rmw_fastrtps_cpp: 6.2.7 (/opt/ros/humble/share/rmw_fastrtps_cpp/cmake)
+[0.919s] -- Found OpenSSL: /usr/lib/x86_64-linux-gnu/libcrypto.so (found version "3.0.2")  
+[0.951s] -- Found FastRTPS: /opt/ros/humble/include  
+[0.988s] -- Using RMW implementation 'rmw_fastrtps_cpp' as default
+[0.997s] -- Looking for pthread.h
+[1.075s] -- Looking for pthread.h - found
+[1.075s] -- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+[1.155s] -- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+[1.156s] -- Found Threads: TRUE  
+[1.203s] -- Found xacro: 2.0.8 (/opt/ros/humble/share/xacro/cmake)
+[1.204s] -- Found urdf: 2.6.1 (/opt/ros/humble/share/urdf/cmake)
+[1.239s] -- Found robot_state_publisher: 3.0.3 (/opt/ros/humble/share/robot_state_publisher/cmake)
+[1.264s] -- Found eigen3_cmake_module: 0.1.1 (/opt/ros/humble/share/eigen3_cmake_module/cmake)
+[1.265s] -- Found Eigen3: TRUE (found version "3.4.0") 
+[1.265s] -- Ensuring Eigen3 include directory is part of orocos-kdl CMake target
+[1.361s] -- Found ament_lint_auto: 0.12.11 (/opt/ros/humble/share/ament_lint_auto/cmake)
+[1.421s] -- Added test 'flake8' to check Python code syntax and style conventions
+[1.422s] -- Added test 'lint_cmake' to check CMake code style
+[1.422s] -- Added test 'pep257' to check Python code against some of the docstring style conventions in PEP 257
+[1.424s] -- Added test 'xmllint' to check XML markup files
+[1.426s] -- Configuring done
+[1.429s] -- Generating done
+[1.431s] -- Build files have been written to: /ros2_ws/src/build/waver_description
