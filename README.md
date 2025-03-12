@@ -16,7 +16,7 @@ To run the docker container, use the following command:
     ```
 
 ## Create a ROS2 Package
-Based on the [ROS2 tutorial](https://docs.ros.org/en/humble/Tutorials/Beginner-Client-Libraries/Creating-Your-First-ROS2-Package.html) use the following commands to create a new package in the [`ros2_ws/src`](./ros2_ws/src) workspace:
+Based on the [ROS2 tutorial](https://docs.ros.org/en/humble/Tutorials/Beginner-Client-Libraries/Creating-Your-First-ROS2-Package.html) use the following commands to create a new package in the [`ros2_ws/src`](./ros2_ws/src) folder:
 
 ```bash
 # once inside the docker container move to src directory in the workspace
