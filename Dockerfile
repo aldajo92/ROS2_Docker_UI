@@ -33,7 +33,8 @@ RUN apt update && apt install -y \
 # RUN apt update && apt install -y \
 #     ros-${ROS_DISTRO}-turtlesim
 
-RUN apt update && apt install -y iputils-ping
+RUN echo "alias bros2='cd /ros2_ws && source /opt/ros/humble/setup.bash && colcon build'" >> ~/.bashrc
+RUN echo "alias sros2='source /opt/ros/humble/setup.bash && source /ros2_ws/install/setup.bash'" >> ~/.bashrc
 
 WORKDIR /ros2_ws
 
