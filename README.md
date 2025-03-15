@@ -14,6 +14,20 @@ To run the docker container, use the following command:
     ```bash
     ./scripts/run
     ```
+- Optional: Open a new terminal for the container:
+    ```bash
+    ./scripts/bash
+    ```
+
+# Custom Alias Commands for ROS2
+
+The following are custom alias commands designed to streamline various operations in the ROS2 project:
+
+- **`$ bros2`**  
+  A custom alias to build the ROS2 project. This command compiles the project's source code and prepares it for execution.
+
+- **`$ sros2`**  
+  This command sources the ROS2 setup script, setting up the environment variables needed to run ROS2.
 
 ## Create a ROS2 Package
 Based on the [ROS2 tutorial](https://docs.ros.org/en/humble/Tutorials/Beginner-Client-Libraries/Creating-Your-First-ROS2-Package.html) use the following commands to create a new package in the [`ros2_ws/src`](./ros2_ws/src) folder:
