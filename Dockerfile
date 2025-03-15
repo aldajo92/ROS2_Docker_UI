@@ -30,6 +30,9 @@ RUN apt update && apt install -y \
     ros-${ROS_DISTRO}-slam-toolbox\
     ros-${ROS_DISTRO}-cv-bridge
 
+# RUN apt update && apt install -y \
+#     ros-${ROS_DISTRO}-turtlesim
+
 RUN apt update && apt install -y iputils-ping
 
 WORKDIR /ros2_ws
