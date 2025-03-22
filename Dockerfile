@@ -30,8 +30,13 @@ RUN apt update && apt install -y \
     ros-${ROS_DISTRO}-slam-toolbox\
     ros-${ROS_DISTRO}-cv-bridge
 
-# RUN apt update && apt install -y \
-#     ros-${ROS_DISTRO}-turtlesim
+RUN apt update && apt install -y \
+    python3-pip \
+    python3-opencv \
+    ros-${ROS_DISTRO}-image-transport 
+
+RUN apt update && apt install -y iputils-ping
+RUN pip uninstall -y numpy && pip install "numpy<2"
 
 RUN echo "alias bros2='cd /ros2_ws && source /opt/ros/humble/setup.bash && colcon build'" >> ~/.bashrc
 RUN echo "alias sros2='source /opt/ros/humble/setup.bash && source /ros2_ws/install/setup.bash'" >> ~/.bashrc
