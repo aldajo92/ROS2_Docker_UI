@@ -38,7 +38,7 @@ cd /ros2_ws/src
 ```
 
 ```bash
-ros2 pkg create --build-type ament_cmake ros_example_package --dependencies rclcpp
+ros2 pkg create --build-type ament_cmake --license Apache-2.0 ros_example_package
 ```
 
 Open a new terminal, ouside of the container, located to this project, then run the following command to change the owner of the package to the current user:
@@ -62,8 +62,34 @@ Then you can edit the package files in the `ros2_ws/src/ros_example_package` dir
 code .
 ```
 
-# Tutorials From ROS2 Documentation
+## Tutorials From ROS2 Documentation
 
 - [Writing a simple publisher and subscriber (C++)] (https://docs.ros.org/en/humble/Tutorials/Beginner-Client-Libraries/Writing-A-Simple-Cpp-Publisher-And-Subscriber.html)
 - [Understanding ROS2 Nodes] (https://docs.ros.org/en/humble/Tutorials/Beginner-CLI-Tools/Understanding-ROS2-Nodes/Understanding-ROS2-Nodes.html)
 
+## Useful Commands
+
+- To list all the nodes in the system:
+    ```bash
+    ros2 node list
+    ```
+- To list all the topics in the system:
+    ```bash
+    ros2 topic list
+    ```
+- To view the tf tree:
+    ```bash
+    ros2 run tf2_tools view_frames.py
+    ```
+- To view the tf tree in real-time:
+    ```bash
+    ros2 run tf2_tools tf2_echo
+    ```
+- To view the nodes and topics in real-time:
+    ```bash
+    ros2 run rqt_graph rqt_graph
+    ```
+- To view the messages being published on a topic:
+    ```bash
+    ros2 topic echo /topic_name
+    ```

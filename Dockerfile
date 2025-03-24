@@ -1,7 +1,7 @@
 # humble, jazzy
 ARG ROS_DISTRO=humble
 
-FROM osrf/ros:${ROS_DISTRO}-desktop-full
+FROM osrf/ros:${ROS_DISTRO}-desktop
 ENV ROS_DISTRO=${ROS_DISTRO}
 
 ## Install new gazebo (ionic, harmonic, fortress)
@@ -33,7 +33,7 @@ RUN apt update && apt install -y \
 # RUN apt update && apt install -y \
 #     ros-${ROS_DISTRO}-turtlesim
 
-RUN echo "alias bros2='cd /ros2_ws && source /opt/ros/humble/setup.bash && colcon build'" >> ~/.bashrc
+RUN echo "alias bros2='cd /ros2_ws && source /opt/ros/humble/setup.bash && colcon build && source /ros2_ws/install/setup.bash'" >> ~/.bashrc
 RUN echo "alias sros2='source /opt/ros/humble/setup.bash && source /ros2_ws/install/setup.bash'" >> ~/.bashrc
 
 WORKDIR /ros2_ws
