@@ -8,7 +8,7 @@ The workspace for this project is located in the [`ros2_ws`](./ros2_ws) director
 curl -fsSL https://get.docker.com -o get-docker.sh
 sudo sh get-docker.sh
 
-sudo gropadd docker # its ok if this line fails
+sudo groupadd docker # its ok if this line fails
 sudo usermod -aG docker $USER
 
 newgrp docker
