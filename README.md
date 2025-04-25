@@ -2,6 +2,36 @@
 
 The workspace for this project is located in the [`ros2_ws`](./ros2_ws) directory mounted to the docker container.
 
+# Installation with Docker in Debian based distributions
+
+```bash
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
+
+sudo gropuadd docker # its ok if this line fails
+sudo usermod -aG docker $USER
+
+newgrp docker
+sudo systemctl restart docker.service
+
+# check docker installation
+docker run hello-world
+```
+
+Then get this repository:
+
+```bash
+git clone https://github.com/aldajo92/ROS2_Docker_UI.git
+
+# optinal (open in vscode)
+cd ROS2_Docker_UI
+code .
+
+# Build the container
+cd ROS2_Docker_UI # <- make sure you are in this folder
+./scripts/build
+```
+
 ## Run the Docker Container
 To run the docker container, use the following command:
 
@@ -93,3 +123,16 @@ code .
     ```bash
     ros2 topic echo /topic_name
     ```
+
+# Author
+
+[Alejandro Daniel José Gómez Flórez](linkedin.com/in/aldajo92)
+
+# License
+This project is licensed under a custom license. See the [LICENSE](./LICENSE) file for details.
+
+### Summary
+- You may use this code for academic or personal purposes.
+- Proper credit must be given to the author, Alejandro Daniel José Gómez Flórez.
+- Commercial use requires explicit written permission.
+- Redistribution is allowed for academic or personal purposes only.
