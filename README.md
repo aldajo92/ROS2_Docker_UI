@@ -2,6 +2,8 @@
 
 The workspace for this project is located in the [`ros2_ws`](./ros2_ws) directory mounted to the docker container.
 
+![](./.media/docker_ros2.jpg)
+
 # Installation with Docker in Debian based distributions
 
 ```bash
