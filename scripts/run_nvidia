@@ -5,7 +5,10 @@ source ${PROJECT_ROOT}/config_docker.sh
 
 docker run -it \
     --privileged \
-    --device /dev/dri:/dev/dri \
+    --runtime=nvidia \
+    --gpus all \
+    -e NVIDIA_VISIBLE_DEVICES=all \
+    -e NVIDIA_DRIVER_CAPABILITIES=all \
     -e DISPLAY \
     -e TERM \
     -e QT_X11_NO_MITSHM=1 \
