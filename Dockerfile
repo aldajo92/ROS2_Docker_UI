@@ -36,9 +36,25 @@ RUN apt update && apt install -y \
 # RUN apt update && apt install -y \
 #     ros-${ROS_DISTRO}-turtlesim
 
-RUN echo "alias bros2='cd /ros2_ws && source /opt/ros/humble/setup.bash && colcon build && source /ros2_ws/install/setup.bash'" >> ~/.bashrc
-RUN echo "alias sros2='source /opt/ros/humble/setup.bash && source /ros2_ws/install/setup.bash'" >> ~/.bashrc
+#### USER configuration
 
-WORKDIR /ros2_ws
+ARG HOST_UID
+ARG HOST_GID
 
-# ENTRYPOINT [ "/ros_entrypoint.sh" ]
+RUN groupadd --gid ${HOST_GID} hostgroup \
+    && useradd --uid ${HOST_UID} --gid hostgroup --create-home dockeruser
+
+USER dockeruser
+ENV HOME=/home/dockeruser
+
+RUN echo "alias bros2='cd /ros2_ws && source /opt/ros/${ROS_DISTRO}/setup.bash && colcon build && source /ros2_ws/install/setup.bash'" >> ~/.bashrc
+RUN echo "alias sros2='source /opt/ros/${ROS_DISTRO}/setup.bash && source /ros2_ws/install/setup.bash'" >> ~/.bashrc
+RUN echo "echo 'Welcome to ROS2 docker container'" >> ~/.bashrc
+RUN echo "echo 'Leaving the ROS2 Docker container. Goodbye!'" >> ~/.bash_logout
+
+SHELL ["/bin/bash", "-l", "-c"]
+CMD ["/bin/bash", "--login"]
+
+#### end USER configuration
+
+WORKDIR ${HOME}/ros2_ws

@@ -13,11 +13,11 @@ docker run -it \
     -e XAUTHORITY \
     -e XDG_RUNTIME_DIR=/tmp/runtime-root \
     -v /tmp/.X11-unix:/tmp/.X11-unix \
+    -v $XAUTHORITY:$XAUTHORITY \
     --ipc="host" \
     --device /dev/dri:/dev/dri \
-    -v $XAUTHORITY:$XAUTHORITY \
     --name ${DOCKER_CONTAINER_NAME} \
-    --volume ${PROJECT_ROOT}/ros2_ws:/ros2_ws \
+    --volume ${PROJECT_ROOT}/ros2_ws:/home/dockeruser/ros2_ws \
     --network ${DOCKER_NETWORK} \
     -e ROS_DOMAIN_ID=0 \
     --dns=8.8.8.8 \

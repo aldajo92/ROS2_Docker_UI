@@ -1,12 +1,16 @@
 # ROS2 DOCKER UI (Humble, Gazebo classic)
 
-The workspace for this project is located in the [`ros2_ws`](./ros2_ws) directory mounted to the docker container.
+This Docker project simplifies the use of ROS2 by reducing the effort required to install the necessary dependencies for working with robotics.
+
+The ROS2 workspace for this project is located in the [`ros2_ws`](./ros2_ws) directory, which is shared with the Docker container.
 
 ![](./.media/docker_ros2.jpg)
 
-# Installation with Docker in Debian based distributions
+## Installation
 
-```bash
+### Debian based distributions
+Execute the following commands:
+```
 curl -fsSL https://get.docker.com -o get-docker.sh
 sudo sh get-docker.sh
 
@@ -22,19 +26,19 @@ docker run hello-world
 
 Then get this repository:
 
-```bash
+```
+cd ~
 git clone https://github.com/aldajo92/ROS2_Docker_UI.git
 
-# optinal (open in vscode)
-cd ROS2_Docker_UI
-code .
+# open in vscode (optional)
+code ~/ROS2_Docker_UI
 
 # Build the container
-cd ROS2_Docker_UI # <- make sure you are in this folder
+cd ~/ROS2_Docker_UI # <- make sure you are in this folder
 ./scripts/build
 ```
 
-## Run the Docker Container
+## Docker Container Commands
 To run the docker container, use the following command:
 
 - First build the docker image:
@@ -66,16 +70,11 @@ Based on the [ROS2 tutorial](https://docs.ros.org/en/humble/Tutorials/Beginner-C
 
 ```bash
 # once inside the docker container move to src directory in the workspace
-cd /ros2_ws/src
+cd ~/ros2_ws/src
 ```
 
 ```bash
-ros2 pkg create --build-type ament_cmake --license Apache-2.0 ros_example_package
-```
-
-Open a new terminal, ouside of the container, located to this project, then run the following command to change the owner of the package to the current user:
-```bash
-chown -R $USER:$USER ./ros2_ws/src/ros_example_package
+ros2 pkg create --build-type ament_cmake ros_example_package
 ```
 
 Build the workspace:
@@ -85,14 +84,10 @@ colcon build
 
 Source the workspace:
 ```bash
-source /ros2_ws/install/setup.bash
+source ~/ros2_ws/install/setup.bash
 ```
 
-Then you can edit the package files in the `ros2_ws/src/ros_example_package` directory using visual studio code or any other editor. For this project, vscode is assumed as the editor.
-
-```bash
-code .
-```
+Then you can edit the package files in the `~/ros2_ws/src/ros_example_package` directory using visual studio code or any other editor. For this project, vscode is assumed as the editor.
 
 ## Tutorials From ROS2 Documentation
 
