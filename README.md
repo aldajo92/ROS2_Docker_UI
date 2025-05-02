@@ -4,7 +4,7 @@ This Docker project simplifies the use of ROS2 by reducing the effort required t
 
 The ROS2 workspace for this project is located in the [`ros2_ws`](./ros2_ws) directory, which is shared with the Docker container.
 
-![](./.media/docker_ros2.jpg)
+![](./.media/docker_ros2.png)
 
 ## Installation
 
