@@ -35,7 +35,7 @@ code ~/ROS2_Docker_UI
 
 # Build the container
 cd ~/ROS2_Docker_UI # <- make sure you are in this folder
-./scripts/build
+./scripts/build.sh
 ```
 
 ## Docker Container Commands
@@ -43,16 +43,16 @@ To run the docker container, use the following command:
 
 - First build the docker image:
     ```bash
-    ./scripts/build
+    ./scripts/build.sh
     ```
 
 - Then run the docker container:
     ```bash
-    ./scripts/run
+    ./scripts/run.sh
     ```
 - Optional: Open a new terminal for the container:
     ```bash
-    ./scripts/bash
+    ./scripts/bash.sh
     ```
 
 # Custom Alias Commands for ROS2
