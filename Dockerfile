@@ -41,14 +41,18 @@ RUN apt update && apt install -y \
 ARG HOST_UID
 ARG HOST_GID
 
+# Create dockeruser and grant sudo privileges
 RUN groupadd --gid ${HOST_GID} hostgroup \
-    && useradd --uid ${HOST_UID} --gid hostgroup --create-home dockeruser
+    && useradd --uid ${HOST_UID} --gid hostgroup --create-home dockeruser \
+    && apt update && apt install -y sudo \
+    && usermod -aG sudo dockeruser \
+    && echo "dockeruser ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
 USER dockeruser
 ENV HOME=/home/dockeruser
 
-RUN echo "alias bros2='cd /ros2_ws && source /opt/ros/${ROS_DISTRO}/setup.bash && colcon build && source /ros2_ws/install/setup.bash'" >> ~/.bashrc
-RUN echo "alias sros2='source /opt/ros/${ROS_DISTRO}/setup.bash && source /ros2_ws/install/setup.bash'" >> ~/.bashrc
+RUN echo "alias bros2='cd ${HOME}/ros2_ws && source /opt/ros/${ROS_DISTRO}/setup.bash && colcon build && source ${HOME}/ros2_ws/install/setup.bash'" >> ~/.bashrc
+RUN echo "alias sros2='source /opt/ros/${ROS_DISTRO}/setup.bash && source ${HOME}/ros2_ws/install/setup.bash'" >> ~/.bashrc
 RUN echo "echo 'Welcome to ROS2 docker container'" >> ~/.bashrc
 RUN echo "echo 'Leaving the ROS2 Docker container. Goodbye!'" >> ~/.bash_logout
 
