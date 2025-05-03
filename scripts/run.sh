@@ -17,8 +17,7 @@ docker run -it \
     --name ${DOCKER_CONTAINER_NAME} \
     --volume ${PROJECT_ROOT}/ros2_ws:/home/dockeruser/ros2_ws \
     --network ${DOCKER_NETWORK} \
+    -e ROS_DOMAIN_ID=0 \
     --dns=8.8.8.8 \
     --rm \
     ${DOCKER_IMAGE_NAME}
-
-# -e ROS_DOMAIN_ID=0 \

@@ -33,8 +33,8 @@ RUN apt update && apt install -y \
 RUN apt update && apt install -y \
     ros-${ROS_DISTRO}-rqt-reconfigure
 
-# RUN apt update && apt install -y \
-#     ros-${ROS_DISTRO}-turtlesim
+RUN apt update && apt install -y \
+    ros-${ROS_DISTRO}-turtlesim
 
 #### USER configuration
 
@@ -42,11 +42,14 @@ ARG HOST_UID
 ARG HOST_GID
 
 # Create dockeruser and grant sudo privileges
+# RUN groupadd --gid ${HOST_GID} hostgroup \
+#     && useradd --uid ${HOST_UID} --gid hostgroup --create-home dockeruser \
+#     && apt update && apt install -y sudo \
+#     && usermod -aG sudo dockeruser \
+#     && echo "dockeruser ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
 RUN groupadd --gid ${HOST_GID} hostgroup \
-    && useradd --uid ${HOST_UID} --gid hostgroup --create-home dockeruser \
-    && apt update && apt install -y sudo \
-    && usermod -aG sudo dockeruser \
-    && echo "dockeruser ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+    && useradd --uid ${HOST_UID} --gid hostgroup --create-home dockeruser
 
 USER dockeruser
 ENV HOME=/home/dockeruser
