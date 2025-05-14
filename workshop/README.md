@@ -14,16 +14,12 @@ cd ..
 ls
 ```
 
-```bash
-# Go to project folder ~/ROS2_Docker_UI/ros2_ws/src
-cd ~/ROS2_Docker_UI/ros2_ws/src
-git clone https://github.com/aldajo92/waver_description_ros2.git waver_description
-```
+## Waver simulation
+In the git branch `waver`, a simulation with a robot has been created to make some interaction with nav2, rviz and gazebo. To make the branch update follow this spteps:
 
 ```bash
-# Go to project folder ~/ROS2_Docker_UI/ros2_ws/src
-cd ~/ROS2_Docker_UI/ros2_ws/src
-git clone https://github.com/aldajo92/data_plotter.git
+git checkout waver                          # changed to branch
+git submodule update --init --recursive     # get all submodules
 ```
 
 ```bash
@@ -41,8 +37,7 @@ ros2 topic echo <topic_name>
 ros2 node list
 ```
 
-Publisher Subscriber Tutorial:
+## Publisher Subscriber Tutorial
+- [Understanding topics — ROS 2 Documentation: Humble documentation](https://docs.ros.org/en/humble/Tutorials/Beginner-CLI-Tools/Understanding-ROS2-Topics/Understanding-ROS2-Topics.html)
 
-[Understanding topics — ROS 2 Documentation: Humble  documentation](https://docs.ros.org/en/humble/Tutorials/Beginner-CLI-Tools/Understanding-ROS2-Topics/Understanding-ROS2-Topics.html)
-
-[Writing a simple publisher and subscriber (C++) — ROS 2 Documentation: Humble  documentation](https://docs.ros.org/en/humble/Tutorials/Beginner-Client-Libraries/Writing-A-Simple-Cpp-Publisher-And-Subscriber.html)
+- [Writing a simple publisher and subscriber (C++) — ROS 2 Documentation: Humble documentation](https://docs.ros.org/en/humble/Tutorials/Beginner-Client-Libraries/Writing-A-Simple-Cpp-Publisher-And-Subscriber.html)
