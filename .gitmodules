@@ -1,0 +1,19 @@
+[submodule "ros2_ws/src/waver_description"]
+	path = ros2_ws/src/waver_description
+	url = https://github.com/aldajo92/waver_description_ros2
+	branch = main
+
+[submodule "ros2_ws/src/waver_cv"]
+	path = ros2_ws/src/waver_cv
+	url = https://github.com/aldajo92/waver_cv_ros2
+	branch = main
+
+[submodule "ros2_ws/src/waver_bringup"]
+	path = ros2_ws/src/waver_bringup
+	url = https://github.com/aldajo92/waver_bringup_ros2
+	branch = main
+
+[submodule "ros2_ws/src/data_plotter"]
+	path = ros2_ws/src/data_plotter
+	url = https://github.com/aldajo92/data_plotter
+	branch = main
