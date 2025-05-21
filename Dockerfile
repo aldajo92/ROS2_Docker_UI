@@ -33,6 +33,9 @@ RUN apt update && apt install -y \
 RUN apt update && apt install -y \
     ros-${ROS_DISTRO}-rqt-reconfigure
 
+RUN apt update && apt install -y \
+    ros-${ROS_DISTRO}-interactive-markers
+
 # RUN apt update && apt install -y \
 #     ros-${ROS_DISTRO}-turtlesim
 
