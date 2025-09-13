@@ -4,6 +4,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import Command, LaunchConfiguration, PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
+from ament_index_python.packages import get_package_share_directory
 
 def generate_launch_description():
     # Launch arguments
@@ -36,13 +37,21 @@ def generate_launch_description():
         name='joint_state_publisher_gui',
         output='screen'
     )
+    
+    # Rviz Configuration
+    rviz_config_file = os.path.join(
+        get_package_share_directory('my_robot'),
+        'rviz',
+        'config.rviz'
+    )
 
     # RViz2 - visualization tool
     rviz = Node(
         package="rviz2",
         executable="rviz2",
         name="rviz2",
-        output="screen"
+        output="screen",
+        arguments=["-d", rviz_config_file]
         # Note: No specific config file - RViz will start with default configuration
         # You can manually add robot model display and set Fixed Frame to 'base_link'
     )
