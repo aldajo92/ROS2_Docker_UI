@@ -54,6 +54,10 @@ To run the docker container, use the following command:
     ```bash
     ./scripts/bash.sh
     ```
+- Execute commands directly in the container:
+    ```bash
+    ./scripts/bash.sh "cd src && ls"
+    ```
 
 # Custom Alias Commands for ROS2
 
