@@ -15,7 +15,7 @@ docker run -it \
     -v $XAUTHORITY:$XAUTHORITY \
     --ipc="host" \
     --name ${DOCKER_CONTAINER_NAME} \
-    --volume ${PROJECT_ROOT}/ros2_ws:/home/dockeruser/ros2_ws \
+    --volume ${PROJECT_ROOT}/ros2_ws:/workspace/ros2_ws \
     --network ${DOCKER_NETWORK} \
     --dns=8.8.8.8 \
     --rm \

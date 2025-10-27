@@ -1,67 +1,40 @@
-# humble, jazzy
-ARG ROS_DISTRO=humble
+# NVIDIA Isaac Sim 5.1.0 with ROS2
+FROM nvcr.io/nvidia/isaac-sim:5.1.0
 
-FROM osrf/ros:${ROS_DISTRO}-desktop
-ENV ROS_DISTRO=${ROS_DISTRO}
+# Isaac Sim includes ROS2 Humble, but since base is Ubuntu 24.04 (Noble),
+# we'll use ROS2 Jazzy for additional packages (Jazzy is for Ubuntu 24.04)
+ENV ROS_DISTRO=jazzy
 
-## Install new gazebo (ionic, harmonic, fortress)
-# ENV GAZEBO_VERSION="fortress"
-# RUN apt install curl lsb-release gnupg
-# RUN curl https://packages.osrfoundation.org/gazebo.gpg --output /usr/share/keyrings/pkgs-osrf-archive-keyring.gpg
-# RUN echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/pkgs-osrf-archive-keyring.gpg] http://packages.osrfoundation.org/gazebo/ubuntu-stable $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/gazebo-stable.list > /dev/null
-# RUN apt update && apt install -y gz-${GAZEBO_VERSION}
-# RUN apt update && apt install -y \
-#     ros-${ROS_DISTRO}-ros-gz
+# Switch to root for package installation
+USER root
 
-RUN apt update && apt install -y \
-    ros-${ROS_DISTRO}-gazebo-ros-pkgs \
-    ros-${ROS_DISTRO}-gazebo-ros2-control \
-    ros-${ROS_DISTRO}-ros-gz \
-    ros-${ROS_DISTRO}-ros-ign-bridge
+# Install additional utilities
+RUN apt-get update && apt-get install -y \
+    vim \
+    git \
+    curl \
+    wget \
+    software-properties-common \
+    lsb-release \
+    gnupg \
+    && rm -rf /var/lib/apt/lists/*
 
-RUN apt update && apt install -y \
-    ros-${ROS_DISTRO}-robot-state-publisher \
-    ros-${ROS_DISTRO}-joint-state-publisher \
-    ros-${ROS_DISTRO}-urdf-tutorial
+# Add ROS2 Jazzy repository (matches Ubuntu 24.04 Noble)
+RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/ros2.list > /dev/null
 
-RUN apt update && apt install -y \
-    ros-${ROS_DISTRO}-navigation2 \
-    ros-${ROS_DISTRO}-nav2-bringup \
-    ros-${ROS_DISTRO}-slam-toolbox\
-    ros-${ROS_DISTRO}-cv-bridge
+# Install additional ROS2 Jazzy packages
+RUN apt-get update && apt-get install -y \
+    ros-jazzy-navigation2 \
+    ros-jazzy-nav2-bringup \
+    ros-jazzy-slam-toolbox \
+    ros-jazzy-cv-bridge \
+    ros-jazzy-rqt-reconfigure \
+    ros-jazzy-robot-state-publisher \
+    ros-jazzy-joint-state-publisher \
+    ros-jazzy-teleop-twist-keyboard \
+    && rm -rf /var/lib/apt/lists/*
 
-RUN apt update && apt install -y \
-    ros-${ROS_DISTRO}-rqt-reconfigure
-
-# RUN apt update && apt install -y \
-#     ros-${ROS_DISTRO}-turtlesim
-
-#### USER configuration
-
-ARG HOST_UID
-ARG HOST_GID
-
-# Create dockeruser and grant sudo privileges
-# RUN groupadd --gid ${HOST_GID} hostgroup \
-#     && useradd --uid ${HOST_UID} --gid hostgroup --create-home dockeruser \
-#     && apt update && apt install -y sudo \
-#     && usermod -aG sudo dockeruser \
-#     && echo "dockeruser ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
-
-RUN groupadd --gid ${HOST_GID} hostgroup \
-    && useradd --uid ${HOST_UID} --gid hostgroup --create-home dockeruser
-
-USER dockeruser
-ENV HOME=/home/dockeruser
-
-RUN echo "alias bros2='cd ${HOME}/ros2_ws && source /opt/ros/${ROS_DISTRO}/setup.bash && colcon build && source ${HOME}/ros2_ws/install/setup.bash'" >> ~/.bashrc
-RUN echo "alias sros2='source /opt/ros/${ROS_DISTRO}/setup.bash && source ${HOME}/ros2_ws/install/setup.bash'" >> ~/.bashrc
-RUN echo "echo 'Welcome to ROS2 docker container'" >> ~/.bashrc
-RUN echo "echo 'Leaving the ROS2 Docker container. Goodbye!'" >> ~/.bash_logout
-
-SHELL ["/bin/bash", "-l", "-c"]
-CMD ["/bin/bash", "--login"]
-
-#### end USER configuration
-
-WORKDIR ${HOME}/ros2_ws
+# Isaac Sim specific environment variables
+ENV OMNI_KIT_ALLOW_ROOT=1
+ENV ACCEPT_EULA=Y

@@ -7,8 +7,8 @@ source ${PROJECT_ROOT}/config_docker.sh
 
 # If arguments are provided, execute them as a command
 if [ $# -gt 0 ]; then
-    docker exec -it ${DOCKER_CONTAINER_NAME} /ros_entrypoint.sh bash -c "$*"
+    docker exec -it ${DOCKER_CONTAINER_NAME} /bin/bash -c "source /opt/ros/jazzy/setup.bash && $*"
 else
     # If no arguments, open interactive bash session
-    docker exec -it ${DOCKER_CONTAINER_NAME} /ros_entrypoint.sh /bin/bash
+    docker exec -it ${DOCKER_CONTAINER_NAME} /bin/bash
 fi

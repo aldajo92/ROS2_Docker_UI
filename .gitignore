@@ -64,4 +64,9 @@ ros2_ws/build/
 ros2_ws/install/
 ros2_ws/log/
 
+# Isaac Sim cache and data directories
+isaac_cache/
+isaac_logs/
+isaac_data/
+
 # End of https://www.toptal.com/developers/gitignore/api/ros
