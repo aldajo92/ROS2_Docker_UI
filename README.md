@@ -50,6 +50,17 @@ To run the docker container, use the following command:
     ```bash
     ./scripts/run.sh
     ```
+
+- For NVIDIA GPU support (desktop/Isaac Sim):
+    ```bash
+    ./scripts/nvidia_run.sh
+    ```
+
+- For **Jetson Thor** devices:
+    ```bash
+    ./scripts/jetson_run.sh
+    ```
+    See [JETSON_THOR_SETUP.md](./JETSON_THOR_SETUP.md) for complete Jetson configuration guide.
 - Optional: Open a new terminal for the container:
     ```bash
     ./scripts/bash.sh

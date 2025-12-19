@@ -8,6 +8,8 @@ This project has been configured to use **NVIDIA Isaac Sim 5.1.0** with ROS2 Hum
 - Docker with NVIDIA Container Toolkit installed
 - X11 server access for GUI
 
+> **🤖 Running on Jetson Thor?** See [JETSON_QUICK_START.md](./JETSON_QUICK_START.md) for Jetson-specific setup.
+
 ## Setup Instructions
 
 ### 1. Build the Docker Image

@@ -38,3 +38,9 @@ RUN apt-get update && apt-get install -y \
 # Isaac Sim specific environment variables
 ENV OMNI_KIT_ALLOW_ROOT=1
 ENV ACCEPT_EULA=Y
+
+# Jetson Thor optimizations - Disable RTX features for embedded GPU
+ENV OMNI_RTX_ENABLED=0
+ENV OMNI_RTX_DENOISER_ENABLED=0
+ENV OMNI_RTX_RAYTRACING_ENABLED=0
+ENV CARB_SETTINGS_PATH=/isaac-sim/apps
