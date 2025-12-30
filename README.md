@@ -38,6 +38,13 @@ cd ~/ROS2_Docker_UI # <- make sure you are in this folder
 ./scripts/build.sh
 ```
 
+## Nvidia Container Toolkit (Optional)
+
+To enable Nvidia GPU acceleration inside containers, install the [Nvidia Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) to provide GPU support.
+
+![](.media/nvidia_toolkit.png)
+
+
 ## Docker Container Commands
 To run the docker container, use the following command:
 
