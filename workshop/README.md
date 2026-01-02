@@ -1,5 +1,10 @@
 # ROS2 Workshop
 
+This workshop provides a straightforward introduction to using the ROS2 environment with Docker. It's designed to help beginners quickly get started and interact with ROS2 without the hassle of manual setup.
+
+
+## Basic bash commands
+
 ```bash
 # current location
 pwd
@@ -22,14 +27,21 @@ git checkout waver                          # changed to branch
 git submodule update --init --recursive     # get all submodules
 ```
 
+## ROS Commands (run inside of the container)
 ```bash
-# ROS2 Commands
+# ROS2 Commands: make sure you are in the path ~/ros2_ws
 
-# Compiles the project, make sure you are in ~/ROS2_Docker_UI/ros2_ws
+# Compiles the project
 colcon build
 
+# Build specific packages
+colcon build --packages-select <package_name>
+
+# Compile using symbolic links (faster builds, especially for development)
+colcon build --symlink-install
+
 # Source the project, needed for ROS2
-source ~/ROS2_Docker_UI/ros2_ws/install/setup.bash
+source ~/ros2_ws/install/setup.bash
 
 ros2 topic list
 ros2 topic echo <topic_name>
