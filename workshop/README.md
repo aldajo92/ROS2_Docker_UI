@@ -49,6 +49,14 @@ ros2 topic echo <topic_name>
 ros2 node list
 ```
 
+## Execute navigation examples
+```bash
+ros2 launch waver_bringup sim_mapping.launch.py
+ros2 launch waver_bringup sim_map_server.launch.py
+ros2 launch waver_bringup sim_localization.launch.py
+ros2 launch waver_bringup sim_navigation.launch.py
+```
+
 ## Publisher Subscriber Tutorial
 - [Understanding topics — ROS 2 Documentation: Humble documentation](https://docs.ros.org/en/humble/Tutorials/Beginner-CLI-Tools/Understanding-ROS2-Topics/Understanding-ROS2-Topics.html)
 
