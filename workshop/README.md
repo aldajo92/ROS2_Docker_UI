@@ -49,11 +49,29 @@ ros2 topic echo <topic_name>
 ros2 node list
 ```
 
-## Execute navigation examples
+## Navigation Examples
+Execute **one at a time** (each launches Gazebo + RViz). If you want to run a new simulation, close the previous one with CTRL+C Typical workflow: mapping → map_server → localization → navigation.
+
+Use them in a floating terminal (outside of the container) with `./ros2_scripts/teleop.sh`
+
+
+- Create map with SLAM (use teleop to explore)
 ```bash
 ros2 launch waver_bringup sim_mapping.launch.py
+```
+
+- Load and view saved map
+```bash
 ros2 launch waver_bringup sim_map_server.launch.py
+```
+
+- Test AMCL localization on map
+```bash
 ros2 launch waver_bringup sim_localization.launch.py
+```
+
+- Full Nav2 autonomous navigation
+```bash
 ros2 launch waver_bringup sim_navigation.launch.py
 ```
 

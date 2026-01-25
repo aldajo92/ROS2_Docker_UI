@@ -64,4 +64,6 @@ ros2_ws/build/
 ros2_ws/install/
 ros2_ws/log/
 
+.ignore/
+
 # End of https://www.toptal.com/developers/gitignore/api/ros
