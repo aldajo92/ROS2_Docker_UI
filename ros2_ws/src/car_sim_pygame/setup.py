@@ -30,6 +30,8 @@ setup(
     entry_points={
         'console_scripts': [
             'car_sim_pygame_node = car_sim_pygame.car_sim_pygame_node:main',
+            'dwa_planner_node = car_sim_pygame.dwa_planner_node:main',
+            'dwa_action_server_node = car_sim_pygame.dwa_action_server_node:main',
         ],
     },
 )

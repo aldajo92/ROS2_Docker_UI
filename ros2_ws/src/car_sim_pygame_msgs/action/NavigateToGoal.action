@@ -1,0 +1,18 @@
+# Goal
+float64 goal_x
+float64 goal_y
+float64 goal_tolerance 1.0
+---
+# Result
+bool success
+float64 final_distance
+float64 final_x
+float64 final_y
+---
+# Feedback
+float64 distance_to_goal
+float64 current_x
+float64 current_y
+float64 current_yaw
+float64 current_v
+float64 current_w

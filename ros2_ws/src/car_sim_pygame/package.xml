@@ -11,6 +11,7 @@
   <depend>geometry_msgs</depend>
   <depend>nav_msgs</depend>
   <depend>visualization_msgs</depend>
+  <depend>car_sim_pygame_msgs</depend>
 
   <exec_depend>ros2launch</exec_depend>
 
