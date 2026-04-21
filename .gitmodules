@@ -18,3 +18,6 @@
 	path = ros2_ws/src/waver_docking
 	url = https://github.com/aldajo92/waver_docking_ros2.git
 	branch = docking_refactor
+[submodule "ros2_ws/src/dwa_planner"]
+	path = ros2_ws/src/dwa_planner
+	url = https://github.com/kmilo7204/dwa_planner
