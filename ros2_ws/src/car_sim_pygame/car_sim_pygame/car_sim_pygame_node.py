@@ -52,6 +52,7 @@ class CarSimPygameNode(Node):
         self.declare_parameter('pixels_per_meter', 60.0)
         self.declare_parameter('obstacles_file', '')
         self.declare_parameter('map_yaml', '')
+        self.declare_parameter('odom_noise_sigma', 0.0)
 
         initial_x = self.get_parameter('initial_x').value
         initial_y = self.get_parameter('initial_y').value
@@ -62,6 +63,8 @@ class CarSimPygameNode(Node):
         trail_length = self.get_parameter('trail_length').value
         self.stop_on_release = self.get_parameter('stop_on_release').value
         self.ppm = self.get_parameter('pixels_per_meter').value
+
+        self.odom_noise_sigma = self.get_parameter('odom_noise_sigma').value
 
         self.state = np.array([initial_x, initial_y, initial_yaw, 0.0, 0.0])
         self.cmd_v = 0.0
@@ -230,13 +233,21 @@ class CarSimPygameNode(Node):
     # ── ROS2 publishers ──────────────────────────────────────────────
 
     def _publish_odometry(self, stamp):
+        sigma = self.odom_noise_sigma
+        if sigma > 0.0 and (self.state[3] != 0.0 or self.state[4] != 0.0):
+            noise_x = np.random.normal(0.0, sigma)
+            noise_y = np.random.normal(0.0, sigma)
+            noise_yaw = np.random.normal(0.0, sigma)
+        else:
+            noise_x = noise_y = noise_yaw = 0.0
+
         msg = Odometry()
         msg.header.stamp = stamp
         msg.header.frame_id = 'odom'
         msg.child_frame_id = 'base_link'
-        msg.pose.pose.position.x = float(self.state[0])
-        msg.pose.pose.position.y = float(self.state[1])
-        msg.pose.pose.orientation = yaw_to_quaternion(self.state[2])
+        msg.pose.pose.position.x = float(self.state[0]) + noise_x
+        msg.pose.pose.position.y = float(self.state[1]) + noise_y
+        msg.pose.pose.orientation = yaw_to_quaternion(self.state[2] + noise_yaw)
         msg.twist.twist.linear.x = float(self.state[3])
         msg.twist.twist.angular.z = float(self.state[4])
         self.odom_pub.publish(msg)

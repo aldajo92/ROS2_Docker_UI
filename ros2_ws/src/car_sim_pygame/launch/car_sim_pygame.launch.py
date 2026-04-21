@@ -25,6 +25,8 @@ def generate_launch_description():
         DeclareLaunchArgument('trail_length', default_value='500'),
         DeclareLaunchArgument('stop_on_release', default_value='true'),
         DeclareLaunchArgument('pixels_per_meter', default_value='20.0'),
+        DeclareLaunchArgument('odom_noise_sigma', default_value='0.0',
+                              description='Std-dev of Gaussian noise added to published odometry'),
 
         Node(
             package='car_sim_pygame',
@@ -42,6 +44,7 @@ def generate_launch_description():
                 'trail_length': LaunchConfiguration('trail_length'),
                 'stop_on_release': LaunchConfiguration('stop_on_release'),
                 'pixels_per_meter': LaunchConfiguration('pixels_per_meter'),
+                'odom_noise_sigma': LaunchConfiguration('odom_noise_sigma'),
             }],
         ),
     ])
