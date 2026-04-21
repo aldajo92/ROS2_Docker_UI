@@ -26,6 +26,8 @@ COLOR_HEADING = (255, 60, 60)
 COLOR_TRAIL = (255, 80, 80)
 COLOR_ORIGIN = (80, 200, 80)
 COLOR_HUD_TEXT = (220, 220, 220)
+COLOR_PREDICTED_PATH = (100, 200, 255)
+COLOR_GOAL = (50, 120, 255)
 
 
 def yaw_to_quaternion(yaw):
@@ -77,8 +79,17 @@ class CarSimPygameNode(Node):
         else:
             self.obstacles = self._load_obstacles(obstacles_file)
 
+        self.predicted_path = []
+        self.goal_pos = None
+
         self.cmd_vel_sub = self.create_subscription(
             Twist, '/cmd_vel', self._cmd_vel_callback, 10
+        )
+        self.predicted_path_sub = self.create_subscription(
+            Path, '/dwa/predicted_path', self._predicted_path_callback, 10
+        )
+        self.goal_sub = self.create_subscription(
+            PoseStamped, '/dwa/goal', self._goal_callback, 10
         )
 
         self.odom_pub = self.create_publisher(Odometry, '/odom', 10)
@@ -90,6 +101,8 @@ class CarSimPygameNode(Node):
         self.cam_offset_y = 0.0
         self.dragging = False
         self.drag_last_pos = (0, 0)
+        self.ppm_default = self.ppm
+        self.zoom_factor = 1.1
 
         self.sim_timer = self.create_timer(self.dt, self._simulation_step)
 
@@ -184,6 +197,14 @@ class CarSimPygameNode(Node):
         self.cmd_v = msg.linear.x
         self.cmd_w = msg.angular.z
         self.last_cmd_time = self.get_clock().now()
+
+    def _predicted_path_callback(self, msg: Path):
+        self.predicted_path = [
+            (p.pose.position.x, p.pose.position.y) for p in msg.poses
+        ]
+
+    def _goal_callback(self, msg: PoseStamped):
+        self.goal_pos = (msg.pose.position.x, msg.pose.position.y)
 
     def _simulation_step(self):
         if self.stop_on_release:
@@ -330,13 +351,34 @@ class CarSimPygameNode(Node):
         hy = ry - int(arrow_len * math.sin(self.state[2]))
         pygame.draw.line(surface, COLOR_HEADING, (rx, ry), (hx, hy), 3)
 
+        # DWA predicted path
+        if len(self.predicted_path) > 1:
+            pts = [self.world_to_screen(px, py, cam_x, cam_y)
+                   for px, py in self.predicted_path]
+            pygame.draw.lines(surface, COLOR_PREDICTED_PATH, False, pts, 2)
+
+        # Goal marker
+        if self.goal_pos is not None:
+            gx, gy = self.world_to_screen(
+                self.goal_pos[0], self.goal_pos[1], cam_x, cam_y
+            )
+            pygame.draw.circle(surface, COLOR_GOAL, (gx, gy), 10)
+            pygame.draw.circle(surface, COLOR_GOAL, (gx, gy), 14, 2)
+
         # HUD
         lines = [
             f'v = {self.state[3]:.2f} m/s',
             f'w = {math.degrees(self.state[4]):.1f} deg/s',
             f'pos = ({self.state[0]:.2f}, {self.state[1]:.2f})',
             f'yaw = {math.degrees(self.state[2]):.1f} deg',
+            f'zoom = {self.ppm:.0f} px/m',
         ]
+        if self.goal_pos is not None:
+            dist = math.hypot(
+                self.state[0] - self.goal_pos[0],
+                self.state[1] - self.goal_pos[1],
+            )
+            lines.append(f'goal = ({self.goal_pos[0]:.1f}, {self.goal_pos[1]:.1f})  d={dist:.2f}m')
         for i, text in enumerate(lines):
             surf = font.render(text, True, COLOR_HUD_TEXT)
             surface.blit(surf, (10, 10 + i * 22))
@@ -366,6 +408,7 @@ def main(args=None):
                 elif event.key == pygame.K_c:
                     node.cam_offset_x = 0.0
                     node.cam_offset_y = 0.0
+                    node.ppm = node.ppm_default
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 2:
                 node.dragging = True
                 node.drag_last_pos = event.pos
@@ -377,6 +420,12 @@ def main(args=None):
                 node.cam_offset_x -= dx / node.ppm
                 node.cam_offset_y += dy / node.ppm
                 node.drag_last_pos = event.pos
+            elif event.type == pygame.MOUSEWHEEL:
+                if event.y > 0:
+                    node.ppm *= node.zoom_factor
+                elif event.y < 0:
+                    node.ppm /= node.zoom_factor
+                node.ppm = max(1.0, min(node.ppm, 500.0))
 
         node.draw(screen, font)
         pygame.display.flip()
