@@ -39,6 +39,9 @@ RUN apt update && apt install -y \
 RUN apt update && apt install -y \
     python3-scipy
 
+RUN apt update && apt install -y \
+    python3-pygame
+
 # RUN apt update && apt install -y \
 #     ros-${ROS_DISTRO}-turtlesim
 
