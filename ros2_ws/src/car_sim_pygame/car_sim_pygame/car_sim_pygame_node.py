@@ -3,8 +3,10 @@ import os
 import threading
 from collections import deque
 
+import cv2
 import numpy as np
 import pygame
+import yaml
 
 import rclpy
 from rclpy.node import Node
@@ -47,6 +49,7 @@ class CarSimPygameNode(Node):
         self.declare_parameter('stop_on_release', True)
         self.declare_parameter('pixels_per_meter', 60.0)
         self.declare_parameter('obstacles_file', '')
+        self.declare_parameter('map_yaml', '')
 
         initial_x = self.get_parameter('initial_x').value
         initial_y = self.get_parameter('initial_y').value
@@ -66,8 +69,13 @@ class CarSimPygameNode(Node):
 
         self.trail = deque(maxlen=trail_length)
 
+        map_yaml = self.get_parameter('map_yaml').value
         obstacles_file = self.get_parameter('obstacles_file').value
-        self.obstacles = self._load_obstacles(obstacles_file)
+
+        if map_yaml:
+            self.obstacles = self._load_obstacles_from_map(map_yaml)
+        else:
+            self.obstacles = self._load_obstacles(obstacles_file)
 
         self.cmd_vel_sub = self.create_subscription(
             Twist, '/cmd_vel', self._cmd_vel_callback, 10
@@ -76,6 +84,12 @@ class CarSimPygameNode(Node):
         self.odom_pub = self.create_publisher(Odometry, '/odom', 10)
         self.trajectory_pub = self.create_publisher(Path, '/trajectory', 10)
         self.markers_pub = self.create_publisher(MarkerArray, '/markers', 10)
+
+        # Camera offset from robot (for middle-click drag)
+        self.cam_offset_x = 0.0
+        self.cam_offset_y = 0.0
+        self.dragging = False
+        self.drag_last_pos = (0, 0)
 
         self.sim_timer = self.create_timer(self.dt, self._simulation_step)
 
@@ -109,6 +123,57 @@ class CarSimPygameNode(Node):
                         continue
 
         self.get_logger().info(f'Loaded {len(points)} obstacles from {filepath}')
+        if not points:
+            return np.empty((0, 2))
+        return np.array(points)
+
+    def _load_obstacles_from_map(self, yaml_path: str) -> np.ndarray:
+        if not os.path.isfile(yaml_path):
+            self.get_logger().error(f'Map YAML not found: {yaml_path}')
+            return np.empty((0, 2))
+
+        with open(yaml_path, 'r') as f:
+            map_config = yaml.safe_load(f)
+
+        image_name = map_config.get('image', '')
+        resolution = float(map_config.get('resolution', 1.0))
+        origin = map_config.get('origin', [0.0, 0.0])
+        origin_x, origin_y = float(origin[0]), float(origin[1])
+
+        image_path = os.path.join(os.path.dirname(yaml_path), image_name)
+        if not os.path.isfile(image_path):
+            self.get_logger().error(f'Map image not found: {image_path}')
+            return np.empty((0, 2))
+
+        img = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
+        if img is None:
+            self.get_logger().error(f'Failed to read image: {image_path}')
+            return np.empty((0, 2))
+
+        h, w = img.shape[:2]
+        points = []
+
+        if img.shape[2] == 4:
+            alpha = img[:, :, 3]
+            for row in range(h):
+                for col in range(w):
+                    if alpha[row, col] > 0:
+                        x = origin_x + col * resolution
+                        y = origin_y + (h - 1 - row) * resolution
+                        points.append([x, y])
+        else:
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            for row in range(h):
+                for col in range(w):
+                    if gray[row, col] < 128:
+                        x = origin_x + col * resolution
+                        y = origin_y + (h - 1 - row) * resolution
+                        points.append([x, y])
+
+        self.get_logger().info(
+            f'Loaded {len(points)} obstacles from map '
+            f'({w}x{h}, res={resolution}, origin=[{origin_x}, {origin_y}])'
+        )
         if not points:
             return np.empty((0, 2))
         return np.array(points)
@@ -212,8 +277,8 @@ class CarSimPygameNode(Node):
         return sx, sy
 
     def draw(self, surface, font):
-        cam_x = float(self.state[0])
-        cam_y = float(self.state[1])
+        cam_x = float(self.state[0]) + self.cam_offset_x
+        cam_y = float(self.state[1]) + self.cam_offset_y
 
         surface.fill(COLOR_BG)
 
@@ -295,8 +360,23 @@ def main(args=None):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
-            elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                running = False
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    running = False
+                elif event.key == pygame.K_c:
+                    node.cam_offset_x = 0.0
+                    node.cam_offset_y = 0.0
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 2:
+                node.dragging = True
+                node.drag_last_pos = event.pos
+            elif event.type == pygame.MOUSEBUTTONUP and event.button == 2:
+                node.dragging = False
+            elif event.type == pygame.MOUSEMOTION and node.dragging:
+                dx = event.pos[0] - node.drag_last_pos[0]
+                dy = event.pos[1] - node.drag_last_pos[1]
+                node.cam_offset_x -= dx / node.ppm
+                node.cam_offset_y += dy / node.ppm
+                node.drag_last_pos = event.pos
 
         node.draw(screen, font)
         pygame.display.flip()
