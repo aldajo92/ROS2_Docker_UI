@@ -29,6 +29,9 @@ def generate_launch_description():
         'chassis_radius_sim', default_value='0.25')
     trail_arg = DeclareLaunchArgument('trail_length', default_value='500')
     ppm_arg = DeclareLaunchArgument('pixels_per_meter', default_value='60.0')
+    noise_arg = DeclareLaunchArgument(
+        'odom_noise_sigma', default_value='0.0',
+        description='Std-dev of Gaussian noise added to published odometry (x, y, yaw)')
 
     # DWA action server args
     dwa_freq_arg = DeclareLaunchArgument('dwa_frequency', default_value='10.0')
@@ -61,6 +64,7 @@ def generate_launch_description():
             'trail_length': LaunchConfiguration('trail_length'),
             'stop_on_release': False,
             'pixels_per_meter': LaunchConfiguration('pixels_per_meter'),
+            'odom_noise_sigma': LaunchConfiguration('odom_noise_sigma'),
         }],
     )
 
@@ -97,6 +101,7 @@ def generate_launch_description():
         chassis_radius_sim_arg,
         trail_arg,
         ppm_arg,
+        noise_arg,
         dwa_freq_arg,
         heading_arg,
         velocity_arg,
