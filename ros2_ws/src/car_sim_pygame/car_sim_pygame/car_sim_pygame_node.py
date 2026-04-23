@@ -16,6 +16,7 @@ from visualization_msgs.msg import Marker, MarkerArray
 
 WINDOW_W = 800
 WINDOW_H = 800
+WINDOW_STEP = 100
 SDL_WINDOW_ALWAYS_ON_TOP = 0x00008000
 
 COLOR_BG = (30, 30, 30)
@@ -106,6 +107,9 @@ class CarSimPygameNode(Node):
         self.drag_last_pos = (0, 0)
         self.ppm_default = self.ppm
         self.zoom_factor = 1.1
+
+        self.window_w = WINDOW_W
+        self.window_h = WINDOW_H
 
         self.sim_timer = self.create_timer(self.dt, self._simulation_step)
 
@@ -304,8 +308,8 @@ class CarSimPygameNode(Node):
     # ── Pygame rendering ─────────────────────────────────────────────
 
     def world_to_screen(self, wx, wy, cam_x, cam_y):
-        sx = int((wx - cam_x) * self.ppm + WINDOW_W / 2)
-        sy = int(-(wy - cam_y) * self.ppm + WINDOW_H / 2)
+        sx = int((wx - cam_x) * self.ppm + self.window_w / 2)
+        sy = int(-(wy - cam_y) * self.ppm + self.window_h / 2)
         return sx, sy
 
     def draw(self, surface, font):
@@ -316,8 +320,8 @@ class CarSimPygameNode(Node):
 
         # Grid
         grid_step = 1.0
-        world_half_w = (WINDOW_W / 2) / self.ppm
-        world_half_h = (WINDOW_H / 2) / self.ppm
+        world_half_w = (self.window_w / 2) / self.ppm
+        world_half_h = (self.window_h / 2) / self.ppm
         x_min = math.floor(cam_x - world_half_w)
         x_max = math.ceil(cam_x + world_half_w)
         y_min = math.floor(cam_y - world_half_h)
@@ -326,12 +330,12 @@ class CarSimPygameNode(Node):
         gx = x_min
         while gx <= x_max:
             sx, _ = self.world_to_screen(gx, 0, cam_x, cam_y)
-            pygame.draw.line(surface, COLOR_GRID, (sx, 0), (sx, WINDOW_H))
+            pygame.draw.line(surface, COLOR_GRID, (sx, 0), (sx, self.window_h))
             gx += grid_step
         gy = y_min
         while gy <= y_max:
             _, sy = self.world_to_screen(0, gy, cam_x, cam_y)
-            pygame.draw.line(surface, COLOR_GRID, (0, sy), (WINDOW_W, sy))
+            pygame.draw.line(surface, COLOR_GRID, (0, sy), (self.window_w, sy))
             gy += grid_step
 
         # Origin cross
@@ -390,9 +394,10 @@ class CarSimPygameNode(Node):
                 self.state[1] - self.goal_pos[1],
             )
             lines.append(f'goal = ({self.goal_pos[0]:.1f}, {self.goal_pos[1]:.1f})  d={dist:.2f}m')
+        line_h = font.get_linesize()
         for i, text in enumerate(lines):
             surf = font.render(text, True, COLOR_HUD_TEXT)
-            surface.blit(surf, (10, 10 + i * 22))
+            surface.blit(surf, (10, 10 + i * line_h))
 
 
 def main(args=None):
@@ -406,7 +411,8 @@ def main(args=None):
     screen = pygame.display.set_mode((WINDOW_W, WINDOW_H), SDL_WINDOW_ALWAYS_ON_TOP)
     pygame.display.set_caption('Car Teleop Sim (Pygame)')
     clock = pygame.time.Clock()
-    font = pygame.font.SysFont('monospace', 16)
+    font_size = 16
+    font = pygame.font.SysFont('monospace', font_size)
 
     running = True
     while running:
@@ -420,6 +426,22 @@ def main(args=None):
                     node.cam_offset_x = 0.0
                     node.cam_offset_y = 0.0
                     node.ppm = node.ppm_default
+                elif event.key in (pygame.K_PLUS, pygame.K_EQUALS):
+                    node.window_w += WINDOW_STEP
+                    node.window_h += WINDOW_STEP
+                    screen = pygame.display.set_mode(
+                        (node.window_w, node.window_h), SDL_WINDOW_ALWAYS_ON_TOP
+                    )
+                    font_size += 2
+                    font = pygame.font.SysFont('monospace', font_size)
+                elif event.key == pygame.K_MINUS:
+                    node.window_w = max(WINDOW_W, node.window_w - WINDOW_STEP)
+                    node.window_h = max(WINDOW_H, node.window_h - WINDOW_STEP)
+                    screen = pygame.display.set_mode(
+                        (node.window_w, node.window_h), SDL_WINDOW_ALWAYS_ON_TOP
+                    )
+                    font_size = max(16, font_size - 2)
+                    font = pygame.font.SysFont('monospace', font_size)
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 2:
                 node.dragging = True
                 node.drag_last_pos = event.pos
