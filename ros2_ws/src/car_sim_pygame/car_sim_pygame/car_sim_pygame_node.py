@@ -58,6 +58,25 @@ COLOR_SNIPPET_TEXT = (170, 210, 170)
 BUTTON_SIZE_PX = 48
 BUTTON_MARGIN_PX = 12
 
+# On-screen joystick (bottom-right). The base scales softly with the window
+# so it stays comfortably usable at different window sizes.
+JOYSTICK_BASE_RADIUS_PX = 90
+JOYSTICK_MIN_BASE_RADIUS_PX = 60
+JOYSTICK_MARGIN_PX = 24
+JOYSTICK_MAX_V = 1.0   # forward/back scaling applied to knob y-offset
+JOYSTICK_MAX_W = 1.0   # yaw-rate scaling applied to knob x-offset
+
+COLOR_JOYSTICK_BASE = (35, 35, 35)
+COLOR_JOYSTICK_BASE_BORDER = (110, 110, 110)
+COLOR_JOYSTICK_CROSS = (70, 70, 70)
+COLOR_JOYSTICK_KNOB = (170, 170, 170)
+COLOR_JOYSTICK_KNOB_ACTIVE = (100, 200, 255)
+COLOR_JOYSTICK_KNOB_BORDER = (40, 40, 40)
+COLOR_CHECKBOX_BG = (45, 45, 45)
+COLOR_CHECKBOX_BG_ON = (70, 140, 210)
+COLOR_CHECKBOX_BORDER = (120, 120, 120)
+COLOR_CHECKBOX_TICK = (240, 240, 240)
+
 
 class View:
     """Viewport state for the 2D pygame renderer.
@@ -319,6 +338,13 @@ class CarSimPygameNode(Node):
         self.error_filename = ''
         self.error_detail = ''
         self.error_dismiss_rect = pygame.Rect(0, 0, 0, 0)
+
+        # On-screen joystick (bottom-right; toggled via settings checkbox).
+        self.show_joystick = False
+        self.joystick_active = False
+        self.joystick_knob_dx = 0.0
+        self.joystick_knob_dy = 0.0
+        self.joystick_checkbox_rect = pygame.Rect(0, 0, 0, 0)
 
         self.sim_timer = self.create_timer(self.dt, self._simulation_step)
 
@@ -736,6 +762,105 @@ class CarSimPygameNode(Node):
             self.get_logger().warn(f'Failed to load gear icon: {e}')
             self._gear_icon_raw = None
 
+    # ── On-screen joystick ──────────────────────────────────────────
+
+    def _joystick_base_radius(self) -> int:
+        """Base circle radius. Scales mildly with window size."""
+        base = max(
+            JOYSTICK_MIN_BASE_RADIUS_PX,
+            min(self.view.window_w, self.view.window_h) // 10,
+        )
+        return int(base)
+
+    def _joystick_center(self) -> tuple:
+        """(cx, cy) center of the joystick base in window coordinates."""
+        r = self._joystick_base_radius()
+        cx = self.view.window_w - JOYSTICK_MARGIN_PX - r
+        cy = self.view.window_h - JOYSTICK_MARGIN_PX - r
+        return cx, cy
+
+    def _joystick_hit(self, pos) -> bool:
+        if not self.show_joystick:
+            return False
+        cx, cy = self._joystick_center()
+        r = self._joystick_base_radius()
+        dx = pos[0] - cx
+        dy = pos[1] - cy
+        return dx * dx + dy * dy <= r * r
+
+    def start_joystick_drag(self, pos) -> None:
+        self.joystick_active = True
+        self._update_joystick_knob(pos)
+
+    def _update_joystick_knob(self, pos) -> None:
+        cx, cy = self._joystick_center()
+        r = float(self._joystick_base_radius())
+        dx = pos[0] - cx
+        dy = pos[1] - cy
+        dist = math.hypot(dx, dy)
+        if dist > r and dist > 0:
+            dx *= r / dist
+            dy *= r / dist
+        self.joystick_knob_dx = dx
+        self.joystick_knob_dy = dy
+        # Map to normalized [-1, 1]; y is inverted so pushing up = +v.
+        nx = dx / r
+        ny = -dy / r
+        self.cmd_v = ny * JOYSTICK_MAX_V
+        self.cmd_w = -nx * JOYSTICK_MAX_W
+        self.last_cmd_time = self.get_clock().now()
+
+    def release_joystick(self) -> None:
+        self.joystick_active = False
+        self.joystick_knob_dx = 0.0
+        self.joystick_knob_dy = 0.0
+        self.cmd_v = 0.0
+        self.cmd_w = 0.0
+        self.last_cmd_time = self.get_clock().now()
+
+    def _draw_joystick(self, surface) -> None:
+        if not self.show_joystick:
+            return
+        cx, cy = self._joystick_center()
+        r = self._joystick_base_radius()
+        knob_r = max(16, r // 2)
+
+        # Base: filled circle with a subtle border.
+        base_surf = pygame.Surface((r * 2 + 4, r * 2 + 4), pygame.SRCALPHA)
+        pygame.draw.circle(
+            base_surf, (*COLOR_JOYSTICK_BASE, 210), (r + 2, r + 2), r,
+        )
+        pygame.draw.circle(
+            base_surf, COLOR_JOYSTICK_BASE_BORDER, (r + 2, r + 2), r, width=2,
+        )
+        # Cross guides for orientation.
+        pygame.draw.line(
+            base_surf, COLOR_JOYSTICK_CROSS,
+            (r + 2 - r // 2, r + 2), (r + 2 + r // 2, r + 2), 1,
+        )
+        pygame.draw.line(
+            base_surf, COLOR_JOYSTICK_CROSS,
+            (r + 2, r + 2 - r // 2), (r + 2, r + 2 + r // 2), 1,
+        )
+        surface.blit(base_surf, (cx - r - 2, cy - r - 2))
+
+        # Knob: positioned by joystick offset.
+        kx = int(cx + self.joystick_knob_dx)
+        ky = int(cy + self.joystick_knob_dy)
+        knob_color = (
+            COLOR_JOYSTICK_KNOB_ACTIVE
+            if self.joystick_active else COLOR_JOYSTICK_KNOB
+        )
+        pygame.draw.circle(surface, knob_color, (kx, ky), knob_r)
+        pygame.draw.circle(
+            surface, COLOR_JOYSTICK_KNOB_BORDER, (kx, ky), knob_r, width=2,
+        )
+
+    def toggle_show_joystick(self) -> None:
+        self.show_joystick = not self.show_joystick
+        if not self.show_joystick and self.joystick_active:
+            self.release_joystick()
+
     def _draw_settings_button(self, surface):
         size = BUTTON_SIZE_PX
         x = self.view.window_w - size - BUTTON_MARGIN_PX
@@ -975,9 +1100,11 @@ class CarSimPygameNode(Node):
         )
         dropdown_btn_h = line_h + 6
 
+        joystick_label_text = 'show joystick'
         label_w = max(
             [body_font.size(k)[0] for k, _ in rows]
-            + [body_font.size(map_label_text)[0]],
+            + [body_font.size(map_label_text)[0],
+               body_font.size(joystick_label_text)[0]],
         )
         value_w = max(
             [body_font.size(v)[0] for _, v in rows] + [dropdown_btn_w],
@@ -1005,12 +1132,15 @@ class CarSimPygameNode(Node):
         divider_gap = max(line_h // 2, 14)  # vertical room around the separator line
         title_gap = max(line_h // 2, 12)
         map_row_h = max(dropdown_btn_h, line_h)
+        checkbox_size = max(line_h, 18)
+        checkbox_row_h = max(checkbox_size, line_h)
         panel_h = (
             pad                               # top padding
             + title_h
             + title_gap                       # title/body gap
             + len(rows) * line_h
             + map_row_h                       # map dropdown row
+            + checkbox_row_h                  # show-joystick checkbox row
             + divider_gap
             + line_h                          # path line
             + divider_gap
@@ -1079,6 +1209,39 @@ class CarSimPygameNode(Node):
              btn_y + (dropdown_btn_h - caret_surf.get_height()) // 2),
         )
         y += map_row_h
+
+        # Joystick visibility checkbox row.
+        cb_row_y = y
+        surface.blit(
+            body_font.render(joystick_label_text, True, COLOR_HUD_TEXT),
+            (x_left, cb_row_y + (checkbox_row_h - line_h) // 2),
+        )
+        cb_x = x_left + label_w + col_gap
+        cb_y = cb_row_y + (checkbox_row_h - checkbox_size) // 2
+        self.joystick_checkbox_rect = pygame.Rect(
+            cb_x, cb_y, checkbox_size, checkbox_size,
+        )
+        cb_fill = (
+            COLOR_CHECKBOX_BG_ON if self.show_joystick else COLOR_CHECKBOX_BG
+        )
+        pygame.draw.rect(
+            surface, cb_fill, self.joystick_checkbox_rect, border_radius=3,
+        )
+        pygame.draw.rect(
+            surface, COLOR_CHECKBOX_BORDER,
+            self.joystick_checkbox_rect, width=1, border_radius=3,
+        )
+        if self.show_joystick:
+            # Draw a simple check mark inside the box.
+            inset = max(3, checkbox_size // 5)
+            p1 = (cb_x + inset, cb_y + checkbox_size // 2)
+            p2 = (cb_x + checkbox_size // 2 - 1,
+                  cb_y + checkbox_size - inset - 1)
+            p3 = (cb_x + checkbox_size - inset, cb_y + inset)
+            pygame.draw.lines(
+                surface, COLOR_CHECKBOX_TICK, False, [p1, p2, p3], 2,
+            )
+        y += checkbox_row_h
 
         # Divider above the path line.
         y += divider_gap // 2
@@ -1239,6 +1402,9 @@ class CarSimPygameNode(Node):
             surf = font.render(text, True, COLOR_HUD_TEXT)
             surface.blit(surf, (10, 10 + i * line_h))
 
+        # On-screen joystick sits on top of the world but below overlays.
+        self._draw_joystick(surface)
+
         # Settings UI (drawn on top of the HUD).
         self._draw_settings_button(surface)
         if self.settings_open:
@@ -1331,8 +1497,15 @@ def main(args=None):
                     elif node.map_dropdown_button_rect.collidepoint(event.pos):
                         if node.available_maps:
                             node.map_dropdown_open = True
+                    elif node.joystick_checkbox_rect.collidepoint(event.pos):
+                        node.toggle_show_joystick()
                     else:
                         node.settings_open = False
+                elif node._joystick_hit(event.pos):
+                    node.start_joystick_drag(event.pos)
+            elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                if node.joystick_active:
+                    node.release_joystick()
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 2:
                 node.view.start_drag(event.pos)
             elif event.type == pygame.MOUSEBUTTONUP and event.button == 2:
@@ -1347,6 +1520,8 @@ def main(args=None):
                         if r.collidepoint(event.pos):
                             node.map_dropdown_hover_index = i
                             break
+                if node.joystick_active:
+                    node._update_joystick_knob(event.pos)
                 node.view.update_drag(event.pos)
             elif event.type == pygame.MOUSEWHEEL:
                 if event.y > 0:
