@@ -65,7 +65,6 @@ ENV HOME=/home/dockeruser
 
 RUN echo "alias bros2='cd ${HOME}/ros2_ws && source /opt/ros/${ROS_DISTRO}/setup.bash && colcon build --symlink-install && source ${HOME}/ros2_ws/install/setup.bash'" >> ~/.bashrc
 RUN echo "alias sros2='source /opt/ros/${ROS_DISTRO}/setup.bash && source ${HOME}/ros2_ws/install/setup.bash'" >> ~/.bashrc
-RUN echo "alias run_dwa='cd ${HOME}/ros2_ws/src/dwa_planner && python3 dwa.py'" >> ~/.bashrc
 RUN echo "echo 'Welcome to ROS2 docker container'" >> ~/.bashrc
 RUN echo "echo 'Leaving the ROS2 Docker container. Goodbye!'" >> ~/.bash_logout
 
