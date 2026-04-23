@@ -50,6 +50,9 @@ COLOR_BUTTON_BG_HOVER = (70, 70, 70)
 COLOR_BUTTON_BORDER = (120, 120, 120)
 COLOR_OVERLAY_BG = (15, 15, 15)
 COLOR_OVERLAY_BORDER = (90, 90, 90)
+COLOR_ERROR_BORDER = (220, 80, 80)
+COLOR_ERROR_TEXT = (255, 120, 120)
+COLOR_SNIPPET_TEXT = (170, 210, 170)
 
 # Settings button is a fixed size regardless of zoom.
 BUTTON_SIZE_PX = 48
@@ -232,6 +235,7 @@ class CarSimPygameNode(Node):
         self.declare_parameter('pixels_per_meter', 60.0)
         self.declare_parameter('obstacles_file', '')
         self.declare_parameter('map_yaml', '')
+        self.declare_parameter('maps_dir', '')
         self.declare_parameter('odom_noise_sigma', 0.0)
         self.declare_parameter('view_file', '')
 
@@ -261,11 +265,23 @@ class CarSimPygameNode(Node):
 
         map_yaml = self.get_parameter('map_yaml').value
         obstacles_file = self.get_parameter('obstacles_file').value
+        maps_dir = self.get_parameter('maps_dir').value
 
         if map_yaml:
             self.obstacles = self._load_obstacles_from_map(map_yaml)
+            self.current_map_path = map_yaml
+        elif obstacles_file:
+            self.obstacles = self._load_obstacles(obstacles_file)
+            self.current_map_path = obstacles_file
         else:
             self.obstacles = self._load_obstacles(obstacles_file)
+            self.current_map_path = ''
+
+        # Discover available maps from ``maps_dir`` (or the installed share
+        # directory by default) so the settings overlay can offer a dropdown.
+        self.maps_dir = self._resolve_maps_dir(maps_dir)
+        self.available_maps = self._discover_maps(self.maps_dir)
+        self._ensure_current_map_in_list()
 
         self.predicted_path = []
         self.goal_pos = None
@@ -292,6 +308,18 @@ class CarSimPygameNode(Node):
         self.settings_button_hover = False
         self.settings_open = False
 
+        # Map dropdown state, rendered inside the settings overlay.
+        self.map_dropdown_open = False
+        self.map_dropdown_button_rect = pygame.Rect(0, 0, 0, 0)
+        self.map_dropdown_option_rects = []
+        self.map_dropdown_hover_index = -1
+
+        # Error modal (used e.g. when a map YAML file is malformed).
+        self.error_open = False
+        self.error_filename = ''
+        self.error_detail = ''
+        self.error_dismiss_rect = pygame.Rect(0, 0, 0, 0)
+
         self.sim_timer = self.create_timer(self.dt, self._simulation_step)
 
         self.get_logger().info(
@@ -300,6 +328,139 @@ class CarSimPygameNode(Node):
         )
 
         self._init_view_file()
+
+    # ── Map discovery / switching ───────────────────────────────────
+
+    def _resolve_maps_dir(self, override: str) -> str:
+        """Return the directory to scan for map files.
+
+        If ``override`` is set (via ROS parameter) it is used as-is,
+        otherwise we fall back to the installed ``share/car_sim_pygame/map``
+        directory so a fresh clone just works.
+        """
+        if override:
+            return override
+        try:
+            share = get_package_share_directory('car_sim_pygame')
+            return os.path.join(share, 'map')
+        except Exception:
+            return ''
+
+    def _discover_maps(self, directory: str) -> list:
+        """Return the list of ``.yaml``/``.yml`` map files in ``directory``.
+
+        Only YAML files are exposed through the UI dropdown. Malformed or
+        unreadable YAMLs are still listed so the user can select them and
+        see a descriptive error (instead of the file silently disappearing).
+        """
+        if not directory or not os.path.isdir(directory):
+            return []
+        entries = []
+        for name in sorted(os.listdir(directory)):
+            path = os.path.join(directory, name)
+            if not os.path.isfile(path):
+                continue
+            lower = name.lower()
+            if lower.endswith('.yaml') or lower.endswith('.yml'):
+                entries.append({'label': name, 'path': path, 'kind': 'yaml'})
+        return entries
+
+    def _ensure_current_map_in_list(self) -> None:
+        """Make sure the currently active YAML map is in the dropdown list."""
+        if not self.current_map_path:
+            return
+        if not self.current_map_path.lower().endswith(('.yaml', '.yml')):
+            # CSV obstacle files are not managed by the dropdown.
+            return
+        current = os.path.abspath(self.current_map_path)
+        for entry in self.available_maps:
+            if os.path.abspath(entry['path']) == current:
+                return
+        self.available_maps.insert(0, {
+            'label': os.path.basename(self.current_map_path),
+            'path': self.current_map_path,
+            'kind': 'yaml',
+        })
+
+    @staticmethod
+    def _validate_map_yaml(path: str):
+        """Validate a map YAML file.
+
+        Returns ``(True, None)`` if the file conforms to the documented
+        format, or ``(False, error_message)`` with a short human-readable
+        description of what is wrong.
+        """
+        if not os.path.isfile(path):
+            return False, f'File not found: {path}'
+
+        try:
+            with open(path, 'r') as f:
+                config = yaml.safe_load(f)
+        except yaml.YAMLError as e:
+            return False, f'YAML parse error: {e}'
+        except OSError as e:
+            return False, f'Could not read file: {e}'
+
+        if not isinstance(config, dict):
+            return False, 'Top-level YAML must be a mapping (key/value pairs).'
+
+        required = ('image', 'resolution', 'origin')
+        missing = [k for k in required if k not in config]
+        if missing:
+            return False, 'Missing required field(s): ' + ', '.join(missing)
+
+        image = config.get('image')
+        if not isinstance(image, str) or not image:
+            return False, "'image' must be a non-empty string (PNG filename)."
+
+        resolution = config.get('resolution')
+        if not isinstance(resolution, (int, float)) or isinstance(resolution, bool):
+            return False, "'resolution' must be a number (meters per pixel)."
+        if resolution <= 0:
+            return False, "'resolution' must be greater than 0."
+
+        origin = config.get('origin')
+        if (not isinstance(origin, (list, tuple))
+                or len(origin) < 2
+                or not all(isinstance(v, (int, float))
+                           and not isinstance(v, bool) for v in origin[:2])):
+            return False, "'origin' must be a list of two numbers, e.g. [0.0, 0.0]."
+
+        image_path = os.path.join(os.path.dirname(path), image)
+        if not os.path.isfile(image_path):
+            return False, f"Referenced image not found: {image_path}"
+
+        return True, None
+
+    def select_map(self, entry: dict) -> None:
+        """Switch the active map to the given dropdown entry.
+
+        Validates the YAML first; if invalid, surfaces an error modal and
+        leaves the current obstacles untouched.
+        """
+        path = entry['path']
+        ok, err = self._validate_map_yaml(path)
+        if not ok:
+            self.get_logger().error(f'Invalid map YAML {path}: {err}')
+            self._show_map_error(os.path.basename(path), err)
+            return
+        obstacles = self._load_obstacles_from_map(path)
+        self.obstacles = obstacles
+        self.current_map_path = path
+        self.get_logger().info(f'Switched map to {path}')
+
+    def _show_map_error(self, filename: str, detail: str) -> None:
+        """Open the error modal describing an invalid map file."""
+        self.error_filename = filename
+        self.error_detail = detail
+        self.error_open = True
+        # Make sure the dropdown doesn't linger underneath the modal.
+        self.map_dropdown_open = False
+
+    def dismiss_error(self) -> None:
+        self.error_open = False
+        self.error_filename = ''
+        self.error_detail = ''
 
     # ── Obstacle loading ────────────────────────────────────────────
 
@@ -618,6 +779,150 @@ class CarSimPygameNode(Node):
             text = text[1:]
         return ellipsis + text if text else ellipsis
 
+    def _draw_error_overlay(self, surface, font):
+        """Modal error dialog (e.g. for an invalid map YAML)."""
+        window_w = self.view.window_w
+        window_h = self.view.window_h
+
+        dim = pygame.Surface((window_w, window_h), pygame.SRCALPHA)
+        dim.fill((0, 0, 0, 200))
+        surface.blit(dim, (0, 0))
+
+        body_font = font
+        line_h = body_font.get_linesize()
+        pad = max(line_h, 16)
+        divider_gap = max(line_h // 2, 14)
+
+        font.set_bold(True)
+        title_surf = font.render('Invalid map file', True, COLOR_ERROR_TEXT)
+        font.set_bold(False)
+
+        subtitle_text = f'{self.error_filename}' if self.error_filename else ''
+        detail_text = self.error_detail or ''
+
+        hint_text = (
+            'Please follow the documented format in README.md '
+            '(section "Map formats"):'
+        )
+
+        snippet_lines = [
+            'image: map.png',
+            'resolution: 1.0',
+            'origin: [0.0, 0.0]',
+        ]
+
+        dismiss_text = 'Press ESC or click to dismiss'
+
+        max_text_w = max(window_w // 2, 480)
+        max_text_w = min(max_text_w, window_w - 80)
+
+        def wrap(text, max_px):
+            if not text:
+                return []
+            words = text.split(' ')
+            lines, cur = [], ''
+            for w in words:
+                candidate = (cur + ' ' + w).strip() if cur else w
+                if body_font.size(candidate)[0] <= max_px or not cur:
+                    cur = candidate
+                else:
+                    lines.append(cur)
+                    cur = w
+            if cur:
+                lines.append(cur)
+            return lines
+
+        detail_lines = wrap(detail_text, max_text_w)
+        hint_lines = wrap(hint_text, max_text_w)
+
+        all_widths = [title_surf.get_width(), body_font.size(subtitle_text)[0]]
+        all_widths += [body_font.size(l)[0] for l in detail_lines]
+        all_widths += [body_font.size(l)[0] for l in hint_lines]
+        all_widths += [body_font.size(l)[0] for l in snippet_lines]
+        all_widths.append(body_font.size(dismiss_text)[0])
+        content_w = max(all_widths)
+        panel_w = min(content_w + 2 * pad, window_w - 40)
+
+        body_rows = (
+            (1 if subtitle_text else 0)
+            + len(detail_lines)
+            + (len(hint_lines) if hint_lines else 0)
+            + len(snippet_lines)
+        )
+        panel_h = (
+            pad
+            + title_surf.get_height()
+            + divider_gap
+            + body_rows * line_h
+            + divider_gap
+            + line_h
+            + pad
+        )
+        panel_h = min(panel_h, window_h - 40)
+
+        panel_x = (window_w - panel_w) // 2
+        panel_y = (window_h - panel_h) // 2
+        panel_rect = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
+
+        pygame.draw.rect(
+            surface, COLOR_OVERLAY_BG, panel_rect, border_radius=12,
+        )
+        pygame.draw.rect(
+            surface, COLOR_ERROR_BORDER, panel_rect, width=2, border_radius=12,
+        )
+
+        x_left = panel_x + pad
+        y = panel_y + pad
+
+        surface.blit(title_surf, (x_left, y))
+        y += title_surf.get_height() + divider_gap // 2
+
+        pygame.draw.line(
+            surface, COLOR_ERROR_BORDER,
+            (x_left, y), (panel_x + panel_w - pad, y), 1,
+        )
+        y += divider_gap // 2
+
+        if subtitle_text:
+            surface.blit(
+                body_font.render(subtitle_text, True, COLOR_HUD_TEXT),
+                (x_left, y),
+            )
+            y += line_h
+
+        for line in detail_lines:
+            surface.blit(
+                body_font.render(line, True, COLOR_HUD_TEXT),
+                (x_left, y),
+            )
+            y += line_h
+
+        for line in hint_lines:
+            surface.blit(
+                body_font.render(line, True, COLOR_HUD_TEXT),
+                (x_left, y),
+            )
+            y += line_h
+
+        for line in snippet_lines:
+            surface.blit(
+                body_font.render(line, True, COLOR_SNIPPET_TEXT),
+                (x_left, y),
+            )
+            y += line_h
+
+        y += divider_gap // 2
+        pygame.draw.line(
+            surface, COLOR_ERROR_BORDER,
+            (x_left, y), (panel_x + panel_w - pad, y), 1,
+        )
+        y += divider_gap // 2
+
+        dismiss_surf = body_font.render(dismiss_text, True, COLOR_HUD_TEXT)
+        surface.blit(dismiss_surf, (x_left, y))
+
+        self.error_dismiss_rect = panel_rect
+
     def _draw_settings_overlay(self, surface, font):
         window_w = self.view.window_w
         window_h = self.view.window_h
@@ -651,8 +956,32 @@ class CarSimPygameNode(Node):
              f'{self.view.aspect_ratio[0]:g} : {self.view.aspect_ratio[1]:g}'),
         ]
 
-        label_w = max(body_font.size(k)[0] for k, _ in rows)
-        value_w = max(body_font.size(v)[0] for _, v in rows)
+        # Dropdown bookkeeping: figure out its width from the longest option
+        # label so the button always fully contains any map name.
+        map_label_text = 'map'
+        current_label = (
+            os.path.basename(self.current_map_path)
+            if self.current_map_path else '(none)'
+        )
+        option_labels = [m['label'] for m in self.available_maps]
+        widest_option_text = max(
+            option_labels + [current_label], key=lambda s: body_font.size(s)[0],
+        )
+        caret_text = ' v'
+        dropdown_btn_w = (
+            body_font.size(widest_option_text)[0]
+            + body_font.size(caret_text)[0]
+            + 24  # internal padding (left + right + gap before caret)
+        )
+        dropdown_btn_h = line_h + 6
+
+        label_w = max(
+            [body_font.size(k)[0] for k, _ in rows]
+            + [body_font.size(map_label_text)[0]],
+        )
+        value_w = max(
+            [body_font.size(v)[0] for _, v in rows] + [dropdown_btn_w],
+        )
         rows_w = label_w + col_gap + value_w
 
         shortcuts_surf = body_font.render(
@@ -675,11 +1004,13 @@ class CarSimPygameNode(Node):
 
         divider_gap = max(line_h // 2, 14)  # vertical room around the separator line
         title_gap = max(line_h // 2, 12)
+        map_row_h = max(dropdown_btn_h, line_h)
         panel_h = (
             pad                               # top padding
             + title_h
             + title_gap                       # title/body gap
             + len(rows) * line_h
+            + map_row_h                       # map dropdown row
             + divider_gap
             + line_h                          # path line
             + divider_gap
@@ -711,6 +1042,44 @@ class CarSimPygameNode(Node):
             )
             y += line_h
 
+        # Map dropdown row.
+        map_row_y = y
+        surface.blit(
+            body_font.render(map_label_text, True, COLOR_HUD_TEXT),
+            (x_left, map_row_y + (map_row_h - line_h) // 2),
+        )
+        btn_x = x_left + label_w + col_gap
+        btn_y = map_row_y + (map_row_h - dropdown_btn_h) // 2
+        self.map_dropdown_button_rect = pygame.Rect(
+            btn_x, btn_y, dropdown_btn_w, dropdown_btn_h,
+        )
+        btn_bg = (
+            COLOR_BUTTON_BG_HOVER
+            if self.map_dropdown_open else COLOR_BUTTON_BG
+        )
+        pygame.draw.rect(
+            surface, btn_bg, self.map_dropdown_button_rect, border_radius=6,
+        )
+        pygame.draw.rect(
+            surface, COLOR_BUTTON_BORDER,
+            self.map_dropdown_button_rect, width=1, border_radius=6,
+        )
+        # Truncate the current value if somehow wider than the button.
+        value_max = dropdown_btn_w - body_font.size(caret_text)[0] - 16
+        value_text = self._ellipsize_left(current_label, value_max, body_font)
+        value_surf = body_font.render(value_text, True, COLOR_HUD_TEXT)
+        surface.blit(
+            value_surf,
+            (btn_x + 8, btn_y + (dropdown_btn_h - value_surf.get_height()) // 2),
+        )
+        caret_surf = body_font.render(caret_text, True, COLOR_HUD_TEXT)
+        surface.blit(
+            caret_surf,
+            (btn_x + dropdown_btn_w - caret_surf.get_width() - 8,
+             btn_y + (dropdown_btn_h - caret_surf.get_height()) // 2),
+        )
+        y += map_row_h
+
         # Divider above the path line.
         y += divider_gap // 2
         pygame.draw.line(
@@ -732,6 +1101,47 @@ class CarSimPygameNode(Node):
         y += divider_gap // 2
 
         surface.blit(shortcuts_surf, (x_left, y))
+
+        # Dropdown option list (drawn last so it sits on top of everything).
+        self.map_dropdown_option_rects = []
+        if self.map_dropdown_open and self.available_maps:
+            opt_h = dropdown_btn_h
+            list_w = dropdown_btn_w
+            list_x = self.map_dropdown_button_rect.x
+            total_h = opt_h * len(self.available_maps)
+            # Prefer opening downwards; flip upward if there is no room.
+            list_y = self.map_dropdown_button_rect.bottom + 2
+            if list_y + total_h > window_h - 10:
+                list_y = self.map_dropdown_button_rect.top - total_h - 2
+            list_rect = pygame.Rect(list_x, list_y, list_w, total_h)
+            pygame.draw.rect(
+                surface, COLOR_OVERLAY_BG, list_rect, border_radius=6,
+            )
+            pygame.draw.rect(
+                surface, COLOR_OVERLAY_BORDER, list_rect, width=1,
+                border_radius=6,
+            )
+            current_abs = (
+                os.path.abspath(self.current_map_path)
+                if self.current_map_path else ''
+            )
+            for i, entry in enumerate(self.available_maps):
+                r = pygame.Rect(list_x, list_y + i * opt_h, list_w, opt_h)
+                self.map_dropdown_option_rects.append(r)
+                if i == self.map_dropdown_hover_index:
+                    pygame.draw.rect(
+                        surface, COLOR_BUTTON_BG_HOVER, r, border_radius=6,
+                    )
+                lbl = entry['label']
+                if os.path.abspath(entry['path']) == current_abs:
+                    lbl = '* ' + lbl
+                lbl_max = list_w - 16
+                lbl = self._ellipsize_left(lbl, lbl_max, body_font)
+                lbl_surf = body_font.render(lbl, True, COLOR_HUD_TEXT)
+                surface.blit(
+                    lbl_surf,
+                    (r.x + 8, r.y + (opt_h - lbl_surf.get_height()) // 2),
+                )
 
     def world_to_screen(self, wx, wy, cam_x, cam_y):
         zoom = self.view.zoom
@@ -833,6 +1243,8 @@ class CarSimPygameNode(Node):
         self._draw_settings_button(surface)
         if self.settings_open:
             self._draw_settings_overlay(surface, font)
+        if self.error_open:
+            self._draw_error_overlay(surface, font)
 
 
 def _sync_display(view):
@@ -865,9 +1277,26 @@ def main(args=None):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
-            elif event.type == pygame.KEYDOWN:
+                continue
+            # The error modal is modal: any left-click or key dismisses
+            # it, and any mouse event is swallowed so the world doesn't
+            # shift/zoom under the dialog.
+            if node.error_open:
+                if event.type == pygame.KEYDOWN or (
+                    event.type == pygame.MOUSEBUTTONDOWN and event.button == 1
+                ):
+                    node.dismiss_error()
+                    continue
+                if event.type in (
+                    pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP,
+                    pygame.MOUSEWHEEL, pygame.MOUSEMOTION,
+                ):
+                    continue
+            if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
-                    if node.settings_open:
+                    if node.map_dropdown_open:
+                        node.map_dropdown_open = False
+                    elif node.settings_open:
                         node.settings_open = False
                     else:
                         running = False
@@ -889,8 +1318,21 @@ def main(args=None):
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 if node.settings_button_rect.collidepoint(event.pos):
                     node.settings_open = not node.settings_open
+                    node.map_dropdown_open = False
                 elif node.settings_open:
-                    node.settings_open = False
+                    if node.map_dropdown_open:
+                        for i, r in enumerate(node.map_dropdown_option_rects):
+                            if r.collidepoint(event.pos):
+                                node.select_map(node.available_maps[i])
+                                break
+                        # Any click while the dropdown is open closes only
+                        # the dropdown; the settings panel stays open.
+                        node.map_dropdown_open = False
+                    elif node.map_dropdown_button_rect.collidepoint(event.pos):
+                        if node.available_maps:
+                            node.map_dropdown_open = True
+                    else:
+                        node.settings_open = False
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 2:
                 node.view.start_drag(event.pos)
             elif event.type == pygame.MOUSEBUTTONUP and event.button == 2:
@@ -899,6 +1341,12 @@ def main(args=None):
                 node.settings_button_hover = (
                     node.settings_button_rect.collidepoint(event.pos)
                 )
+                node.map_dropdown_hover_index = -1
+                if node.settings_open and node.map_dropdown_open:
+                    for i, r in enumerate(node.map_dropdown_option_rects):
+                        if r.collidepoint(event.pos):
+                            node.map_dropdown_hover_index = i
+                            break
                 node.view.update_drag(event.pos)
             elif event.type == pygame.MOUSEWHEEL:
                 if event.y > 0:

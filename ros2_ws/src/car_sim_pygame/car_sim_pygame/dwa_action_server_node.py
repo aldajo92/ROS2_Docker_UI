@@ -12,6 +12,7 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from geometry_msgs.msg import Twist, PoseStamped, Quaternion
 from nav_msgs.msg import Odometry, Path
+from visualization_msgs.msg import MarkerArray
 
 from car_sim_pygame_msgs.action import NavigateToGoal
 
@@ -80,6 +81,12 @@ class DWAActionServerNode(Node):
             Odometry, '/odom', self._odom_callback, 10,
             callback_group=self.cb_group,
         )
+        # Listen to the simulator's obstacle markers so map switches done
+        # in the sim UI propagate here without needing a restart.
+        self.markers_sub = self.create_subscription(
+            MarkerArray, '/markers', self._markers_callback, 10,
+            callback_group=self.cb_group,
+        )
         self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
         self.predicted_path_pub = self.create_publisher(
             Path, '/dwa/predicted_path', 10
@@ -98,6 +105,33 @@ class DWAActionServerNode(Node):
 
         self.get_logger().info(
             f'DWA action server ready — {len(self.obstacles)} obstacles loaded'
+        )
+
+    # ── Obstacle updates from the simulator ──────────────────────────
+
+    def _markers_callback(self, msg: MarkerArray) -> None:
+        """Rebuild ``self.obstacles`` from the simulator's ``/markers`` topic.
+
+        The simulator publishes one ``CYLINDER`` marker per obstacle in the
+        ``obstacles`` namespace. Subscribing here keeps the DWA planner in
+        sync whenever the user switches the map via the sim's UI.
+        """
+        points = [
+            (float(m.pose.position.x), float(m.pose.position.y))
+            for m in msg.markers if m.ns == 'obstacles'
+        ]
+        new_obstacles = (
+            np.array(points, dtype=float) if points else np.empty((0, 2))
+        )
+        # Skip the reassignment if nothing changed. The sim republishes its
+        # markers every simulation tick, but the geometry only changes on
+        # map switch.
+        if (new_obstacles.shape == self.obstacles.shape
+                and np.array_equal(new_obstacles, self.obstacles)):
+            return
+        self.obstacles = new_obstacles
+        self.get_logger().info(
+            f'Obstacle set updated from /markers: {len(new_obstacles)} points'
         )
 
     # ── Obstacle loading (same as dwa_planner_node) ──────────────────

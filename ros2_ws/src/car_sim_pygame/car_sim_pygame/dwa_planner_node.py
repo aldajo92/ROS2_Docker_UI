@@ -10,6 +10,7 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist, PoseStamped, Quaternion
 from nav_msgs.msg import Odometry, Path
+from visualization_msgs.msg import MarkerArray
 
 
 def yaw_to_quaternion(yaw):
@@ -91,6 +92,11 @@ class DWAPlannerNode(Node):
         self.odom_sub = self.create_subscription(
             Odometry, '/odom', self._odom_callback, 10
         )
+        # Listen to the simulator's obstacle markers so map switches done
+        # in the sim UI propagate here without needing a restart.
+        self.markers_sub = self.create_subscription(
+            MarkerArray, '/markers', self._markers_callback, 10
+        )
 
         # Publishers
         self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
@@ -104,6 +110,25 @@ class DWAPlannerNode(Node):
         self.get_logger().info(
             f'DWA planner started — goal: ({goal_x}, {goal_y}), '
             f'{len(self.obstacles)} obstacles'
+        )
+
+    # ── Obstacle updates from the simulator ──────────────────────────
+
+    def _markers_callback(self, msg: MarkerArray) -> None:
+        """Rebuild ``self.obstacles`` from the simulator's ``/markers`` topic."""
+        points = [
+            (float(m.pose.position.x), float(m.pose.position.y))
+            for m in msg.markers if m.ns == 'obstacles'
+        ]
+        new_obstacles = (
+            np.array(points, dtype=float) if points else np.empty((0, 2))
+        )
+        if (new_obstacles.shape == self.obstacles.shape
+                and np.array_equal(new_obstacles, self.obstacles)):
+            return
+        self.obstacles = new_obstacles
+        self.get_logger().info(
+            f'Obstacle set updated from /markers: {len(new_obstacles)} points'
         )
 
     # ── Obstacle loading ─────────────────────────────────────────────
