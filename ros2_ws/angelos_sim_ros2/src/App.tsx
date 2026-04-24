@@ -116,12 +116,22 @@ function Trail({ points }: { points: [number, number, number][] }) {
   return <Line points={points} color="#ff5050" lineWidth={2} />
 }
 
-function CameraFollower({ state }: { state: CarState }) {
+type CamMode = 'orbit' | 'follow' | 'follow-rotate'
+
+function CameraFollower({ state, mode }: { state: CarState; mode: CamMode }) {
   const { camera } = useThree()
   const initialized = useRef(false)
 
   useFrame(() => {
-    if (!initialized.current) {
+    if (mode === 'follow') {
+      camera.position.set(state.x, 12, state.y)
+      camera.lookAt(state.x, 0, state.y)
+      camera.up.set(0, 0, -1)
+    } else if (mode === 'follow-rotate') {
+      camera.position.set(state.x, 12, state.y)
+      camera.lookAt(state.x, 0, state.y)
+      camera.up.set(Math.cos(state.yaw), 0, Math.sin(state.yaw))
+    } else if (!initialized.current) {
       camera.position.set(state.x + 5, 8, state.y + 5)
       camera.lookAt(state.x, 0, state.y)
       initialized.current = true
@@ -137,6 +147,9 @@ function SimScene({ onHudUpdate }: { onHudUpdate: (h: CarState) => void }) {
   const trailRef = useRef<[number, number, number][]>([])
   const [trail, setTrail] = useState<[number, number, number][]>([])
   const [collidedSet, setCollidedSet] = useState<Set<number>>(new Set())
+  const [camMode, setCamMode] = useState<CamMode>('orbit')
+  const cWasDown = useRef(false)
+  const xWasDown = useRef(false)
   const frameCount = useRef(0)
 
   const update = useCallback(() => {
@@ -183,6 +196,15 @@ function SimScene({ onHudUpdate }: { onHudUpdate: (h: CarState) => void }) {
 
   useFrame(() => {
     update()
+
+    const cDown = keys.current.has('c')
+    if (cDown && !cWasDown.current) setCamMode(prev => prev === 'follow' ? 'orbit' : 'follow')
+    cWasDown.current = cDown
+
+    const xDown = keys.current.has('x')
+    if (xDown && !xWasDown.current) setCamMode(prev => prev === 'follow-rotate' ? 'orbit' : 'follow-rotate')
+    xWasDown.current = xDown
+
     frameCount.current++
     if (frameCount.current % 3 === 0) {
       setTrail([...trailRef.current])
@@ -216,8 +238,8 @@ function SimScene({ onHudUpdate }: { onHudUpdate: (h: CarState) => void }) {
 
       <Trail points={trail} />
       <Car state={stateRef.current} />
-      <CameraFollower state={stateRef.current} />
-      <OrbitControls />
+      <CameraFollower state={stateRef.current} mode={camMode} />
+      <OrbitControls enabled={camMode === 'orbit'} />
     </>
   )
 }
@@ -267,7 +289,7 @@ function App() {
           <span>yaw = {(hud.yaw * 180 / Math.PI).toFixed(1)}°</span>
         </div>
         <div className="controls-hint">
-          IJKL / Arrow keys to drive — Orbit: left-click drag — Zoom: scroll
+          IJKL / Arrow keys to drive — C: top-down track — X: rotating track — Orbit: left-click drag — Zoom: scroll
         </div>
       </div>
       <Dashboard />
