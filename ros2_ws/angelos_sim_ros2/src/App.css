@@ -7,6 +7,38 @@
 .split-left {
   flex: 1;
   background: #1a1a2e;
+  position: relative;
+}
+
+.hud {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: rgba(0, 0, 0, 0.65);
+  color: #ddd;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 13px;
+  pointer-events: none;
+  line-height: 1.4;
+}
+
+.controls-hint {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.6);
+  color: #aaa;
+  padding: 6px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  pointer-events: none;
+  white-space: nowrap;
 }
 
 .split-right {
