@@ -22,6 +22,36 @@ const MAX_TRAIL = 500
 const CAR_RADIUS = 0.3
 const OBSTACLE_RADIUS = 0.15
 
+// --- World frame ---------------------------------------------------------
+// The simulation is authored in a ROS/Gazebo-style frame:
+//   X forward, Y left, Z up, right-handed (x × y = z).
+// three.js uses a Y-up frame. We embed the world frame in the scene by
+// wrapping every world-space object in a single <group rotation={WORLD_TILT}>
+// that rotates the world onto three.js:
+//   world +X -> three.js +X
+//   world +Y -> three.js -Z
+//   world +Z -> three.js +Y
+// This is a proper rotation (det = +1) so the right-hand rule is preserved
+// and components can use (x, y, z) coordinates directly, with no sign
+// juggling.
+//
+// The camera lives outside the <Canvas> scene graph (it's attached to the
+// renderer, not to a group), so the few places that talk to the camera
+// need to translate a world point to three.js space. `worldToScene` is
+// the one and only conversion point.
+const WORLD_TILT: [number, number, number] = [-Math.PI / 2, 0, 0]
+
+function worldToScene(x: number, y: number, z: number = 0): [number, number, number] {
+  return [x, z, -y]
+}
+
+// Wrap an angle (radians) into the canonical range [-π, π).
+function wrapAngle(a: number): number {
+  const twoPi = 2 * Math.PI
+  let x = ((a + Math.PI) % twoPi + twoPi) % twoPi
+  return x - Math.PI
+}
+
 interface CarState {
   x: number
   y: number
@@ -56,6 +86,9 @@ interface ArrowProps {
   color?: string
 }
 
+// Arrow pointing along its local +X axis. Its internals use three.js
+// geometry conventions but externally it behaves as a pure "+X arrow",
+// so it composes naturally with parent rotations in any frame.
 function Arrow({
   length = 0.55,
   shaftRadius = 0.025,
@@ -81,19 +114,21 @@ function Arrow({
   )
 }
 
+// All of the following components live INSIDE the world-frame group, so
+// they can use world coordinates (x, y on the ground, z up) directly.
+
 function Car({ state }: { state: CarState }) {
   const groupRef = useRef<THREE.Group>(null!)
 
   useFrame(() => {
-    // World (x, y, z=up) is embedded into three.js (x, z_up, -y) so that
-    // x × y = z still holds on screen (right-handed, Gazebo/ROS convention).
-    groupRef.current.position.set(state.x, 0.15, -state.y)
-    groupRef.current.rotation.y = state.yaw
+    groupRef.current.position.set(state.x, state.y, 0.15)
+    groupRef.current.rotation.set(0, 0, state.yaw)
   })
 
   return (
     <group ref={groupRef}>
       <mesh>
+        {/* Dimensions are (x, y, z) in the world frame. */}
         <boxGeometry args={[0.5, 0.3, 0.3]} />
         <meshStandardMaterial color="#00ffff" />
       </mesh>
@@ -104,28 +139,50 @@ function Car({ state }: { state: CarState }) {
   )
 }
 
+// Gazebo/ROS convention: X = red, Y = green, Z = blue, right-handed.
 function WorldAxes({ length = 1.0 }: { length?: number }) {
-  // Gazebo/ROS convention: X = red, Y = green, Z = blue, right-handed with
-  // x × y = z. World-Y is rendered along three.js -Z and world-Z along +Y,
-  // so we rotate the green and blue arrows accordingly.
   return (
-    <group position={[0, 0.02, 0]}>
+    <group position={[0, 0, 0.02]}>
       <Arrow color="#ff0000" length={length} />
-      <group rotation={[0, Math.PI / 2, 0]}>
+      {/* +X rotated +90° about +Z -> +Y */}
+      <group rotation={[0, 0, Math.PI / 2]}>
         <Arrow color="#00cc00" length={length} />
       </group>
-      <group rotation={[0, 0, Math.PI / 2]}>
+      {/* +X rotated -90° about +Y -> +Z */}
+      <group rotation={[0, -Math.PI / 2, 0]}>
         <Arrow color="#2a7bff" length={length} />
       </group>
     </group>
   )
 }
 
-function Obstacle({ x, z, hit }: { x: number; z: number; hit: boolean }) {
+function Obstacle({ x, y, hit }: { x: number; y: number; hit: boolean }) {
+  // `cylinderGeometry` runs along the local Y axis by default; rotate the
+  // mesh so its long axis aligns with world +Z (vertical pillar).
   return (
-    <mesh position={[x, 0.25, -z]}>
+    <mesh position={[x, y, 0.25]} rotation={[Math.PI / 2, 0, 0]}>
       <cylinderGeometry args={[OBSTACLE_RADIUS, OBSTACLE_RADIUS, 0.5, 16]} />
       <meshStandardMaterial color={hit ? '#ff4444' : '#888'} />
+    </mesh>
+  )
+}
+
+function Ground() {
+  // `planeGeometry` sits in the local XY plane facing +Z. Inside the
+  // world-frame group that's exactly the world XY ground plane facing up.
+  return (
+    <mesh position={[0, 0, -0.01]}>
+      <planeGeometry args={[30, 30]} />
+      <meshStandardMaterial color="#2a2a2a" />
+    </mesh>
+  )
+}
+
+function OriginMarker() {
+  return (
+    <mesh position={[0, 0, 0.02]}>
+      <boxGeometry args={[0.2, 0.2, 0.04]} />
+      <meshStandardMaterial color="#50c850" />
     </mesh>
   )
 }
@@ -133,6 +190,12 @@ function Obstacle({ x, z, hit }: { x: number; z: number; hit: boolean }) {
 function Trail({ points }: { points: [number, number, number][] }) {
   if (points.length < 2) return null
   return <Line points={points} color="#ff5050" lineWidth={2} />
+}
+
+// `WorldFrame` is the single place where world <-> scene axis mapping
+// happens. Everything inside is authored in world coordinates.
+function WorldFrame({ children }: { children: React.ReactNode }) {
+  return <group rotation={WORLD_TILT}>{children}</group>
 }
 
 type CamMode = 'orbit' | 'follow' | 'follow-rotate'
@@ -148,7 +211,7 @@ function CameraFollower({
   mode: CamMode
   resetKey: number
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  controlsRef: React.MutableRefObject<any>
+  controlsRef: React.RefObject<any>
 }) {
   const { camera } = useThree()
   const initialized = useRef(false)
@@ -169,16 +232,13 @@ function CameraFollower({
     // per-frame logic below only has to maintain the chosen pose.
     if (prevMode.current !== mode) {
       if (mode === 'follow') {
-        // Snap the camera directly above the car, looking straight down,
-        // and register the car's position as the orbit target. From this
-        // point on OrbitControls manages zoom + pan; we only translate
-        // the camera/target together so the car stays centered.
-        // camera.up = three.js -Z points in the world +Y direction, so
-        // world +X is right and world +Y is up on screen.
-        camera.position.set(state.x, 12, -state.y)
-        camera.up.set(0, 0, -1)
+        // Put the camera 12 units above the car in world coords and look
+        // straight down; OrbitControls handles pan + zoom from there.
+        camera.position.set(...worldToScene(state.x, state.y, 12))
+        // "Up on screen" should be world +Y.
+        camera.up.set(...worldToScene(0, 1, 0))
         if (controls) {
-          controls.target.set(state.x, 0, -state.y)
+          controls.target.set(...worldToScene(state.x, state.y, 0))
           controls.update()
         }
         prevCar.current = { x: state.x, y: state.y }
@@ -187,27 +247,29 @@ function CameraFollower({
     }
 
     if (mode === 'follow') {
-      // Translate the camera + orbit target by the car's displacement
-      // so the user's current zoom/pan relative offset is preserved.
+      // Translate the camera + orbit target by the car's world-space
+      // displacement so the user's current zoom/pan offset is preserved.
       const dx = state.x - prevCar.current.x
       const dy = state.y - prevCar.current.y
       if (dx !== 0 || dy !== 0) {
-        camera.position.x += dx
-        camera.position.z -= dy
+        const [sdx, , sdz] = worldToScene(dx, dy, 0)
+        camera.position.x += sdx
+        camera.position.z += sdz
         if (controls) {
-          controls.target.x += dx
-          controls.target.z -= dy
+          controls.target.x += sdx
+          controls.target.z += sdz
           controls.update()
         }
         prevCar.current = { x: state.x, y: state.y }
       }
     } else if (mode === 'follow-rotate') {
-      camera.position.set(state.x, 12, -state.y)
-      camera.lookAt(state.x, 0, -state.y)
-      camera.up.set(Math.cos(state.yaw), 0, -Math.sin(state.yaw))
+      camera.position.set(...worldToScene(state.x, state.y, 12))
+      camera.lookAt(...worldToScene(state.x, state.y, 0))
+      // Up on screen follows the car's heading (world frame).
+      camera.up.set(...worldToScene(Math.cos(state.yaw), Math.sin(state.yaw), 0))
     } else if (!initialized.current) {
-      camera.position.set(state.x + 5, 8, -state.y - 5)
-      camera.lookAt(state.x, 0, -state.y)
+      camera.position.set(...worldToScene(state.x + 5, state.y + 5, 8))
+      camera.lookAt(...worldToScene(state.x, state.y, 0))
       initialized.current = true
     }
   })
@@ -218,7 +280,7 @@ function CameraFollower({
 function SimScene({ onHudUpdate }: { onHudUpdate: (h: CarState) => void }) {
   const keys = useKeyboard()
   const tickIncrement = useSimTickIncrement()
-  const stateRef = useRef<CarState>({ x: 0, y: 0, yaw: Math.PI, v: 0, w: 0, colliding: false })
+  const stateRef = useRef<CarState>({ x: 0, y: 0, yaw: 0, v: 0, w: 0, colliding: false })
   const trailRef = useRef<[number, number, number][]>([])
   const [trail, setTrail] = useState<[number, number, number][]>([])
   const [collidedSet, setCollidedSet] = useState<Set<number>>(new Set())
@@ -244,7 +306,7 @@ function SimScene({ onHudUpdate }: { onHudUpdate: (h: CarState) => void }) {
     if (k.has('u')) { cmdV = 1.0; cmdW = 0.7 }
     if (k.has('o')) { cmdV = 1.0; cmdW = -0.7 }
 
-    s.yaw += cmdW * DT
+    s.yaw = wrapAngle(s.yaw + cmdW * DT)
     s.x += cmdV * Math.cos(s.yaw) * DT
     s.y += cmdV * Math.sin(s.yaw) * DT
     s.v = cmdV
@@ -269,7 +331,8 @@ function SimScene({ onHudUpdate }: { onHudUpdate: (h: CarState) => void }) {
     s.colliding = hit.size > 0
     setCollidedSet(hit)
 
-    trailRef.current.push([s.x, 0.02, -s.y])
+    // Trail is authored in world coords; it lives inside WorldFrame.
+    trailRef.current.push([s.x, s.y, 0.02])
     if (trailRef.current.length > MAX_TRAIL) trailRef.current.shift()
   }, [keys])
 
@@ -307,28 +370,21 @@ function SimScene({ onHudUpdate }: { onHudUpdate: (h: CarState) => void }) {
       <ambientLight intensity={0.5} />
       <directionalLight position={[10, 15, 10]} intensity={1} castShadow />
 
-      {/* Ground */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]}>
-        <planeGeometry args={[30, 30]} />
-        <meshStandardMaterial color="#2a2a2a" />
-      </mesh>
+      <WorldFrame>
+        <Ground />
+        <OriginMarker />
+        <WorldAxes length={1.0} />
+        {OBSTACLES.map((obs, i) => (
+          <Obstacle key={i} x={obs[0]} y={obs[1]} hit={collidedSet.has(i)} />
+        ))}
+        <Trail points={trail} />
+        <Car state={stateRef.current} />
+      </WorldFrame>
 
+      {/* gridHelper is already flat (scene XZ = world XY after the tilt),
+          and is a pure visual aid, so we keep it outside WorldFrame. */}
       <gridHelper args={[30, 30, '#444', '#333']} />
 
-      {/* Origin marker */}
-      <mesh position={[0, 0.02, 0]}>
-        <boxGeometry args={[0.2, 0.04, 0.2]} />
-        <meshStandardMaterial color="#50c850" />
-      </mesh>
-
-      <WorldAxes length={1.0} />
-
-      {OBSTACLES.map((obs, i) => (
-        <Obstacle key={i} x={obs[0]} z={obs[1]} hit={collidedSet.has(i)} />
-      ))}
-
-      <Trail points={trail} />
-      <Car state={stateRef.current} />
       <CameraFollower
         state={stateRef.current}
         mode={camMode}
@@ -369,7 +425,7 @@ function App() {
     <SimTickProvider>
       <div className="split-layout">
         <div className="split-left">
-          <Canvas shadows camera={{ position: [5, 8, -5], fov: 50 }}>
+          <Canvas shadows camera={{ position: worldToScene(5, 5, 8), fov: 50 }}>
             <SimScene onHudUpdate={setHud} />
           </Canvas>
           <div className="hud">
