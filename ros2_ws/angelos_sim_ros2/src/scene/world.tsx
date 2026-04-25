@@ -57,17 +57,11 @@ export function WorldFrame({ children }: { children: React.ReactNode }) {
 // Everything below is meant to live INSIDE <WorldFrame>, so coordinates
 // and dimensions are expressed in world (x, y, z) directly.
 
-export function Ground({
-  size = GROUND_SIZE,
-  color = '#2a2a2a',
-}: {
-  size?: number
-  color?: string
-} = {}) {
+export function Ground({ size = GROUND_SIZE }: { size?: number } = {}) {
   return (
     <mesh position={[0, 0, -0.01]}>
       <planeGeometry args={[size, size]} />
-      <meshStandardMaterial color={color} />
+      <meshStandardMaterial color="#2a2a2a" />
     </mesh>
   )
 }

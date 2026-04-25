@@ -19,7 +19,6 @@ import {
   Obstacles,
 } from './scene/obstacles'
 import { SimScene } from './scene/SimScene'
-import { SimSceneConfig } from './models/SimSceneConfig'
 import { ProjectionCamera, type Projection } from './scene/cameras'
 import { Point2D, Point3D, distance, scale, sub } from './models/SimBase'
 import {
@@ -48,6 +47,10 @@ const FIT_POINTS_SCENE: ReadonlyArray<THREE.Vector3> =
 // Multiplicative margin so the plane never sits flush against the canvas
 // edges after a P toggle.
 const ORTHO_FIT_MARGIN = 1.05
+// Shared "no collision" set. Reused across frames so React's `Object.is`
+// bail-out kicks in and `CarSimScene` doesn't re-render every frame
+// while the car is in open space. Treat as immutable.
+const EMPTY_COLLIDED_SET: ReadonlySet<number> = new Set()
 
 // Wrap an angle (radians) into the canonical range [-π, π).
 function wrapAngle(a: number): number {
@@ -300,7 +303,12 @@ function CarSimScene({
   const stateRef = useRef<CarState>({ x: 0, y: 0, yaw: 0, v: 0, w: 0, colliding: false })
   const trailRef = useRef<Point3D[]>([])
   const [trail, setTrail] = useState<Point3D[]>([])
-  const [collidedSet, setCollidedSet] = useState<Set<number>>(new Set())
+  const [collidedSet, setCollidedSet] =
+    useState<ReadonlySet<number>>(EMPTY_COLLIDED_SET)
+  // Bitmask of currently colliding obstacles (1 bit per obstacle index).
+  // Used to detect actual changes in collision state cheaply, without
+  // allocating a Set every frame just to compare.
+  const hitMaskRef = useRef(0)
   const [camMode, setCamMode] = useState<CamMode>('orbit')
   const [camProjection, setCamProjection] = useState<Projection>('perspective')
   const [camResetKey, setCamResetKey] = useState(0)
@@ -343,7 +351,12 @@ function CarSimScene({
 
     const carPos = new Point2D(s.x, s.y)
     const minDist = CAR_RADIUS + OBSTACLE_RADIUS
-    const hit = new Set<number>()
+    // Track collisions via a bitmask first (no allocation). The Set is
+    // only built when the mask differs from the previous frame, i.e.
+    // when an obstacle starts or stops colliding. This is what keeps
+    // React from re-rendering the whole CarSimScene every frame.
+    let mask = 0
+    let hits: number[] | null = null
     for (let i = 0; i < OBSTACLES.length; i++) {
       const obs = OBSTACLES[i]
       const d = distance(carPos, obs)
@@ -356,11 +369,16 @@ function CarSimScene({
         s.x += push.x
         s.y += push.y
         s.v = 0
-        hit.add(i)
+        mask |= 1 << i
+        if (hits === null) hits = []
+        hits.push(i)
       }
     }
-    s.colliding = hit.size > 0
-    setCollidedSet(hit)
+    s.colliding = mask !== 0
+    if (mask !== hitMaskRef.current) {
+      hitMaskRef.current = mask
+      setCollidedSet(mask === 0 ? EMPTY_COLLIDED_SET : new Set(hits!))
+    }
 
     // Trail is authored in world coords; it lives inside WorldFrame.
     trailRef.current.push(new Point3D(s.x, s.y, 0.02))
@@ -409,7 +427,7 @@ function CarSimScene({
 
   return (
     <>
-      <SimScene config={SimSceneConfig.main()}>
+      <SimScene lightPosition={new Point3D(10, 15, 10)} castShadow>
         <OriginMarker />
         <WorldAxes length={1.0} />
         <Obstacles positions={OBSTACLES} hits={collidedSet} />
