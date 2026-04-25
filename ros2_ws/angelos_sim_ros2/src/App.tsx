@@ -19,6 +19,7 @@ import {
   Obstacles,
 } from './scene/obstacles'
 import { SimScene } from './scene/SimScene'
+import { SimSceneConfig } from './models/SimSceneConfig'
 import { ProjectionCamera, type Projection } from './scene/cameras'
 import { Point2D, Point3D, distance, scale, sub } from './models/SimBase'
 import {
@@ -408,7 +409,7 @@ function CarSimScene({
 
   return (
     <>
-      <SimScene lightPosition={new Point3D(10, 15, 10)} castShadow>
+      <SimScene config={SimSceneConfig.main()}>
         <OriginMarker />
         <WorldAxes length={1.0} />
         <Obstacles positions={OBSTACLES} hits={collidedSet} />
