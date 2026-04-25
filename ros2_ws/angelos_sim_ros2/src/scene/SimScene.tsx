@@ -11,11 +11,27 @@ import { WorldFrame, Ground } from './world'
 // Designed to live INSIDE a <Canvas>; pass world-space children to
 // populate the scene. The cell also chooses its own camera + controls,
 // which is why those are NOT included here.
-export function SimScene({ children }: { children?: React.ReactNode }) {
+//
+// `lightPosition` and `castShadow` are exposed because the main sim
+// uses a larger, shadow-casting key light tuned for the full ground
+// plane, while the small preview cells use a closer, shadow-less light.
+export function SimScene({
+  children,
+  lightPosition = [5, 5, 5],
+  castShadow = false,
+}: {
+  children?: React.ReactNode
+  lightPosition?: [number, number, number]
+  castShadow?: boolean
+}) {
   return (
     <>
       <ambientLight intensity={0.5} />
-      <directionalLight position={[5, 5, 5]} intensity={1} />
+      <directionalLight
+        position={lightPosition}
+        intensity={1}
+        castShadow={castShadow}
+      />
       <WorldFrame>
         <Ground />
         {children}

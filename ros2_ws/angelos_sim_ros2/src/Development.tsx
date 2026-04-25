@@ -6,7 +6,6 @@ import {
   OriginMarker,
   WorldAxes,
   Car,
-  worldToScene,
   type CarState,
 } from './scene/world'
 import { OBSTACLES, Obstacles } from './scene/obstacles'
@@ -22,6 +21,8 @@ import {
   type CarCamView,
   type Projection,
 } from './scene/cameras'
+import { Point2D, Point3D } from './models/SimBase'
+import { pointToSceneTuple } from './models/SimMappers'
 import './App.css'
 
 // A stationary car pose used by the preview cells. The shared `Car`
@@ -38,11 +39,11 @@ const PARKED_CAR: CarState = {
 
 // Four reference obstacles framing the car at ±2 m on each axis. They
 // give the camera presets some scale and parallax to inspect.
-const CAR_CAM_OBSTACLES: ReadonlyArray<readonly [number, number]> = [
-  [2, 2],
-  [-2, 2],
-  [-2, -2],
-  [2, -2],
+const CAR_CAM_OBSTACLES: ReadonlyArray<Point2D> = [
+  new Point2D(2, 2),
+  new Point2D(-2, 2),
+  new Point2D(-2, -2),
+  new Point2D(2, -2),
 ]
 
 // --- Sim 3: camera-preset preview ---------------------------------------
@@ -79,7 +80,9 @@ function CarCamSimCell() {
           ref={controlsRef}
           key={`${view}-${projection}`}
           makeDefault
-          target={worldToScene(...CAR_CAM_TARGET)}
+          target={pointToSceneTuple(
+            new Point3D(CAR_CAM_TARGET[0], CAR_CAM_TARGET[1], CAR_CAM_TARGET[2]),
+          )}
           enableRotate={view === 'orbit'}
           enablePan
           enableZoom

@@ -1,13 +1,10 @@
 import { useRef, useEffect, useCallback, useState } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { OrbitControls, PerspectiveCamera, OrthographicCamera } from '@react-three/drei'
+import { OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
 import { SimTickProvider, useSimTick, useSimTickIncrement } from './useSimTick'
 import VelocityChart from './VelocityChart'
 import {
-  worldToScene,
-  WorldFrame,
-  Ground,
   GROUND_SIZE,
   CAR_RADIUS,
   WorldAxes,
@@ -21,21 +18,33 @@ import {
   OBSTACLE_RADIUS,
   Obstacles,
 } from './scene/obstacles'
+import { SimScene } from './scene/SimScene'
+import { ProjectionCamera, type Projection } from './scene/cameras'
+import { Point2D, Point3D, distance, scale, sub } from './models/SimBase'
+import {
+  pointToSceneTuple,
+  pointToSceneVector3,
+  pointToTuple,
+  pointToVector3,
+  sceneVector3ToPoint3D,
+} from './models/SimMappers'
 import './App.css'
 
 const DT = 1 / 60
 const MAX_TRAIL = 500
-// Four corners of the ground plane, in scene coordinates (after
-// WORLD_TILT applies). The orthographic camera fits these corners on
-// projection toggle. Kept here because it depends on `THREE.Vector3`
-// instances; the size itself comes from the shared `GROUND_SIZE`.
+// Four corners of the ground plane, expressed in WORLD coords. The
+// orthographic-fit code wants them in scene space, so we cache that
+// projection once via the shared world->scene mapper instead of
+// constructing THREE.Vector3 instances by hand.
 const FIT_HALF = GROUND_SIZE / 2
-const FIT_POINTS_SCENE: ReadonlyArray<THREE.Vector3> = [
-  new THREE.Vector3(-FIT_HALF, 0, -FIT_HALF),
-  new THREE.Vector3(FIT_HALF, 0, -FIT_HALF),
-  new THREE.Vector3(-FIT_HALF, 0, FIT_HALF),
-  new THREE.Vector3(FIT_HALF, 0, FIT_HALF),
+const FIT_CORNERS_WORLD: ReadonlyArray<Point3D> = [
+  new Point3D(-FIT_HALF, -FIT_HALF, 0),
+  new Point3D(FIT_HALF, -FIT_HALF, 0),
+  new Point3D(-FIT_HALF, FIT_HALF, 0),
+  new Point3D(FIT_HALF, FIT_HALF, 0),
 ]
+const FIT_POINTS_SCENE: ReadonlyArray<THREE.Vector3> =
+  FIT_CORNERS_WORLD.map(pointToSceneVector3)
 // Multiplicative margin so the plane never sits flush against the canvas
 // edges after a P toggle.
 const ORTHO_FIT_MARGIN = 1.05
@@ -65,7 +74,6 @@ function useKeyboard() {
 }
 
 type CamMode = 'orbit' | 'follow' | 'follow-rotate'
-type CamProjection = 'perspective' | 'orthographic'
 
 function CameraFollower({
   state,
@@ -84,17 +92,21 @@ function CameraFollower({
 }) {
   const { camera, size } = useThree()
   const initialized = useRef(false)
-  const prevCar = useRef({ x: 0, y: 0 })
+  const prevCar = useRef<Point2D>(new Point2D(0, 0))
   const prevMode = useRef<CamMode>(mode)
   const forceInit = useRef(false)
-  // Last known orbit camera pose. Updated every frame the user is in
-  // orbit mode and consulted when re-entering orbit (after C/X) so the
-  // user gets back the view they were looking at, not the hardcoded
-  // default. V explicitly clears this so it always resets cleanly.
+  // Last known orbit camera pose, kept in WORLD coords so we own a
+  // single canonical representation. Updated every frame the user is
+  // in orbit mode and consulted when re-entering orbit (after C/X) so
+  // the user gets back the view they were looking at, not the
+  // hardcoded default. V explicitly clears this so it always resets
+  // cleanly. (`up` is a direction, not a position; storing it as a
+  // Point3D works because our world<->scene transform is a proper
+  // rotation, so it maps directions correctly too.)
   const savedOrbitPose = useRef<{
-    position: THREE.Vector3
-    target: THREE.Vector3
-    up: THREE.Vector3
+    position: Point3D
+    target: Point3D
+    up: Point3D
   } | null>(null)
 
   // Explicit user-driven reset (V): re-initialize for the current mode
@@ -128,23 +140,19 @@ function CameraFollower({
     // While the user is actively in orbit mode, continuously checkpoint
     // the camera pose so we can restore it on re-entry. This is what
     // makes "press C twice" return you to the same orbit view you had,
-    // instead of the hardcoded default.
+    // instead of the hardcoded default. The pose is stored as world-
+    // coord Point3D triples; `sceneVector3ToPoint3D` does the inverse
+    // tilt for us.
     if (
       mode === 'orbit' &&
       prevMode.current === 'orbit' &&
       !forceInit.current &&
       controls?.target
     ) {
-      if (!savedOrbitPose.current) {
-        savedOrbitPose.current = {
-          position: camera.position.clone(),
-          target: (controls.target as THREE.Vector3).clone(),
-          up: camera.up.clone(),
-        }
-      } else {
-        savedOrbitPose.current.position.copy(camera.position)
-        savedOrbitPose.current.target.copy(controls.target as THREE.Vector3)
-        savedOrbitPose.current.up.copy(camera.up)
+      savedOrbitPose.current = {
+        position: sceneVector3ToPoint3D(camera.position),
+        target: sceneVector3ToPoint3D(controls.target as THREE.Vector3),
+        up: sceneVector3ToPoint3D(camera.up),
       }
     }
 
@@ -160,37 +168,42 @@ function CameraFollower({
       if (mode === 'follow') {
         // Put the camera 12 units above the car in world coords and look
         // straight down; OrbitControls handles pan + zoom from there.
-        camera.position.set(...worldToScene(state.x, state.y, 12))
+        camera.position.set(...pointToSceneTuple(new Point3D(state.x, state.y, 12)))
         // "Up on screen" should be world +Y.
-        camera.up.set(...worldToScene(0, 1, 0))
+        camera.up.set(...pointToSceneTuple(new Point3D(0, 1, 0)))
         if (controls) {
-          controls.target.set(...worldToScene(state.x, state.y, 0))
+          controls.target.set(...pointToSceneTuple(new Point2D(state.x, state.y)))
           controls.update()
         }
-        prevCar.current = { x: state.x, y: state.y }
+        prevCar.current = new Point2D(state.x, state.y)
       } else if (mode === 'follow-rotate') {
-        camera.position.set(...worldToScene(state.x, state.y, 12))
-        camera.lookAt(...worldToScene(state.x, state.y, 0))
+        camera.position.set(...pointToSceneTuple(new Point3D(state.x, state.y, 12)))
+        camera.lookAt(...pointToSceneTuple(new Point2D(state.x, state.y)))
         camera.up.set(
-          ...worldToScene(Math.cos(state.yaw), Math.sin(state.yaw), 0),
+          ...pointToSceneTuple(
+            new Point2D(Math.cos(state.yaw), Math.sin(state.yaw)),
+          ),
         )
       } else if (enteringOrbit && savedOrbitPose.current) {
         // Returning to orbit from another mode — restore exactly the
         // camera pose the user last had in orbit (position + target +
         // up). V would have cleared savedOrbitPose, so V still resets
-        // cleanly to the default below.
-        camera.position.copy(savedOrbitPose.current.position)
-        camera.up.copy(savedOrbitPose.current.up)
+        // cleanly to the default below. The cached pose is in world
+        // coords, so each component is mapped back through worldToScene.
+        camera.position.copy(pointToSceneVector3(savedOrbitPose.current.position))
+        camera.up.copy(pointToSceneVector3(savedOrbitPose.current.up))
         if (controls) {
-          controls.target.copy(savedOrbitPose.current.target)
+          controls.target.copy(pointToSceneVector3(savedOrbitPose.current.target))
           controls.update()
         }
       } else {
-        camera.position.set(...worldToScene(state.x + 5, state.y + 5, 8))
+        camera.position.set(
+          ...pointToSceneTuple(new Point3D(state.x + 5, state.y + 5, 8)),
+        )
         camera.up.set(0, 1, 0)
-        camera.lookAt(...worldToScene(state.x, state.y, 0))
+        camera.lookAt(...pointToSceneTuple(new Point2D(state.x, state.y)))
         if (controls) {
-          controls.target.set(...worldToScene(state.x, state.y, 0))
+          controls.target.set(...pointToSceneTuple(new Point2D(state.x, state.y)))
           controls.update()
         }
       }
@@ -215,7 +228,11 @@ function CameraFollower({
         const invMatrix = new THREE.Matrix4()
           .copy(camera.matrixWorld)
           .invert()
-        const localCorner = new THREE.Vector3()
+        // Scratch buffer for the inv-matrix multiply below. Allocated
+        // via the mapper so this file never constructs THREE.Vector3
+        // directly; the value (origin) is irrelevant — it's overwritten
+        // by `.copy(corner)` on every iteration.
+        const localCorner = pointToVector3(new Point3D(0, 0, 0))
         let maxLocalX = 0
         let maxLocalY = 0
         for (const corner of FIT_POINTS_SCENE) {
@@ -242,7 +259,7 @@ function CameraFollower({
       const dx = state.x - prevCar.current.x
       const dy = state.y - prevCar.current.y
       if (dx !== 0 || dy !== 0) {
-        const [sdx, , sdz] = worldToScene(dx, dy, 0)
+        const [sdx, , sdz] = pointToSceneTuple(new Point2D(dx, dy))
         camera.position.x += sdx
         camera.position.z += sdz
         if (controls) {
@@ -250,19 +267,26 @@ function CameraFollower({
           controls.target.z += sdz
           controls.update()
         }
-        prevCar.current = { x: state.x, y: state.y }
+        prevCar.current = new Point2D(state.x, state.y)
       }
     } else if (mode === 'follow-rotate') {
-      camera.position.set(...worldToScene(state.x, state.y, 12))
-      camera.lookAt(...worldToScene(state.x, state.y, 0))
-      camera.up.set(...worldToScene(Math.cos(state.yaw), Math.sin(state.yaw), 0))
+      camera.position.set(...pointToSceneTuple(new Point3D(state.x, state.y, 12)))
+      camera.lookAt(...pointToSceneTuple(new Point2D(state.x, state.y)))
+      camera.up.set(
+        ...pointToSceneTuple(
+          new Point2D(Math.cos(state.yaw), Math.sin(state.yaw)),
+        ),
+      )
     }
   })
 
   return null
 }
 
-function SimScene({
+// The full car simulation: physics, collisions, follow-cameras, key
+// bindings. Composes the shared `SimScene` for the static scaffolding
+// (lights + ground + grid) and adds the car-specific objects on top.
+function CarSimScene({
   onHudUpdate,
   cameraLocked,
   cameraFrozen,
@@ -274,11 +298,11 @@ function SimScene({
   const keys = useKeyboard()
   const tickIncrement = useSimTickIncrement()
   const stateRef = useRef<CarState>({ x: 0, y: 0, yaw: 0, v: 0, w: 0, colliding: false })
-  const trailRef = useRef<[number, number, number][]>([])
-  const [trail, setTrail] = useState<[number, number, number][]>([])
+  const trailRef = useRef<Point3D[]>([])
+  const [trail, setTrail] = useState<Point3D[]>([])
   const [collidedSet, setCollidedSet] = useState<Set<number>>(new Set())
   const [camMode, setCamMode] = useState<CamMode>('orbit')
-  const [camProjection, setCamProjection] = useState<CamProjection>('perspective')
+  const [camProjection, setCamProjection] = useState<Projection>('perspective')
   const [camResetKey, setCamResetKey] = useState(0)
 
   // The default (orbit) camera is always perspective. If the user was in
@@ -317,18 +341,20 @@ function SimScene({
     s.v = cmdV
     s.w = cmdW
 
+    const carPos = new Point2D(s.x, s.y)
     const minDist = CAR_RADIUS + OBSTACLE_RADIUS
     const hit = new Set<number>()
     for (let i = 0; i < OBSTACLES.length; i++) {
-      const dx = s.x - OBSTACLES[i][0]
-      const dy = s.y - OBSTACLES[i][1]
-      const dist = Math.sqrt(dx * dx + dy * dy)
-      if (dist < minDist) {
-        const overlap = minDist - dist
-        const nx = dx / dist
-        const ny = dy / dist
-        s.x += nx * overlap
-        s.y += ny * overlap
+      const obs = OBSTACLES[i]
+      const d = distance(carPos, obs)
+      if (d < minDist) {
+        const overlap = minDist - d
+        // Push the car along the (car - obs) direction, scaled by the
+        // overlap. `sub` and `scale` return Point3D (z = 0 here), so we
+        // only consume the planar components.
+        const push = scale(sub(carPos, obs), overlap / d)
+        s.x += push.x
+        s.y += push.y
         s.v = 0
         hit.add(i)
       }
@@ -337,7 +363,7 @@ function SimScene({
     setCollidedSet(hit)
 
     // Trail is authored in world coords; it lives inside WorldFrame.
-    trailRef.current.push([s.x, s.y, 0.02])
+    trailRef.current.push(new Point3D(s.x, s.y, 0.02))
     if (trailRef.current.length > MAX_TRAIL) trailRef.current.shift()
   }, [keys])
 
@@ -383,47 +409,20 @@ function SimScene({
 
   return (
     <>
-      <ambientLight intensity={0.5} />
-      <directionalLight position={[10, 15, 10]} intensity={1} castShadow />
-
-      <WorldFrame>
-        <Ground />
+      <SimScene lightPosition={[10, 15, 10]} castShadow>
         <OriginMarker />
         <WorldAxes length={1.0} />
         <Obstacles positions={OBSTACLES} hits={collidedSet} />
-        <Trail points={trail} />
+        <Trail points={trail.map(pointToTuple)} />
         <Car state={stateRef.current} />
-      </WorldFrame>
-
-      {/* gridHelper is already flat (scene XZ = world XY after the tilt),
-          and is a pure visual aid, so we keep it outside WorldFrame. */}
-      <gridHelper args={[30, 30, '#444', '#333']} />
+      </SimScene>
 
       {/* Active camera. drei's `makeDefault` registers it as the camera
           returned by `useThree()`, so OrbitControls and CameraFollower
-          automatically pick up the current projection on toggle. */}
-      {camProjection === 'perspective' ? (
-        <PerspectiveCamera
-          key="perspective"
-          makeDefault
-          fov={50}
-          near={0.1}
-          far={1000}
-          position={worldToScene(5, 5, 8)}
-        />
-      ) : (
-        <OrthographicCamera
-          key="orthographic"
-          makeDefault
-          /* CameraFollower overwrites this on the first frame to match
-             the current perspective framing; this is just a safe initial
-             value while that runs. */
-          zoom={40}
-          near={0.1}
-          far={1000}
-          position={worldToScene(5, 5, 8)}
-        />
-      )}
+          automatically pick up the current projection on toggle. The
+          ortho zoom here is just an initial value; CameraFollower fits
+          the ground plane on the first frame after a P toggle. */}
+      <ProjectionCamera projection={camProjection} fov={50} zoom={40} />
 
       <CameraFollower
         state={stateRef.current}
@@ -472,7 +471,7 @@ function App() {
       <div className="split-layout">
         <div className="split-left">
           <Canvas shadows>
-            <SimScene
+            <CarSimScene
               onHudUpdate={setHud}
               cameraLocked={cameraLocked}
               cameraFrozen={cameraFrozen}

@@ -49,6 +49,8 @@ RUN apt update && apt install -y curl \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt install -y nodejs
 
+RUN npm install -g npm@latest
+
 # RUN apt update && apt install -y \
 #     ros-${ROS_DISTRO}-turtlesim
 

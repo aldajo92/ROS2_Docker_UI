@@ -1,19 +1,21 @@
 // Reusable obstacle primitives. Lives inside <WorldFrame>, so all
 // coordinates are world (x forward, y left, z up).
 
+import { Point2D } from '../models/SimBase'
+
 export const OBSTACLE_RADIUS = 0.15
 
 // Default obstacle layout shared between the main sim and any preview
 // scenes that want to render the same world.
-export const OBSTACLES: ReadonlyArray<readonly [number, number]> = [
-  [1.6, 2.3],
-  [3.0, 3.0],
-  [2.0, 7.0],
-  [3.0, 5.5],
-  [6.0, 4.2],
-  [6.0, 8.3],
-  [7.0, 1.5],
-  [8.0, 6.0],
+export const OBSTACLES: ReadonlyArray<Point2D> = [
+  new Point2D(1.6, 2.3),
+  new Point2D(3.0, 3.0),
+  new Point2D(2.0, 7.0),
+  new Point2D(3.0, 5.5),
+  new Point2D(6.0, 4.2),
+  new Point2D(6.0, 8.3),
+  new Point2D(7.0, 1.5),
+  new Point2D(8.0, 6.0),
 ]
 
 // Single vertical pillar centered at (x, y) on the ground plane. The
@@ -43,14 +45,14 @@ export function Obstacles({
   positions,
   hits,
 }: {
-  positions: ReadonlyArray<readonly [number, number]>
+  positions: ReadonlyArray<Point2D>
   // Set of indices into `positions` that should be drawn as "hit".
   hits?: ReadonlySet<number>
 }) {
   return (
     <>
-      {positions.map(([x, y], i) => (
-        <Obstacle key={i} x={x} y={y} hit={hits?.has(i)} />
+      {positions.map((p, i) => (
+        <Obstacle key={i} x={p.x} y={p.y} hit={hits?.has(i)} />
       ))}
     </>
   )
