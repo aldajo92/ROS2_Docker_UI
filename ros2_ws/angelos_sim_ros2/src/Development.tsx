@@ -6,8 +6,8 @@ import {
   OriginMarker,
   WorldAxes,
   Car,
-  type CarState,
 } from './scene/world'
+import type { CarState } from './models/CarState'
 import { OBSTACLES, Obstacles } from './scene/obstacles'
 import { SimScene, SimSceneCell } from './scene/SimScene'
 import {
@@ -21,7 +21,7 @@ import {
   type CarCamView,
   type Projection,
 } from './scene/cameras'
-import { Point2D, Point3D } from './models/SimBase'
+import { Point2D } from './models/SimBase'
 import { pointToSceneTuple } from './models/SimMappers'
 import './App.css'
 
@@ -80,9 +80,7 @@ function CarCamSimCell() {
           ref={controlsRef}
           key={`${view}-${projection}`}
           makeDefault
-          target={pointToSceneTuple(
-            new Point3D(CAR_CAM_TARGET[0], CAR_CAM_TARGET[1], CAR_CAM_TARGET[2]),
-          )}
+          target={pointToSceneTuple(CAR_CAM_TARGET)}
           enableRotate={view === 'orbit'}
           enablePan
           enableZoom

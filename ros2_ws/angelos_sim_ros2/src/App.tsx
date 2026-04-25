@@ -11,8 +11,8 @@ import {
   OriginMarker,
   Car,
   Trail,
-  type CarState,
 } from './scene/world'
+import type { CarState } from './models/CarState'
 import {
   OBSTACLES,
   OBSTACLE_RADIUS,
@@ -24,7 +24,6 @@ import { Point2D, Point3D, distance, scale, sub } from './models/SimBase'
 import {
   pointToSceneTuple,
   pointToSceneVector3,
-  pointToTuple,
   pointToVector3,
   sceneVector3ToPoint3D,
 } from './models/SimMappers'
@@ -409,11 +408,11 @@ function CarSimScene({
 
   return (
     <>
-      <SimScene lightPosition={[10, 15, 10]} castShadow>
+      <SimScene lightPosition={new Point3D(10, 15, 10)} castShadow>
         <OriginMarker />
         <WorldAxes length={1.0} />
         <Obstacles positions={OBSTACLES} hits={collidedSet} />
-        <Trail points={trail.map(pointToTuple)} />
+        <Trail points={trail} />
         <Car state={stateRef.current} />
       </SimScene>
 

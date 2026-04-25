@@ -17,6 +17,8 @@ import { useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { Line } from '@react-three/drei'
 import * as THREE from 'three'
+import type { Point3D } from '../models/SimBase'
+import type { CarState } from '../models/CarState'
 
 // --- Frame setup ---------------------------------------------------------
 
@@ -46,15 +48,6 @@ export function sceneToWorld(
 
 export const GROUND_SIZE = 30
 export const CAR_RADIUS = 0.3
-
-export interface CarState {
-  x: number
-  y: number
-  yaw: number
-  v: number
-  w: number
-  colliding: boolean
-}
 
 export function WorldFrame({ children }: { children: React.ReactNode }) {
   return <group rotation={WORLD_TILT}>{children}</group>
@@ -160,7 +153,13 @@ export function Car({ state }: { state: CarState }) {
   )
 }
 
-export function Trail({ points }: { points: [number, number, number][] }) {
+export function Trail({ points }: { points: ReadonlyArray<Point3D> }) {
   if (points.length < 2) return null
-  return <Line points={points} color="#ff5050" lineWidth={2} />
+  // drei's <Line> wants tuples or Vector3s. Inlining the conversion
+  // here keeps `world.tsx` free of a dependency on `models/SimMappers`
+  // (which would create an import cycle: world -> mappers -> world).
+  const tuples = points.map(
+    (p): [number, number, number] => [p.x, p.y, p.z],
+  )
+  return <Line points={tuples} color="#ff5050" lineWidth={2} />
 }

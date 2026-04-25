@@ -1,6 +1,18 @@
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import { WorldFrame, Ground } from './world'
+import { Point3D } from '../models/SimBase'
+import { pointToSceneTuple, pointToTuple } from '../models/SimMappers'
+
+// Default key-light position for the preview cells (close, soft).
+// Authored in scene-space because the directional light lives outside
+// <WorldFrame> (lights aren't part of the world content).
+const DEFAULT_LIGHT_POS = new Point3D(5, 5, 5)
+
+// SimSceneCell's default camera, authored in WORLD coords so the
+// literal reads naturally ("12m forward, 12m left, 18m up"). The
+// pointToSceneTuple mapper handles the world->scene rotation.
+const SIM_SCENE_CELL_CAM_POS = new Point3D(12, -12, 18)
 
 // In-scene primitives shared by every dev cell:
 //   - ambient + directional light
@@ -15,20 +27,21 @@ import { WorldFrame, Ground } from './world'
 // `lightPosition` and `castShadow` are exposed because the main sim
 // uses a larger, shadow-casting key light tuned for the full ground
 // plane, while the small preview cells use a closer, shadow-less light.
+// `lightPosition` is in scene-space (lights live outside WorldFrame).
 export function SimScene({
   children,
-  lightPosition = [5, 5, 5],
+  lightPosition = DEFAULT_LIGHT_POS,
   castShadow = false,
 }: {
   children?: React.ReactNode
-  lightPosition?: [number, number, number]
+  lightPosition?: Point3D
   castShadow?: boolean
 }) {
   return (
     <>
       <ambientLight intensity={0.5} />
       <directionalLight
-        position={lightPosition}
+        position={pointToTuple(lightPosition)}
         intensity={1}
         castShadow={castShadow}
       />
@@ -53,7 +66,13 @@ export function SimSceneCell({
 }) {
   return (
     <div className="dev-grid-cell">
-      <Canvas shadows camera={{ position: [12, 18, 12], fov: 50 }}>
+      <Canvas
+        shadows
+        camera={{
+          position: pointToSceneTuple(SIM_SCENE_CELL_CAM_POS),
+          fov: 50,
+        }}
+      >
         <SimScene>{children}</SimScene>
         <OrbitControls makeDefault />
       </Canvas>

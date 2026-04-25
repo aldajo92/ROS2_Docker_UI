@@ -20,18 +20,24 @@ import {
   PerspectiveCamera,
 } from '@react-three/drei'
 import * as THREE from 'three'
-import { sceneToWorld, worldToScene } from './world'
+import { Point3D } from '../models/SimBase'
+import {
+  pointToSceneTuple,
+  sceneVector3ToPoint3D,
+} from '../models/SimMappers'
 
 // --- Types & data --------------------------------------------------------
 
 export type Projection = 'perspective' | 'orthographic'
 
 export interface CamPreset {
-  // Camera position in world (x, y, z).
-  pos: [number, number, number]
-  // Camera "up" direction in world (x, y, z). Top-down views need a
-  // non-Z up so a particular world axis stays "up on screen".
-  up: [number, number, number]
+  // Camera position in world coords.
+  pos: Point3D
+  // Camera "up" direction in world coords. Top-down views need a
+  // non-Z up so a particular world axis stays "up on screen". (Point3D
+  // is reused to represent direction vectors here; our world<->scene
+  // transform is a proper rotation, so directions map correctly too.)
+  up: Point3D
 }
 
 // "Look at the car" view presets. Standard orientations for inspecting
@@ -39,16 +45,16 @@ export interface CamPreset {
 export type CarCamView = 'orbit' | 'top' | 'front' | 'side' | 'rear'
 
 export const CAR_CAM_PRESETS: Record<CarCamView, CamPreset> = {
-  orbit: { pos: [3, 3, 2.5], up: [0, 0, 1] },
-  top: { pos: [0, 0, 6], up: [1, 0, 0] },
-  front: { pos: [3, 0, 1.2], up: [0, 0, 1] },
-  side: { pos: [0, 3, 1.2], up: [0, 0, 1] },
-  rear: { pos: [-3, 0, 1.2], up: [0, 0, 1] },
+  orbit: { pos: new Point3D(3, 3, 2.5), up: new Point3D(0, 0, 1) },
+  top: { pos: new Point3D(0, 0, 6), up: new Point3D(1, 0, 0) },
+  front: { pos: new Point3D(3, 0, 1.2), up: new Point3D(0, 0, 1) },
+  side: { pos: new Point3D(0, 3, 1.2), up: new Point3D(0, 0, 1) },
+  rear: { pos: new Point3D(-3, 0, 1.2), up: new Point3D(0, 0, 1) },
 }
 
 // Camera target ~car body height (15 cm) so the lookAt isn't right at
 // ground level.
-export const CAR_CAM_TARGET: [number, number, number] = [0, 0, 0.15]
+export const CAR_CAM_TARGET: Point3D = new Point3D(0, 0, 0.15)
 
 export const CAR_CAM_BUTTONS: ReadonlyArray<{
   id: CarCamView
@@ -117,16 +123,16 @@ export function PresetCameraRig({
   presetKey,
 }: {
   preset: CamPreset
-  target: [number, number, number]
+  target: Point3D
   // Caller-supplied identity used to detect "user picked a different
   // preset" without needing a deep compare on `preset` itself.
   presetKey: string
 }) {
   const { camera } = useThree()
   useEffect(() => {
-    camera.position.set(...worldToScene(...preset.pos))
-    camera.up.set(...worldToScene(...preset.up))
-    camera.lookAt(...worldToScene(...target))
+    camera.position.set(...pointToSceneTuple(preset.pos))
+    camera.up.set(...pointToSceneTuple(preset.up))
+    camera.lookAt(...pointToSceneTuple(target))
     camera.updateProjectionMatrix()
     // Including `preset`/`target` here would re-snap on every render
     // because the parent passes fresh array literals. `presetKey` is
@@ -164,18 +170,13 @@ export function CameraHud({
       fov?: number
       zoom?: number
     }
-    const [px, py, pz] = sceneToWorld(
-      camera.position.x,
-      camera.position.y,
-      camera.position.z,
-    )
-    let tx = 0
-    let ty = 0
-    let tz = 0
-    const target = controlsRef.current?.target as THREE.Vector3 | undefined
-    if (target) {
-      ;[tx, ty, tz] = sceneToWorld(target.x, target.y, target.z)
-    }
+    const camWorld = sceneVector3ToPoint3D(camera.position)
+    const targetSceneVec = controlsRef.current?.target as
+      | THREE.Vector3
+      | undefined
+    const targetWorld = targetSceneVec
+      ? sceneVector3ToPoint3D(targetSceneVec)
+      : new Point3D(0, 0, 0)
     const proj = cam.isOrthographicCamera ? 'ortho' : 'persp'
     const lens = cam.isOrthographicCamera
       ? `zoom=${(cam.zoom ?? 1).toFixed(1)}`
@@ -184,8 +185,8 @@ export function CameraHud({
 
     node.textContent =
       `proj  ${proj}  ${lens}\n` +
-      `pos   (${fmt(px)}, ${fmt(py)}, ${fmt(pz)})\n` +
-      `look  (${fmt(tx)}, ${fmt(ty)}, ${fmt(tz)})`
+      `pos   (${fmt(camWorld.x)}, ${fmt(camWorld.y)}, ${fmt(camWorld.z)})\n` +
+      `look  (${fmt(targetWorld.x)}, ${fmt(targetWorld.y)}, ${fmt(targetWorld.z)})`
   })
 
   return null
