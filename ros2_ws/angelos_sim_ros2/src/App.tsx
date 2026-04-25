@@ -10,15 +10,17 @@ import {
   Ground,
   GROUND_SIZE,
   CAR_RADIUS,
-  OBSTACLE_RADIUS,
-  OBSTACLES,
   WorldAxes,
   OriginMarker,
-  Obstacle,
   Car,
   Trail,
   type CarState,
-} from './world'
+} from './scene/world'
+import {
+  OBSTACLES,
+  OBSTACLE_RADIUS,
+  Obstacles,
+} from './scene/obstacles'
 import './App.css'
 
 const DT = 1 / 60
@@ -388,9 +390,7 @@ function SimScene({
         <Ground />
         <OriginMarker />
         <WorldAxes length={1.0} />
-        {OBSTACLES.map((obs, i) => (
-          <Obstacle key={i} x={obs[0]} y={obs[1]} hit={collidedSet.has(i)} />
-        ))}
+        <Obstacles positions={OBSTACLES} hits={collidedSet} />
         <Trail points={trail} />
         <Car state={stateRef.current} />
       </WorldFrame>
