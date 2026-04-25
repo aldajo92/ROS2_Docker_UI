@@ -1,64 +1,48 @@
 import { useRef, useEffect, useCallback, useState } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { OrbitControls, Line } from '@react-three/drei'
+import { OrbitControls, PerspectiveCamera, OrthographicCamera } from '@react-three/drei'
 import * as THREE from 'three'
 import { SimTickProvider, useSimTick, useSimTickIncrement } from './useSimTick'
 import VelocityChart from './VelocityChart'
+import {
+  worldToScene,
+  WorldFrame,
+  Ground,
+  GROUND_SIZE,
+  CAR_RADIUS,
+  OBSTACLE_RADIUS,
+  OBSTACLES,
+  WorldAxes,
+  OriginMarker,
+  Obstacle,
+  Car,
+  Trail,
+  type CarState,
+} from './world'
 import './App.css'
-
-const OBSTACLES = [
-  [1.6, 2.3],
-  [3.0, 3.0],
-  [2.0, 7.0],
-  [3.0, 5.5],
-  [6.0, 4.2],
-  [6.0, 8.3],
-  [7.0, 1.5],
-  [8.0, 6.0],
-]
 
 const DT = 1 / 60
 const MAX_TRAIL = 500
-const CAR_RADIUS = 0.3
-const OBSTACLE_RADIUS = 0.15
-
-// --- World frame ---------------------------------------------------------
-// The simulation is authored in a ROS/Gazebo-style frame:
-//   X forward, Y left, Z up, right-handed (x × y = z).
-// three.js uses a Y-up frame. We embed the world frame in the scene by
-// wrapping every world-space object in a single <group rotation={WORLD_TILT}>
-// that rotates the world onto three.js:
-//   world +X -> three.js +X
-//   world +Y -> three.js -Z
-//   world +Z -> three.js +Y
-// This is a proper rotation (det = +1) so the right-hand rule is preserved
-// and components can use (x, y, z) coordinates directly, with no sign
-// juggling.
-//
-// The camera lives outside the <Canvas> scene graph (it's attached to the
-// renderer, not to a group), so the few places that talk to the camera
-// need to translate a world point to three.js space. `worldToScene` is
-// the one and only conversion point.
-const WORLD_TILT: [number, number, number] = [-Math.PI / 2, 0, 0]
-
-function worldToScene(x: number, y: number, z: number = 0): [number, number, number] {
-  return [x, z, -y]
-}
+// Four corners of the ground plane, in scene coordinates (after
+// WORLD_TILT applies). The orthographic camera fits these corners on
+// projection toggle. Kept here because it depends on `THREE.Vector3`
+// instances; the size itself comes from the shared `GROUND_SIZE`.
+const FIT_HALF = GROUND_SIZE / 2
+const FIT_POINTS_SCENE: ReadonlyArray<THREE.Vector3> = [
+  new THREE.Vector3(-FIT_HALF, 0, -FIT_HALF),
+  new THREE.Vector3(FIT_HALF, 0, -FIT_HALF),
+  new THREE.Vector3(-FIT_HALF, 0, FIT_HALF),
+  new THREE.Vector3(FIT_HALF, 0, FIT_HALF),
+]
+// Multiplicative margin so the plane never sits flush against the canvas
+// edges after a P toggle.
+const ORTHO_FIT_MARGIN = 1.05
 
 // Wrap an angle (radians) into the canonical range [-π, π).
 function wrapAngle(a: number): number {
   const twoPi = 2 * Math.PI
   let x = ((a + Math.PI) % twoPi + twoPi) % twoPi
   return x - Math.PI
-}
-
-interface CarState {
-  x: number
-  y: number
-  yaw: number
-  v: number
-  w: number
-  colliding: boolean
 }
 
 function useKeyboard() {
@@ -78,159 +62,99 @@ function useKeyboard() {
   return keys
 }
 
-interface ArrowProps {
-  length?: number
-  shaftRadius?: number
-  tipRadius?: number
-  tipLength?: number
-  color?: string
-}
-
-// Arrow pointing along its local +X axis. Its internals use three.js
-// geometry conventions but externally it behaves as a pure "+X arrow",
-// so it composes naturally with parent rotations in any frame.
-function Arrow({
-  length = 0.55,
-  shaftRadius = 0.025,
-  tipRadius = 0.07,
-  tipLength = 0.18,
-  color = '#ff3c3c',
-}: ArrowProps) {
-  const shaftLength = length - tipLength
-  const shaftCenter = shaftLength / 2
-  const tipCenter = shaftLength + tipLength / 2
-
-  return (
-    <group>
-      <mesh position={[shaftCenter, 0, 0]} rotation={[0, 0, -Math.PI / 2]}>
-        <cylinderGeometry args={[shaftRadius, shaftRadius, shaftLength, 8]} />
-        <meshStandardMaterial color={color} />
-      </mesh>
-      <mesh position={[tipCenter, 0, 0]} rotation={[0, 0, -Math.PI / 2]}>
-        <coneGeometry args={[tipRadius, tipLength, 8]} />
-        <meshStandardMaterial color={color} />
-      </mesh>
-    </group>
-  )
-}
-
-// All of the following components live INSIDE the world-frame group, so
-// they can use world coordinates (x, y on the ground, z up) directly.
-
-function Car({ state }: { state: CarState }) {
-  const groupRef = useRef<THREE.Group>(null!)
-
-  useFrame(() => {
-    groupRef.current.position.set(state.x, state.y, 0.15)
-    groupRef.current.rotation.set(0, 0, state.yaw)
-  })
-
-  return (
-    <group ref={groupRef}>
-      <mesh>
-        {/* Dimensions are (x, y, z) in the world frame. */}
-        <boxGeometry args={[0.5, 0.3, 0.3]} />
-        <meshStandardMaterial color="#00ffff" />
-      </mesh>
-      <group position={[0.25, 0, 0]}>
-        <Arrow length={0.55} />
-      </group>
-    </group>
-  )
-}
-
-// Gazebo/ROS convention: X = red, Y = green, Z = blue, right-handed.
-function WorldAxes({ length = 1.0 }: { length?: number }) {
-  return (
-    <group position={[0, 0, 0.02]}>
-      <Arrow color="#ff0000" length={length} />
-      {/* +X rotated +90° about +Z -> +Y */}
-      <group rotation={[0, 0, Math.PI / 2]}>
-        <Arrow color="#00cc00" length={length} />
-      </group>
-      {/* +X rotated -90° about +Y -> +Z */}
-      <group rotation={[0, -Math.PI / 2, 0]}>
-        <Arrow color="#2a7bff" length={length} />
-      </group>
-    </group>
-  )
-}
-
-function Obstacle({ x, y, hit }: { x: number; y: number; hit: boolean }) {
-  // `cylinderGeometry` runs along the local Y axis by default; rotate the
-  // mesh so its long axis aligns with world +Z (vertical pillar).
-  return (
-    <mesh position={[x, y, 0.25]} rotation={[Math.PI / 2, 0, 0]}>
-      <cylinderGeometry args={[OBSTACLE_RADIUS, OBSTACLE_RADIUS, 0.5, 16]} />
-      <meshStandardMaterial color={hit ? '#ff4444' : '#888'} />
-    </mesh>
-  )
-}
-
-function Ground() {
-  // `planeGeometry` sits in the local XY plane facing +Z. Inside the
-  // world-frame group that's exactly the world XY ground plane facing up.
-  return (
-    <mesh position={[0, 0, -0.01]}>
-      <planeGeometry args={[30, 30]} />
-      <meshStandardMaterial color="#2a2a2a" />
-    </mesh>
-  )
-}
-
-function OriginMarker() {
-  return (
-    <mesh position={[0, 0, 0.02]}>
-      <boxGeometry args={[0.2, 0.2, 0.04]} />
-      <meshStandardMaterial color="#50c850" />
-    </mesh>
-  )
-}
-
-function Trail({ points }: { points: [number, number, number][] }) {
-  if (points.length < 2) return null
-  return <Line points={points} color="#ff5050" lineWidth={2} />
-}
-
-// `WorldFrame` is the single place where world <-> scene axis mapping
-// happens. Everything inside is authored in world coordinates.
-function WorldFrame({ children }: { children: React.ReactNode }) {
-  return <group rotation={WORLD_TILT}>{children}</group>
-}
-
 type CamMode = 'orbit' | 'follow' | 'follow-rotate'
+type CamProjection = 'perspective' | 'orthographic'
 
 function CameraFollower({
   state,
   mode,
   resetKey,
+  frozen,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   controlsRef,
 }: {
   state: CarState
   mode: CamMode
   resetKey: number
+  frozen: boolean
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   controlsRef: React.RefObject<any>
 }) {
-  const { camera } = useThree()
+  const { camera, size } = useThree()
   const initialized = useRef(false)
   const prevCar = useRef({ x: 0, y: 0 })
   const prevMode = useRef<CamMode>(mode)
+  const forceInit = useRef(false)
+  // Last known orbit camera pose. Updated every frame the user is in
+  // orbit mode and consulted when re-entering orbit (after C/X) so the
+  // user gets back the view they were looking at, not the hardcoded
+  // default. V explicitly clears this so it always resets cleanly.
+  const savedOrbitPose = useRef<{
+    position: THREE.Vector3
+    target: THREE.Vector3
+    up: THREE.Vector3
+  } | null>(null)
 
-  // Bumping resetKey forces the camera to snap back to its default pose
-  // on the next frame (used by the "V" shortcut).
+  // Explicit user-driven reset (V): re-initialize for the current mode
+  // and forget any saved orbit pose so the next C/X cycle starts clean.
   useEffect(() => {
-    initialized.current = false
+    forceInit.current = true
+    savedOrbitPose.current = null
+  }, [resetKey])
+
+  // Camera-object change (projection swap inside follow modes, or the
+  // initial mount) re-runs the init block but must NOT discard the
+  // saved orbit pose.
+  useEffect(() => {
+    forceInit.current = true
     camera.up.set(0, 1, 0)
-  }, [resetKey, camera])
+  }, [camera])
 
   useFrame(() => {
-    const controls = controlsRef.current
+    // Frozen: skip every camera-position update. Mode/reset events that
+    // arrived while frozen are deferred until the user unfreezes.
+    if (frozen) return
 
-    // Entering a new mode: set up the camera for that mode once, so the
-    // per-frame logic below only has to maintain the chosen pose.
-    if (prevMode.current !== mode) {
+    const controls = controlsRef.current
+    const cam = camera as THREE.Camera & {
+      isPerspectiveCamera?: boolean
+      isOrthographicCamera?: boolean
+      zoom?: number
+      updateProjectionMatrix?: () => void
+    }
+
+    // While the user is actively in orbit mode, continuously checkpoint
+    // the camera pose so we can restore it on re-entry. This is what
+    // makes "press C twice" return you to the same orbit view you had,
+    // instead of the hardcoded default.
+    if (
+      mode === 'orbit' &&
+      prevMode.current === 'orbit' &&
+      !forceInit.current &&
+      controls?.target
+    ) {
+      if (!savedOrbitPose.current) {
+        savedOrbitPose.current = {
+          position: camera.position.clone(),
+          target: (controls.target as THREE.Vector3).clone(),
+          up: camera.up.clone(),
+        }
+      } else {
+        savedOrbitPose.current.position.copy(camera.position)
+        savedOrbitPose.current.target.copy(controls.target as THREE.Vector3)
+        savedOrbitPose.current.up.copy(camera.up)
+      }
+    }
+
+    // Entering a new mode (or after a forced reset): set up the camera
+    // for that mode once, so the per-frame logic below only has to
+    // maintain the chosen pose. We also size the orthographic frustum
+    // here, which requires a fully up-to-date camera world matrix —
+    // hence doing all camera-pose work for orbit mode in this block,
+    // not in the per-frame fallthrough below.
+    if (prevMode.current !== mode || forceInit.current) {
+      const enteringOrbit = mode === 'orbit' && prevMode.current !== 'orbit'
+
       if (mode === 'follow') {
         // Put the camera 12 units above the car in world coords and look
         // straight down; OrbitControls handles pan + zoom from there.
@@ -242,8 +166,72 @@ function CameraFollower({
           controls.update()
         }
         prevCar.current = { x: state.x, y: state.y }
+      } else if (mode === 'follow-rotate') {
+        camera.position.set(...worldToScene(state.x, state.y, 12))
+        camera.lookAt(...worldToScene(state.x, state.y, 0))
+        camera.up.set(
+          ...worldToScene(Math.cos(state.yaw), Math.sin(state.yaw), 0),
+        )
+      } else if (enteringOrbit && savedOrbitPose.current) {
+        // Returning to orbit from another mode — restore exactly the
+        // camera pose the user last had in orbit (position + target +
+        // up). V would have cleared savedOrbitPose, so V still resets
+        // cleanly to the default below.
+        camera.position.copy(savedOrbitPose.current.position)
+        camera.up.copy(savedOrbitPose.current.up)
+        if (controls) {
+          controls.target.copy(savedOrbitPose.current.target)
+          controls.update()
+        }
+      } else {
+        camera.position.set(...worldToScene(state.x + 5, state.y + 5, 8))
+        camera.up.set(0, 1, 0)
+        camera.lookAt(...worldToScene(state.x, state.y, 0))
+        if (controls) {
+          controls.target.set(...worldToScene(state.x, state.y, 0))
+          controls.update()
+        }
+      }
+      initialized.current = true
+
+      // If the active camera is orthographic (e.g. just toggled via P),
+      // pick the zoom that exactly fits the ground-plane corners with a
+      // small margin. Geometry, no heuristics:
+      //   1. Project each corner into camera-local space using the
+      //      camera's inverse world matrix.
+      //   2. The corner with the largest |x| / |y| in that frame is the
+      //      one closest to the screen edge.
+      //   3. Drei sizes the ortho frustum as
+      //        left/right = ±size.width/2, top/bottom = ±size.height/2
+      //      (in pixels), divided by zoom. So the visible world half-
+      //      width is `size.width / (2 * zoom)` and the visible world
+      //      half-height is `size.height / (2 * zoom)`.
+      //   4. Pick the zoom that makes both corner-extents fit, then
+      //      shrink it slightly so the plane has breathing room.
+      if (cam.isOrthographicCamera && size.height > 0 && size.width > 0) {
+        camera.updateMatrixWorld(true)
+        const invMatrix = new THREE.Matrix4()
+          .copy(camera.matrixWorld)
+          .invert()
+        const localCorner = new THREE.Vector3()
+        let maxLocalX = 0
+        let maxLocalY = 0
+        for (const corner of FIT_POINTS_SCENE) {
+          localCorner.copy(corner).applyMatrix4(invMatrix)
+          const ax = Math.abs(localCorner.x)
+          const ay = Math.abs(localCorner.y)
+          if (ax > maxLocalX) maxLocalX = ax
+          if (ay > maxLocalY) maxLocalY = ay
+        }
+        if (maxLocalX > 0 && maxLocalY > 0) {
+          const zoomX = size.width / (2 * maxLocalX * ORTHO_FIT_MARGIN)
+          const zoomY = size.height / (2 * maxLocalY * ORTHO_FIT_MARGIN)
+          cam.zoom = Math.min(zoomX, zoomY)
+          cam.updateProjectionMatrix?.()
+        }
       }
       prevMode.current = mode
+      forceInit.current = false
     }
 
     if (mode === 'follow') {
@@ -265,19 +253,22 @@ function CameraFollower({
     } else if (mode === 'follow-rotate') {
       camera.position.set(...worldToScene(state.x, state.y, 12))
       camera.lookAt(...worldToScene(state.x, state.y, 0))
-      // Up on screen follows the car's heading (world frame).
       camera.up.set(...worldToScene(Math.cos(state.yaw), Math.sin(state.yaw), 0))
-    } else if (!initialized.current) {
-      camera.position.set(...worldToScene(state.x + 5, state.y + 5, 8))
-      camera.lookAt(...worldToScene(state.x, state.y, 0))
-      initialized.current = true
     }
   })
 
   return null
 }
 
-function SimScene({ onHudUpdate }: { onHudUpdate: (h: CarState) => void }) {
+function SimScene({
+  onHudUpdate,
+  cameraLocked,
+  cameraFrozen,
+}: {
+  onHudUpdate: (h: CarState) => void
+  cameraLocked: boolean
+  cameraFrozen: boolean
+}) {
   const keys = useKeyboard()
   const tickIncrement = useSimTickIncrement()
   const stateRef = useRef<CarState>({ x: 0, y: 0, yaw: 0, v: 0, w: 0, colliding: false })
@@ -285,10 +276,22 @@ function SimScene({ onHudUpdate }: { onHudUpdate: (h: CarState) => void }) {
   const [trail, setTrail] = useState<[number, number, number][]>([])
   const [collidedSet, setCollidedSet] = useState<Set<number>>(new Set())
   const [camMode, setCamMode] = useState<CamMode>('orbit')
+  const [camProjection, setCamProjection] = useState<CamProjection>('perspective')
   const [camResetKey, setCamResetKey] = useState(0)
+
+  // The default (orbit) camera is always perspective. If the user was in
+  // ortho inside a follow mode and then switches back to orbit (via C, X
+  // or V), snap projection back to perspective.
+  useEffect(() => {
+    if (camMode === 'orbit' && camProjection !== 'perspective') {
+      setCamProjection('perspective')
+      setCamResetKey(k => k + 1)
+    }
+  }, [camMode, camProjection])
   const cWasDown = useRef(false)
   const xWasDown = useRef(false)
   const vWasDown = useRef(false)
+  const pWasDown = useRef(false)
   const frameCount = useRef(0)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const controlsRef = useRef<any>(null)
@@ -357,6 +360,17 @@ function SimScene({ onHudUpdate }: { onHudUpdate: (h: CarState) => void }) {
     }
     vWasDown.current = vDown
 
+    // "P" toggles between perspective and orthographic projection, but
+    // ONLY in the follow / follow-rotate modes. The default (orbit)
+    // camera is always perspective — orthographic doesn't make sense
+    // for a free-orbiting tilted view of a large ground plane.
+    const pDown = keys.current.has('p')
+    if (pDown && !pWasDown.current && camMode !== 'orbit') {
+      setCamProjection(prev => (prev === 'perspective' ? 'orthographic' : 'perspective'))
+      setCamResetKey(k => k + 1)
+    }
+    pWasDown.current = pDown
+
     frameCount.current++
     if (frameCount.current % 3 === 0) {
       setTrail([...trailRef.current])
@@ -385,15 +399,45 @@ function SimScene({ onHudUpdate }: { onHudUpdate: (h: CarState) => void }) {
           and is a pure visual aid, so we keep it outside WorldFrame. */}
       <gridHelper args={[30, 30, '#444', '#333']} />
 
+      {/* Active camera. drei's `makeDefault` registers it as the camera
+          returned by `useThree()`, so OrbitControls and CameraFollower
+          automatically pick up the current projection on toggle. */}
+      {camProjection === 'perspective' ? (
+        <PerspectiveCamera
+          key="perspective"
+          makeDefault
+          fov={50}
+          near={0.1}
+          far={1000}
+          position={worldToScene(5, 5, 8)}
+        />
+      ) : (
+        <OrthographicCamera
+          key="orthographic"
+          makeDefault
+          /* CameraFollower overwrites this on the first frame to match
+             the current perspective framing; this is just a safe initial
+             value while that runs. */
+          zoom={40}
+          near={0.1}
+          far={1000}
+          position={worldToScene(5, 5, 8)}
+        />
+      )}
+
       <CameraFollower
         state={stateRef.current}
         mode={camMode}
         resetKey={camResetKey}
+        frozen={cameraFrozen}
         controlsRef={controlsRef}
       />
+      {/* Remount OrbitControls when the projection changes so it binds to
+          the new active camera instead of the previous one. */}
       <OrbitControls
+        key={camProjection}
         ref={controlsRef}
-        enabled={camMode === 'orbit' || camMode === 'follow'}
+        enabled={!cameraLocked && (camMode === 'orbit' || camMode === 'follow')}
         enableRotate={camMode === 'orbit'}
         enableZoom
         enablePan
@@ -420,13 +464,19 @@ function Dashboard({ hud }: { hud: CarState }) {
 
 function App() {
   const [hud, setHud] = useState<CarState>({ x: 0, y: 0, yaw: 0, v: 0, w: 0, colliding: false })
+  const [cameraLocked, setCameraLocked] = useState(false)
+  const [cameraFrozen, setCameraFrozen] = useState(false)
 
   return (
     <SimTickProvider>
       <div className="split-layout">
         <div className="split-left">
-          <Canvas shadows camera={{ position: worldToScene(5, 5, 8), fov: 50 }}>
-            <SimScene onHudUpdate={setHud} />
+          <Canvas shadows>
+            <SimScene
+              onHudUpdate={setHud}
+              cameraLocked={cameraLocked}
+              cameraFrozen={cameraFrozen}
+            />
           </Canvas>
           <div className="hud">
             <span>v = {hud.v.toFixed(2)} m/s</span>
@@ -434,8 +484,64 @@ function App() {
             <span>pos = ({hud.x.toFixed(2)}, {hud.y.toFixed(2)})</span>
             <span>yaw = {(hud.yaw * 180 / Math.PI).toFixed(1)}°</span>
           </div>
-          <div className="controls-hint">
-            IJKL / Arrow keys to drive — C: top-down track — X: rotating track — V: reset camera — Orbit: left-click drag — Zoom: scroll
+          <div className="cam-toolbar">
+            <button
+              className="cam-btn"
+              type="button"
+              title={
+                'Controls\n' +
+                '\n' +
+                'IJKL / Arrows  drive\n' +
+                'C   top-down follow\n' +
+                'X   rotating follow\n' +
+                'V   reset camera\n' +
+                'P   perspective / orthographic (follow modes only)\n' +
+                '\n' +
+                'Mouse: left-drag = orbit, scroll = zoom, right-drag = pan'
+              }
+              aria-label="Show controls"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+            </button>
+            <button
+              className={`cam-btn ${cameraLocked ? 'active' : ''}`}
+              onClick={() => setCameraLocked(prev => !prev)}
+              title={cameraLocked
+                ? 'Unlock camera (re-enable mouse interactions)'
+                : 'Lock camera (disable mouse interactions)'}
+              aria-label={cameraLocked ? 'Unlock camera interactions' : 'Lock camera interactions'}
+            >
+              {cameraLocked ? (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="4" y="11" width="16" height="10" rx="2" />
+                  <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+                </svg>
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="4" y="11" width="16" height="10" rx="2" />
+                  <path d="M8 11V7a4 4 0 0 1 8 0" />
+                </svg>
+              )}
+            </button>
+            <button
+              className={`cam-btn ${cameraFrozen ? 'active' : ''}`}
+              onClick={() => setCameraFrozen(prev => !prev)}
+              title={cameraFrozen
+                ? 'Unfreeze camera (resume auto follow / mode updates)'
+                : 'Freeze camera (stop all programmatic camera movement)'}
+              aria-label={cameraFrozen ? 'Unfreeze camera' : 'Freeze camera'}
+            >
+              {/* Pin / thumbtack — denotes "camera pinned in place" */}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2v6" />
+                <path d="M9 8h6l1 6H8z" />
+                <path d="M12 14v8" />
+              </svg>
+            </button>
           </div>
         </div>
         <Dashboard hud={hud} />

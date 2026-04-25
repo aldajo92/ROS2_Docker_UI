@@ -1,81 +1,124 @@
-import { useRef, useEffect } from 'react'
+import { useEffect, useRef } from 'react'
+import { Chart as ChartJS } from 'chart.js/auto'
+import type { ChartData, ChartOptions, Point } from 'chart.js'
+import { Line } from 'react-chartjs-2'
 import { useChartTick } from './useSimTick'
 
 const CHART_FREQUENCY = 10
-const MAX_POINTS = 200
-const WIDTH = 400
-const HEIGHT = 150
-const PADDING = { top: 10, right: 10, bottom: 25, left: 40 }
-
-const plotW = WIDTH - PADDING.left - PADDING.right
-const plotH = HEIGHT - PADDING.top - PADDING.bottom
+// Number of samples shown on screen. The x-axis is pinned to the last
+// WINDOW samples, so the chart always displays exactly this many points.
+const WINDOW = 100
 
 interface VelocityChartProps {
   velocity: number
   yMin?: number
   yMax?: number
+  label?: string
+  color?: string
+  height?: number
 }
 
-export default function VelocityChart({ velocity, yMin = -1, yMax = 1.5 }: VelocityChartProps) {
+// Stable, mutated-in-place data and options. Chart.js prefers in-place
+// mutation + `chart.update('none')` for high-frequency streaming, which
+// avoids the cost of rebuilding the chart on each new sample.
+//
+// We use `{x, y}` Point objects so that `parsing: false` can be enabled
+// (the chart consumes the data as-is, no per-frame re-parsing).
+function makeInitialData(label: string, color: string): ChartData<'line', Point[]> {
+  return {
+    datasets: [
+      {
+        label,
+        data: [],
+        borderColor: color,
+        backgroundColor: color,
+        pointBackgroundColor: color,
+        pointBorderColor: color,
+        pointRadius: 2.4,
+        pointHoverRadius: 2.4,
+        borderWidth: 1.6,
+        tension: 0.15,
+        fill: false,
+      },
+    ],
+  }
+}
+
+function makeOptions(yMin: number, yMax: number): ChartOptions<'line'> {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: false,
+    parsing: false,
+    interaction: { mode: 'nearest', intersect: false },
+    scales: {
+      x: {
+        type: 'linear',
+        display: false,
+        grid: { color: '#2a2a2a' },
+      },
+      y: {
+        min: yMin,
+        max: yMax,
+        grid: { color: '#2a2a2a' },
+        ticks: { color: '#888', font: { size: 10 } },
+        border: { color: '#2a2a2a' },
+      },
+    },
+    plugins: {
+      legend: { display: false },
+      tooltip: { enabled: false },
+    },
+    elements: {
+      point: { hitRadius: 0 },
+    },
+  }
+}
+
+export default function VelocityChart({
+  velocity,
+  yMin = -1,
+  yMax = 1.5,
+  label = 'v (m/s)',
+  color = '#d63cff',
+  height = 180,
+}: VelocityChartProps) {
   const tickChart = useChartTick(CHART_FREQUENCY)
-  const bufferRef = useRef<{ tick: number; v: number }[]>([])
+  const chartRef = useRef<ChartJS<'line', Point[]> | null>(null)
+
+  // Created once; mutated in place by the streaming effect below.
+  const dataRef = useRef(makeInitialData(label, color))
+  const optionsRef = useRef(makeOptions(yMin, yMax))
 
   useEffect(() => {
-    const buf = bufferRef.current
-    if (buf.length === 0 || buf[buf.length - 1].tick !== tickChart) {
-      buf.push({ tick: tickChart, v: velocity })
-      if (buf.length > MAX_POINTS) buf.shift()
-    }
+    const chart = chartRef.current
+    if (!chart) return
+
+    const series = chart.data.datasets[0].data as Point[]
+    const last = series[series.length - 1]
+    if (last && last.x === tickChart) return
+
+    series.push({ x: tickChart, y: velocity })
+
+    const minX = tickChart - WINDOW + 1
+    while (series.length && series[0].x < minX) series.shift()
+
+    chart.options.scales!.x!.min = minX
+    chart.options.scales!.x!.max = tickChart
+    chart.update('none')
   }, [tickChart, velocity])
 
-  const data = bufferRef.current
-  if (data.length < 2) return null
-
-  const xStart = data[0].tick
-  const xEnd = data[data.length - 1].tick
-  const xRange = xEnd - xStart || 1
-  const yRange = yMax - yMin
-
-  const toX = (tick: number) => PADDING.left + ((tick - xStart) / xRange) * plotW
-  const toY = (v: number) => PADDING.top + (1 - (v - yMin) / yRange) * plotH
-
-  const pathD = data
-    .map((p, i) => `${i === 0 ? 'M' : 'L'}${toX(p.tick).toFixed(1)},${toY(p.v).toFixed(1)}`)
-    .join(' ')
-
-  const yTicks = 5
-  const yStep = yRange / yTicks
-
   return (
-    <svg width={WIDTH} height={HEIGHT} style={{ background: '#1a1a1a', borderRadius: 6 }}>
-      {Array.from({ length: yTicks + 1 }, (_, i) => {
-        const val = yMin + i * yStep
-        const y = toY(val)
-        return (
-          <g key={i}>
-            <line x1={PADDING.left} x2={WIDTH - PADDING.right} y1={y} y2={y} stroke="#333" strokeWidth={0.5} />
-            <text x={PADDING.left - 4} y={y + 3} fill="#888" fontSize={9} textAnchor="end">
-              {val.toFixed(1)}
-            </text>
-          </g>
-        )
-      })}
-
-      {/* zero line */}
-      <line
-        x1={PADDING.left} x2={WIDTH - PADDING.right}
-        y1={toY(0)} y2={toY(0)}
-        stroke="#555" strokeWidth={1} strokeDasharray="4 2"
-      />
-
-      <path d={pathD} fill="none" stroke="#00ccff" strokeWidth={1.5} />
-
-      <text x={WIDTH / 2} y={HEIGHT - 4} fill="#888" fontSize={10} textAnchor="middle">
-        tickChart
-      </text>
-      <text x={12} y={HEIGHT / 2} fill="#888" fontSize={10} textAnchor="middle" transform={`rotate(-90,12,${HEIGHT / 2})`}>
-        v (m/s)
-      </text>
-    </svg>
+    <div
+      style={{
+        width: '100%',
+        height,
+        background: '#1a1a1a',
+        borderRadius: 6,
+        boxSizing: 'border-box',
+      }}
+    >
+      <Line ref={chartRef} data={dataRef.current} options={optionsRef.current} />
+    </div>
   )
 }
