@@ -1,0 +1,192 @@
+// Reusable camera primitives shared across the dev cells (and meant to
+// grow into the main App's camera too over time).
+//
+// Three building blocks live here:
+//   1. `ProjectionCamera` — a drop-in switchable perspective/ortho
+//      camera that uses drei's primitives and remounts on toggle so
+//      `makeDefault` always rebinds to the active projection.
+//   2. `PresetCameraRig` — snaps the active camera to a (position, up,
+//      lookAt) preset every time `presetKey` changes.
+//   3. `CameraHud` — writes the live camera + orbit target to a DOM
+//      ref a few times per second, no React re-renders.
+//
+// Plus a small data block for the canonical "look at the car" presets,
+// so any cell that wants those views can reuse the same definitions.
+
+import { useEffect, useRef } from 'react'
+import { useFrame, useThree } from '@react-three/fiber'
+import {
+  OrthographicCamera,
+  PerspectiveCamera,
+} from '@react-three/drei'
+import * as THREE from 'three'
+import { sceneToWorld, worldToScene } from './world'
+
+// --- Types & data --------------------------------------------------------
+
+export type Projection = 'perspective' | 'orthographic'
+
+export interface CamPreset {
+  // Camera position in world (x, y, z).
+  pos: [number, number, number]
+  // Camera "up" direction in world (x, y, z). Top-down views need a
+  // non-Z up so a particular world axis stays "up on screen".
+  up: [number, number, number]
+}
+
+// "Look at the car" view presets. Standard orientations for inspecting
+// a vehicle parked at the world origin.
+export type CarCamView = 'orbit' | 'top' | 'front' | 'side' | 'rear'
+
+export const CAR_CAM_PRESETS: Record<CarCamView, CamPreset> = {
+  orbit: { pos: [3, 3, 2.5], up: [0, 0, 1] },
+  top: { pos: [0, 0, 6], up: [1, 0, 0] },
+  front: { pos: [3, 0, 1.2], up: [0, 0, 1] },
+  side: { pos: [0, 3, 1.2], up: [0, 0, 1] },
+  rear: { pos: [-3, 0, 1.2], up: [0, 0, 1] },
+}
+
+// Camera target ~car body height (15 cm) so the lookAt isn't right at
+// ground level.
+export const CAR_CAM_TARGET: [number, number, number] = [0, 0, 0.15]
+
+export const CAR_CAM_BUTTONS: ReadonlyArray<{
+  id: CarCamView
+  label: string
+}> = [
+  { id: 'orbit', label: 'Orbit' },
+  { id: 'top', label: 'Top' },
+  { id: 'front', label: 'Front' },
+  { id: 'side', label: 'Side' },
+  { id: 'rear', label: 'Rear' },
+]
+
+export const PROJECTION_BUTTONS: ReadonlyArray<{
+  id: Projection
+  label: string
+}> = [
+  { id: 'perspective', label: 'Perspective' },
+  { id: 'orthographic', label: 'Orthographic' },
+]
+
+// --- Components ----------------------------------------------------------
+
+// Switchable perspective/orthographic camera. Uses drei's primitives
+// under the hood; we remount on projection change (via React `key`) so
+// drei re-registers the new instance as the default camera. The cell
+// can then attach OrbitControls and a rig to that default.
+export function ProjectionCamera({
+  projection,
+  fov = 50,
+  zoom = 80,
+  near = 0.1,
+  far = 1000,
+}: {
+  projection: Projection
+  fov?: number
+  zoom?: number
+  near?: number
+  far?: number
+}) {
+  return projection === 'perspective' ? (
+    <PerspectiveCamera
+      key="perspective"
+      makeDefault
+      fov={fov}
+      near={near}
+      far={far}
+    />
+  ) : (
+    <OrthographicCamera
+      key="orthographic"
+      makeDefault
+      zoom={zoom}
+      near={near}
+      far={far}
+    />
+  )
+}
+
+// Snaps the active camera to a (position, up, lookAt) preset. Re-runs
+// whenever `presetKey` or the underlying camera object changes — that
+// covers both view toggles and projection swaps (which mount a new
+// camera object).
+export function PresetCameraRig({
+  preset,
+  target,
+  presetKey,
+}: {
+  preset: CamPreset
+  target: [number, number, number]
+  // Caller-supplied identity used to detect "user picked a different
+  // preset" without needing a deep compare on `preset` itself.
+  presetKey: string
+}) {
+  const { camera } = useThree()
+  useEffect(() => {
+    camera.position.set(...worldToScene(...preset.pos))
+    camera.up.set(...worldToScene(...preset.up))
+    camera.lookAt(...worldToScene(...target))
+    camera.updateProjectionMatrix()
+    // Including `preset`/`target` here would re-snap on every render
+    // because the parent passes fresh array literals. `presetKey` is
+    // the explicit identity to react to.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presetKey, camera])
+  return null
+}
+
+// Live camera HUD. Samples the camera + OrbitControls target at ~10 Hz
+// and writes the result imperatively into a DOM ref to avoid triggering
+// React renders every frame.
+export function CameraHud({
+  hudRef,
+  controlsRef,
+}: {
+  hudRef: React.RefObject<HTMLDivElement | null>
+  // OrbitControls ref; we only need `.target`, but the type from drei
+  // is a noisy union, so leaving it as `any` here.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  controlsRef: React.RefObject<any>
+}) {
+  const { camera } = useThree()
+  const tick = useRef(0)
+
+  useFrame(() => {
+    tick.current = (tick.current + 1) % 6
+    if (tick.current !== 0) return
+    const node = hudRef.current
+    if (!node) return
+
+    const cam = camera as THREE.Camera & {
+      isOrthographicCamera?: boolean
+      isPerspectiveCamera?: boolean
+      fov?: number
+      zoom?: number
+    }
+    const [px, py, pz] = sceneToWorld(
+      camera.position.x,
+      camera.position.y,
+      camera.position.z,
+    )
+    let tx = 0
+    let ty = 0
+    let tz = 0
+    const target = controlsRef.current?.target as THREE.Vector3 | undefined
+    if (target) {
+      ;[tx, ty, tz] = sceneToWorld(target.x, target.y, target.z)
+    }
+    const proj = cam.isOrthographicCamera ? 'ortho' : 'persp'
+    const lens = cam.isOrthographicCamera
+      ? `zoom=${(cam.zoom ?? 1).toFixed(1)}`
+      : `fov=${(cam.fov ?? 0).toFixed(0)}°`
+    const fmt = (n: number) => n.toFixed(2)
+
+    node.textContent =
+      `proj  ${proj}  ${lens}\n` +
+      `pos   (${fmt(px)}, ${fmt(py)}, ${fmt(pz)})\n` +
+      `look  (${fmt(tx)}, ${fmt(ty)}, ${fmt(tz)})`
+  })
+
+  return null
+}
