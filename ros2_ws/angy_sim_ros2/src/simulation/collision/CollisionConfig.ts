@@ -9,7 +9,20 @@
  * which is the only place allowed to map a `CollisionBackendType` to
  * a concrete backend class.
  */
-export type CollisionBackendType = 'simpleCircle2D' | 'rapier2D'
+/**
+ * Active collision backend selector.
+ *
+ *   - `'disabled'`     — `NoopCollisionBackend2D`. Keeps the
+ *                        `CollisionSystem` registered (so the tick
+ *                        pipeline shape never changes) but skips all
+ *                        broad/narrow-phase work. Useful for tests,
+ *                        benchmarks, and "free-driving" demos.
+ *   - `'simpleCircle2D'` — built-in O(n²) circle backend. Default.
+ *   - `'rapier2D'`     — heavy WASM backend under
+ *                        `infrastructure/collision/rapier/`. Requires
+ *                        async `create()` and is opt-in.
+ */
+export type CollisionBackendType = 'disabled' | 'simpleCircle2D' | 'rapier2D'
 
 export interface CollisionConfig {
   backend: CollisionBackendType

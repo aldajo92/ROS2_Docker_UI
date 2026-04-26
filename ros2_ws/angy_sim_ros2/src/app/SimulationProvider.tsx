@@ -4,7 +4,13 @@ import { SimulationEngine } from '../simulation/core/SimulationEngine'
 import { SimulationController } from '../simulation/core/SimulationController'
 import { VehicleDynamicsSystem } from '../simulation/systems/VehicleDynamicsSystem'
 import { CollisionSystem } from '../simulation/systems/CollisionSystem'
+import type { CollisionBackend2D } from '../simulation/collision/CollisionBackend2D'
+import {
+  DEFAULT_COLLISION_CONFIG,
+  type CollisionConfig,
+} from '../simulation/collision/CollisionConfig'
 import { SimpleCircleCollisionBackend2D } from '../simulation/collision/SimpleCircleCollisionBackend2D'
+import { NoopCollisionBackend2D } from '../simulation/collision/NoopCollisionBackend2D'
 import { MetricsSystem } from '../simulation/systems/MetricsSystem'
 import { ScenarioSystem } from '../simulation/systems/ScenarioSystem'
 import { VehicleCommandQueue } from '../simulation/commands/VehicleCommandQueue'
@@ -21,8 +27,28 @@ import type { SimulationContextValue } from './SimulationContext'
  * between strict-mode passes. We only `pause()` on unmount; we never
  * recreate. This avoids the "two engines running" trap.
  */
-export function SimulationProvider({ children }: { children: ReactNode }) {
-  const [value] = useState<SimulationContextValue>(() => buildContext())
+export interface SimulationProviderProps {
+  children: ReactNode
+  /**
+   * Collision backend selector. Defaults to
+   * `DEFAULT_COLLISION_CONFIG` (`simpleCircle2D`). Pass
+   * `{ backend: 'disabled' }` to skip collision detection without
+   * removing `CollisionSystem` from the tick pipeline.
+   *
+   * `'rapier2D'` is intentionally NOT supported synchronously here
+   * because it requires `await RapierCollisionBackend2D.create()`.
+   * Wire Rapier explicitly at the call site if you need it.
+   */
+  collisionConfig?: CollisionConfig
+}
+
+export function SimulationProvider({
+  children,
+  collisionConfig = DEFAULT_COLLISION_CONFIG,
+}: SimulationProviderProps) {
+  const [value] = useState<SimulationContextValue>(() =>
+    buildContext(collisionConfig),
+  )
 
   useEffect(() => {
     return () => {
@@ -35,7 +61,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
   )
 }
 
-function buildContext(): SimulationContextValue {
+function buildContext(collisionConfig: CollisionConfig): SimulationContextValue {
   const engine = new SimulationEngine()
   const commandQueue = new VehicleCommandQueue()
 
@@ -45,14 +71,29 @@ function buildContext(): SimulationContextValue {
   //   3. VehicleDynamicsSystem — integrates pose using the new commands
   //   4. CollisionSystem       — checks collisions on the integrated state
   //   5. MetricsSystem         — last so it observes the final state
-  // Default to the simple O(n²) circle backend; Rapier can be wired
-  // in via an explicit async setup path (see `RapierCollisionBackend2D`).
   engine.systems.add(new ScenarioSystem())
   engine.systems.add(new VehicleCommandSystem(commandQueue))
   engine.systems.add(new VehicleDynamicsSystem())
-  engine.systems.add(new CollisionSystem(new SimpleCircleCollisionBackend2D()))
+  engine.systems.add(new CollisionSystem(buildCollisionBackend(collisionConfig)))
   engine.systems.add(new MetricsSystem())
 
   const controller = new SimulationController(engine)
   return { controller, engine, commandQueue }
+}
+
+function buildCollisionBackend(config: CollisionConfig): CollisionBackend2D {
+  switch (config.backend) {
+    case 'disabled':
+      return new NoopCollisionBackend2D()
+    case 'simpleCircle2D':
+      return new SimpleCircleCollisionBackend2D()
+    case 'rapier2D':
+      // Rapier requires `await RapierCollisionBackend2D.create()` and
+      // therefore cannot be wired up synchronously inside this
+      // provider. Wire it explicitly at the call site if you need it.
+      throw new Error(
+        "SimulationProvider cannot construct 'rapier2D' synchronously. " +
+          'Wire RapierCollisionBackend2D explicitly via an async setup path.',
+      )
+  }
 }

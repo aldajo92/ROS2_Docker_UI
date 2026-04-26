@@ -234,11 +234,17 @@ entities, or any consumer of the `collision` event.
   circle-vs-circle, returns penetration depth and a unit normal.
   Silently ignores oriented boxes; if you need them, switch
   backends.
+- **`NoopCollisionBackend2D`** — explicit "collisions off" backend.
+  `detect()` always returns `[]`. Used when
+  `CollisionConfig.backend === 'disabled'` so `CollisionSystem`
+  stays in the tick pipeline (preserving pipeline shape and event
+  semantics) without doing any work. Useful for tests, benchmarks,
+  and free-driving demos.
 - **`CollisionConfig`** — `CollisionBackendType =
-  'simpleCircle2D' | 'rapier2D'`. Pure type/config — must NOT import
-  Rapier or any concrete backend. The composition root
-  (`SimulationProvider`) is the only place allowed to map this enum
-  to a class.
+  'disabled' | 'simpleCircle2D' | 'rapier2D'`. Pure type/config —
+  must NOT import Rapier or any concrete backend. The composition
+  root (`SimulationProvider`) is the only place allowed to map this
+  enum to a class.
 
 Forbidden imports inside `simulation/collision/`:
 
@@ -284,12 +290,16 @@ A heavy backend (Rapier, Matter.js, Box2D, …) goes under
 
 - **`SimulationContext.ts`** — `createContext` lives in its own module
   so Vite's React Fast Refresh doesn't trip on mixed exports.
-- **`SimulationProvider.tsx`** — builds the engine **once**, registers
-  the four default systems, wraps it with a `SimulationController`,
-  and exposes both via context. Pauses the engine on unmount.
+- **`SimulationProvider.tsx`** — builds the engine **once**, creates
+  the shared `VehicleCommandQueue`, registers the default system
+  pipeline (`ScenarioSystem` → `VehicleCommandSystem` →
+  `VehicleDynamicsSystem` → `CollisionSystem` → `MetricsSystem`,
+  with `CommunicationSystem` optional), wraps the engine with
+  `SimulationController`, and exposes `engine`, `controller`, and
+  `commandQueue` through context. Pauses the engine on unmount.
 - **Hooks (`useSimulation.ts`)** — all leaf-level subscriptions via
   `useSyncExternalStore`:
-  - `useSimulation()` → `{ controller, engine }`
+  - `useSimulation()` → `{ controller, engine, commandQueue }`
   - `useSimulationTime()` → updates on every `tick`
   - `useSimulationRunning()` → updates on `started`/`paused`/`reset`
   - `useEntityListVersion()` → updates on entity add/remove + tick
@@ -322,13 +332,18 @@ imports only the contracts.
   infrastructure / a future integration package — never here.
 - **`TopicBridge`** — `start()` / `stop()` lifecycle for a unit of
   comms behavior (one bridge ≈ one topic ↔ one engine concern).
-  Bridges are allowed to read engine state and emit engine events but
-  **must not** mutate renderer state and must use entity command APIs
-  (e.g. `VehicleEntity.setCommand`) instead of touching internal fields.
+  Bridges may read engine state and produce outbound messages.
+  **Inbound bridges must not mutate entities directly**: they push a
+  `VehicleCommand` onto `VehicleCommandQueue` (Layer 4c) and let
+  `VehicleCommandSystem` apply it during the tick.
 - **Internal messages** (`messages/`) — JSON-friendly POJOs:
-  `SimClockMessage`, `SimPose2DMessage`, `SimVehicleStateMessage`,
-  `SimVehicleCommandMessage`. They are deliberately NOT ROS2 messages;
-  ROS2 maps to them through adapters.
+  `SimClockMessage`, `SimPose2DMessage`, `SimVehicleStateMessage`.
+  They are deliberately NOT ROS2 messages; ROS2 maps to them through
+  adapters. Inbound vehicle commands use the canonical
+  `VehicleCommand` (`src/simulation/commands/VehicleCommand.ts`)
+  directly — there is no separate "wire" command type, so every
+  producer (keyboard, transport, scenario, planner) speaks the same
+  shape.
 - **`TopicRegistry`** — central catalog of well-known logical topics
   (`/control/ego/command`, `/sim/ego/state`, `/sim/clock`,
   `/sim/collision`) with optional `frequencyHz` hints. Naming is
@@ -346,10 +361,19 @@ imports only the contracts.
   with the simulation. `reset()` is a manual API; call it on engine
   reset to clear accumulators.
 - **Bridges** —
-  - `VehicleCommandTopicBridge` subscribes to a command topic and calls
-    `vehicle.setCommand(...)` on the matching entity. Adapter errors
-    and unknown vehicles are logged through `engine.logger` and dropped
-    silently.
+  - `VehicleCommandTopicBridge` subscribes to a command topic,
+    validates / adapts the payload into a `VehicleCommand`, and
+    pushes it into `VehicleCommandQueue`. **It never calls
+    `vehicle.setCommand(...)` directly.** Routing by `vehicleId`
+    happens later in `VehicleCommandSystem`, which has the only
+    authoritative view of `state.entities`. Constructor takes only
+    `Transport` / topic / `VehicleCommandQueue` / `MessageAdapter`
+    (and an optional `Logger`). The bridge has **no dependency on
+    `SimulationEngine`, `SimulationState`, `EntityManager`, or any
+    entity type** — it cannot read engine state and cannot mutate it.
+    A grep for `SimulationEngine` / `SimulationState` /
+    `VehicleEntity` in the bridge file should always return zero
+    matches; if it doesn't, the boundary has been violated.
   - `VehicleStatePublisherBridge` builds a `SimVehicleStateMessage`
     from the engine state and ships it on demand (driven by
     `PeriodicPublisher`).
@@ -417,10 +441,10 @@ await transport.connect()
 
 const commandBridge = new VehicleCommandTopicBridge(
   transport,
-  'ego',
   Topics.egoCommand.name,
-  engine,
+  commandQueue,                    // shared queue from <SimulationProvider>
   new JsonVehicleCommandAdapter(),
+  engine.logger,                   // optional
 )
 await commandBridge.start()
 
@@ -477,7 +501,8 @@ WebGPU) follow the same shape and live as siblings under
   `init(state)` once, forwards engine events (`tick`, `reset`,
   `scenarioLoaded`, `entityAdded`, `entityRemoved`, `collision`) and
   `window.resize` / `ResizeObserver` to the renderer, and disposes on
-  unmount. Contains zero Three.js imports and zero simulation logic.
+  unmount. Does not import Three.js directly — it only imports the
+  renderer adapter class — and contains zero simulation logic.
 - **`renderers/three/core/ThreeSimulationRenderer.ts`** — top-level
   Three.js coordinator. Implements `SimulationRenderer`. Creates the
   `THREE.Scene`, camera, `WebGLRenderer`, lights, and every
@@ -769,20 +794,49 @@ body rotation angle.
 
 ### Composition
 
-Engine wiring lives at the composition root only. Today
-`SimulationProvider.tsx` constructs `CollisionSystem(new
-SimpleCircleCollisionBackend2D())` synchronously. Enabling Rapier
-requires an async setup step (`await
-RapierCollisionBackend2D.create()`) before the engine is registered;
-the path stays explicit so React's synchronous render is not blocked
-on WASM by default.
+Engine wiring lives at the composition root only.
+`SimulationProvider.tsx` accepts an optional `collisionConfig` prop
+(default: `DEFAULT_COLLISION_CONFIG = { backend: 'simpleCircle2D' }`)
+and maps the `CollisionBackendType` to a concrete backend
+synchronously:
 
 ```ts
-const backend = useRapier
-  ? await RapierCollisionBackend2D.create()
-  : new SimpleCircleCollisionBackend2D()
+// Synchronous path — what `SimulationProvider` does today.
+// Supports `'disabled'` and `'simpleCircle2D'`; throws for
+// `'rapier2D'` because that backend cannot be built without `await`.
+const backend =
+  collisionConfig.backend === 'disabled'
+    ? new NoopCollisionBackend2D()
+    : new SimpleCircleCollisionBackend2D()
 engine.addSystem(new CollisionSystem(backend))
 ```
+
+`'rapier2D'` is intentionally NOT supported through the synchronous
+provider, because `RapierCollisionBackend2D.create()` returns a
+`Promise`. To enable Rapier, wire the engine through an async setup
+step (a custom provider, a top-level `await` at the entry point, or
+a small loader component that suspends until the backend is ready):
+
+```ts
+// Async wrapper — only needed when you want Rapier. `SimulationProvider`
+// itself stays synchronous; the async setup belongs in the caller.
+const backend =
+  collisionConfig.backend === 'rapier2D'
+    ? await RapierCollisionBackend2D.create() // resolves a WASM module
+    : collisionConfig.backend === 'disabled'
+      ? new NoopCollisionBackend2D()
+      : new SimpleCircleCollisionBackend2D()
+engine.addSystem(new CollisionSystem(backend))
+```
+
+Keeping the synchronous and async paths visibly separate is the
+point: React's synchronous render is never blocked on WASM by
+default, and any `await` is opt-in at the call site.
+
+`'disabled'` is the recommended way to turn collisions off: it keeps
+`CollisionSystem` in the pipeline, so `'collision'` event semantics,
+metrics counters, and the registration order remain comparable
+across configurations.
 
 ## Layer 11 — input adapters (`src/ui/input/`)
 
@@ -822,6 +876,15 @@ Architectural rule: the keyboard never mutates `VehicleEntity`,
 write path is `commandQueue.push(...)`, drained by
 `VehicleCommandSystem` during the next tick.
 
+Browser keyboard events do not create commands directly. They only
+update key state in `KeyboardInputSource`. Commands are generated on
+engine tick by `useKeyboardVehicleControl`, which samples the input
+source, runs `KeyboardVehicleCommandMapper`, and pushes the resulting
+`VehicleCommand` into `VehicleCommandQueue`. This decoupling is why
+key autorepeat doesn't burst the queue and why a held key still
+produces commands every tick (including the explicit zero-velocity
+command on key release).
+
 The same boundary is reusable for joystick / gamepad / touchscreen
 adapters: build a new `*VehicleCommandMapper` and a hook that pushes
 to the same queue.
@@ -853,13 +916,10 @@ SimulationLoop  ──tick(dt)──▶  SimulationEngine.tick
                                             │           ▼
                                             │   Re-render only the subscribed leaves
                                             │
-                                            ├──▶ useKeyboardVehicleControl
-                                            │           │
-                                            │           ▼
-                                            │   commandQueue.push(VehicleCommand)
-                                            │           │
-                                            │           └─ drained next tick by
-                                            │              VehicleCommandSystem
+                                            │   (input adapters such as
+                                            │    useKeyboardVehicleControl also
+                                            │    subscribe to 'tick' — see the
+                                            │    "Browser input" sub-diagram below)
                                             │
                                             └──▶ ThreeSimulationViewport
                                                         │
@@ -872,19 +932,51 @@ SimulationLoop  ──tick(dt)──▶  SimulationEngine.tick
 
   Browser input  ──keydown / keyup──▶  KeyboardInputSource
                                               │
-                                              └─ KeyboardVehicleCommandMapper
-                                                       │
-                                                       ▼
-                                               commandQueue.push(...)
+                                              │  stores pressed keys only
+                                              ▼
+                                       (no command is created here)
+
+  engine tick  ─────────────────────▶  useKeyboardVehicleControl
+                                              │  samples KeyboardInputSource
+                                              ▼
+                                       KeyboardVehicleCommandMapper
+                                              │
+                                              ▼
+                                       commandQueue.push(VehicleCommand)
+                                              │
+                                              ▼
+                                       VehicleCommandSystem
+                                              │
+                                              ▼
+                                       vehicle.setCommand(...)
 
   External world  ──Transport.subscribe──▶  TopicBridge
                                               │
                                               └─ adapter.toInternal()
                                                        │
                                                        ▼
-                                              (today) vehicle.setCommand(...)
-                                              (future) commandQueue.push(...)
+                                              commandQueue.push(...)
+                                                       │
+                                                       └─ drained next tick by
+                                                          VehicleCommandSystem
+                                                                    │
+                                                                    ▼
+                                                          vehicle.setCommand(...)
 ```
+
+### Command-flow invariant
+
+> Only systems mutate simulation state during a tick.
+> Only `VehicleCommandSystem` applies a `VehicleCommand` to a
+> `VehicleEntity`.
+> Renderers and transports never mutate entities directly.
+
+Every command producer — keyboard hooks, the WebSocket / ROS2 bridge,
+scenario events, Python planners, joysticks, UI buttons — pushes a
+`VehicleCommand` into the **same** `VehicleCommandQueue`.
+`VehicleCommandSystem` is the only code path that calls
+`vehicle.setCommand(...)`. This is what makes the simulator
+deterministic, replayable, and renderer/transport-agnostic.
 
 ## Extension points
 
@@ -937,10 +1029,15 @@ SimulationLoop  ──tick(dt)──▶  SimulationEngine.tick
   enforcement, dt validation, reset, async-callback detachment
   (6 tests)
 - `src/simulation/communication/adapters/JsonVehicleCommandAdapter.test.ts`
-  — round-trip + strict validation of malformed messages (5 tests)
+  — round-trip + `source` defaulting + strict validation of
+  `vehicleId`, finite numeric fields, and known source tags
+  (8 tests)
 - `src/simulation/communication/bridges/VehicleCommandTopicBridge.test.ts`
-  — applies command via `setCommand`, ignores foreign `vehicleId`,
-  drops malformed messages, `stop()` unsubscribes (5 tests)
+  — subscribes / unsubscribes correctly, decodes through the adapter,
+  pushes onto `VehicleCommandQueue` (never calls `setCommand`),
+  queues commands with unknown `vehicleId` (routing decision belongs
+  to `VehicleCommandSystem`), drops malformed messages, optional
+  `Logger` (6 tests)
 - `src/simulation/communication/bridges/VehicleStatePublisherBridge.test.ts`
   — snapshot shape, silent when target absent, silent before
   `start()` (3 tests)
@@ -959,6 +1056,9 @@ SimulationLoop  ──tick(dt)──▶  SimulationEngine.tick
   — overlap / no-overlap / touching / penetration depth / unit
   normal / coincident centers / deterministic order / no input
   mutation / oriented-box pass-through (9 tests)
+- `src/simulation/collision/NoopCollisionBackend2D.test.ts` —
+  name, empty input, overlapping shapes still empty, no input
+  mutation, `reset` / `dispose` no-throw (6 tests)
 - `src/simulation/collision/buildCollisionShapes2DFromState.test.ts`
   — empty state, vehicle / static obstacle / dynamic actor mapping,
   insertion-order preservation, no entity mutation (6 tests)
@@ -973,8 +1073,8 @@ SimulationLoop  ──tick(dt)──▶  SimulationEngine.tick
   (axis-remap canary), no symmetric duplicates, no input mutation,
   finite penetration depth (9 tests)
 - `src/ui/renderers/three/mapping/simToThree.test.ts` — sim ↔ three
-  point/vector mapping + yaw inversion + round-trip through
-  `threeToSim` (8 tests)
+  point/vector mapping + yaw identity under the right-handed mapping
+  + round-trip through `threeToSim` (8 tests)
 - `src/ui/renderers/three/core/ThreeRenderObjectRegistry.test.ts` —
   set / get / iteration order / delete / clear (3 tests)
 - `src/ui/renderers/three/core/threeDisposal.test.ts` — geometry +
