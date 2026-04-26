@@ -1,6 +1,15 @@
 {
   "name": "keyboard-drive",
   "description": "Empty plaza with the ego vehicle at rest. Drive it with the keyboard: ArrowUp/I forward, ArrowDown/K reverse, ArrowLeft/J turn left, ArrowRight/L turn right. A few static obstacles to bump into.",
+  "interaction": {
+    "keyboardControl": {
+      "enabled": true,
+      "vehicleId": "ego",
+      "forwardSpeed": 2.0,
+      "reverseSpeed": 1.0,
+      "angularSpeed": 1.5
+    }
+  },
   "entities": [
     {
       "kind": "vehicle",

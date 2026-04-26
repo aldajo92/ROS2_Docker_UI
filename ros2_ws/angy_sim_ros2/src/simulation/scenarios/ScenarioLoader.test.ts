@@ -288,6 +288,125 @@ describe('ScenarioLoader.parse — paths', () => {
   })
 })
 
+describe('ScenarioLoader.parse — interaction.keyboardControl', () => {
+  it('parses a full keyboardControl block', () => {
+    const spec = ScenarioLoader.parse({
+      name: 's',
+      entities: [],
+      interaction: {
+        keyboardControl: {
+          enabled: true,
+          vehicleId: 'rover',
+          forwardSpeed: 3.0,
+          reverseSpeed: 1.5,
+          angularSpeed: 2.0,
+        },
+      },
+    })
+    expect(spec.interaction?.keyboardControl).toEqual({
+      enabled: true,
+      vehicleId: 'rover',
+      forwardSpeed: 3.0,
+      reverseSpeed: 1.5,
+      angularSpeed: 2.0,
+    })
+  })
+
+  it('missing interaction block leaves spec.interaction undefined', () => {
+    const spec = ScenarioLoader.parse({ name: 's', entities: [] })
+    expect(spec.interaction).toBeUndefined()
+  })
+
+  it('missing keyboardControl is allowed (interaction is empty object)', () => {
+    const spec = ScenarioLoader.parse({
+      name: 's',
+      entities: [],
+      interaction: {},
+    })
+    expect(spec.interaction).toBeDefined()
+    expect(spec.interaction?.keyboardControl).toBeUndefined()
+  })
+
+  it('enabled = true with no vehicleId defaults to "ego"', () => {
+    const spec = ScenarioLoader.parse({
+      name: 's',
+      entities: [],
+      interaction: { keyboardControl: { enabled: true } },
+    })
+    expect(spec.interaction?.keyboardControl?.vehicleId).toBe('ego')
+  })
+
+  it('enabled = false with no vehicleId leaves it undefined', () => {
+    const spec = ScenarioLoader.parse({
+      name: 's',
+      entities: [],
+      interaction: { keyboardControl: { enabled: false } },
+    })
+    expect(spec.interaction?.keyboardControl?.vehicleId).toBeUndefined()
+  })
+
+  it('throws on non-boolean enabled', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        interaction: { keyboardControl: { enabled: 'yes' } },
+      }),
+    ).toThrow(/enabled must be a boolean/)
+  })
+
+  it('throws on non-string vehicleId', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        interaction: { keyboardControl: { vehicleId: 42 } },
+      }),
+    ).toThrow(/vehicleId must be a string/)
+  })
+
+  it('throws on negative forwardSpeed', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        interaction: { keyboardControl: { forwardSpeed: -1 } },
+      }),
+    ).toThrow(/forwardSpeed/)
+  })
+
+  it('throws on non-finite angularSpeed', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        interaction: { keyboardControl: { angularSpeed: NaN } },
+      }),
+    ).toThrow(/angularSpeed/)
+  })
+
+  it('throws on non-object interaction', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        interaction: 'not-object',
+      }),
+    ).toThrow(/interaction must be an object/)
+  })
+
+  it('does not require vehicleId to exist among entities', () => {
+    // Per spec: "Do not require vehicleId to exist during parsing".
+    // The mismatch is silently tolerated by VehicleCommandSystem.
+    const spec = ScenarioLoader.parse({
+      name: 's',
+      entities: [],
+      interaction: { keyboardControl: { enabled: true, vehicleId: 'ghost' } },
+    })
+    expect(spec.interaction?.keyboardControl?.vehicleId).toBe('ghost')
+  })
+})
+
 describe('ScenarioLoader.loadFromUrl', () => {
   it('fetches and parses a scenario via an injected fetch', async () => {
     const fakeFetch = (async () =>

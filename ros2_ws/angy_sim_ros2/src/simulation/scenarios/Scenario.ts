@@ -55,9 +55,40 @@ export interface PathSpec {
   points: PathPointSpec[]
 }
 
+/**
+ * Initial defaults for keyboard control declared by a scenario. None of
+ * these fields are physical properties of any vehicle — they describe
+ * how the *UI shell* should be configured when the scenario loads. The
+ * Inspector is still the runtime source of truth and may override any
+ * field; the simulation core never reads this struct.
+ *
+ * `vehicleId` is intentionally not validated against `entities` at
+ * parse time so scenario JSON can be constructed in any order; runtime
+ * mismatch is tolerated by `VehicleCommandSystem` (commands for missing
+ * vehicles are dropped silently).
+ */
+export interface KeyboardControlScenarioConfig {
+  enabled?: boolean
+  vehicleId?: string
+  forwardSpeed?: number
+  reverseSpeed?: number
+  angularSpeed?: number
+}
+
+/** Container for any future scenario-declared interaction defaults
+ *  (keyboard, gamepad, touch, etc.). Optional everywhere so old
+ *  scenarios keep parsing unchanged. */
+export interface ScenarioInteractionConfig {
+  keyboardControl?: KeyboardControlScenarioConfig
+}
+
 export interface ScenarioSpec {
   name: string
   description?: string
   entities: EntitySpec[]
   paths?: PathSpec[]
+  /** UI / interaction defaults applied at scenario load time. Owned
+   *  by the React shell, not the simulation core — see
+   *  `KeyboardControlScenarioConfig`. */
+  interaction?: ScenarioInteractionConfig
 }

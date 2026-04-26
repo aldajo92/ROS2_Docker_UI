@@ -20,6 +20,14 @@ import { KeyboardVehicleCommandMapper } from './KeyboardVehicleCommandMapper'
  * `{ linearVelocity: 0, angularVelocity: 0 }` command, which is what
  * stops the vehicle (sticky `setCommand` semantics, see VehicleEntity).
  *
+ * Disable behavior: when the effect tears down (because `enabled`
+ * flipped to false, the controlled vehicle changed, or speeds were
+ * edited) we push exactly one final zero command for the previously
+ * controlled vehicle. Without this, releasing keys *and* disabling
+ * within the same tick would leave the vehicle coasting at its last
+ * applied velocity. Cheap insurance — the queue is drained at the
+ * next tick boundary regardless.
+ *
  * The hook deliberately does not gate by `engine.isRunning()`: while
  * the loop is paused no `tick` event is emitted, so no commands are
  * pushed. This avoids accidentally queuing commands during pause that
@@ -71,6 +79,18 @@ export function useKeyboardVehicleControl({
     return () => {
       unsubscribe()
       input.stop()
+      // Final zero command so the vehicle stops even though we're no
+      // longer producing per-tick commands. Targets the *previous*
+      // vehicleId captured by closure — important when the user
+      // switches the controlled vehicle, so the old one doesn't
+      // continue at its last commanded velocity.
+      commandQueue.push({
+        vehicleId,
+        linearVelocity: 0,
+        angularVelocity: 0,
+        source: 'keyboard',
+        timestampSec: engine.clock.time(),
+      })
     }
   }, [
     enabled,

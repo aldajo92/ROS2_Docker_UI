@@ -262,13 +262,20 @@ A heavy backend (Rapier, Matter.js, Box2D, …) goes under
 - **`Scenario.ts`** — pure JSON-friendly type definitions:
   `PoseSpec`, `VehicleSpec`, `StaticObstacleSpec`,
   `DynamicActorSpec`, `EntitySpec` (discriminated by `type`),
-  `PathPointSpec`, `PathSpec`, `ScenarioSpec`.
+  `PathPointSpec`, `PathSpec`,
+  `KeyboardControlScenarioConfig` / `ScenarioInteractionConfig` (UI
+  defaults applied at scenario load — see Layer 8), and
+  `ScenarioSpec`.
 - **`ScenarioLoader`** — `parse(input)` validates raw JSON and throws
   a `ScenarioParseError` on failure; `loadFromUrl(url)` fetches +
   parses; `buildEntity(spec)` instantiates the concrete entity class.
-  The engine's `loadScenario(spec)` resets the world, materializes
-  entities, loads scenario paths into `state.paths`, and emits
-  `scenarioLoaded`.
+  Validates `interaction.keyboardControl` fields if present (booleans,
+  strings, finite non-negative numbers). The engine's
+  `loadScenario(spec)` resets the world, materializes entities, loads
+  scenario paths into `state.paths`, and emits `scenarioLoaded`. The
+  engine **does not** read `spec.interaction` — that's a UI-shell
+  concern threaded directly from `ControlPanel` → App via an
+  `onScenarioLoaded` callback.
 - **`public/scenarios/simple-scenario.json`** — sample with one
   vehicle (v=0.5 m/s, w=0.2 rad/s), three static obstacles, and a
   dynamic actor crossing.
@@ -936,11 +943,42 @@ core never references DOM types.
   `mapper.createCommand(simTime)`. A command is pushed **every**
   tick, including ticks where no key is held — that explicit
   zero-velocity command is what makes "release-to-stop" work given
-  `setCommand`'s sticky semantics. Cleans up listeners and the tick
-  subscription on unmount.
+  `setCommand`'s sticky semantics. The effect's cleanup pushes a
+  final zero command for the (previously) controlled `vehicleId` so
+  disabling, swapping vehicles, or editing speeds doesn't leave the
+  vehicle coasting.
 - **`SimulatorKeyboardControls`** — headless component (`return
-  null`) that hosts the hook for the default `"ego"` vehicle.
-  Mounted inside `<SimulationProvider>` in `App.tsx`.
+  null`) that forwards a `KeyboardControlUiState` from `App.tsx`
+  into the hook. Renders nothing.
+- **`KeyboardControlState.ts`** — `KeyboardControlUiState` (`enabled`,
+  `vehicleId`, `forwardSpeed`, `reverseSpeed`, `angularSpeed`),
+  `DEFAULT_KEYBOARD_CONTROL_UI_STATE`, and
+  `deriveKeyboardControlState(interaction)` which seeds the UI state
+  from `scenario.interaction.keyboardControl` (filling in module
+  defaults for any field the scenario didn't declare).
+- **`KeyboardControlPanel`** — Inspector UI for the live state. Edits
+  apply immediately; no simulation restart needed. The panel is the
+  runtime source of truth; scenario `interaction.keyboardControl`
+  only seeds the initial values.
+
+Scenario → UI flow on load:
+
+```text
+ControlPanel
+  ├── ScenarioLoader.loadFromUrl(url)         (parse + validate)
+  ├── onScenarioLoaded(spec)  ─────────────▶  AppShell
+  │                                              ├── lastInteractionRef = spec.interaction
+  │                                              └── setKeyboardControlState(deriveKeyboardControlState(spec.interaction))
+  └── controller.loadScenarioFromJson(spec)   (engine.reset → scenarioLoaded)
+                                                 │
+                                                 └─▶ AppShell.useEffect on engine 'reset'
+                                                       └── reapplies defaults from lastInteractionRef
+```
+
+The keyboard-control UI state is therefore reapplied on **every**
+engine reset — manual Reset and the implicit reset inside
+`loadScenario` — using the most recently loaded scenario's
+interaction config.
 
 Architectural rule: the keyboard never mutates `VehicleEntity`,
 `SimulationState`, or any pose / yaw / velocity directly. The only
@@ -1085,7 +1123,11 @@ deterministic, replayable, and renderer/transport-agnostic.
 - `src/simulation/entities/VehicleEntity.test.ts` — kinematic update,
   including semi-implicit step verification (6 tests)
 - `src/simulation/scenarios/ScenarioLoader.test.ts` — parse +
-  `buildEntity` + `loadFromUrl` with injected `fetch` (12 tests)
+  `buildEntity` + `loadFromUrl` with injected `fetch`, plus
+  `interaction.keyboardControl` validation: full block, missing
+  block, partial fields, default `vehicleId = "ego"` when enabled
+  with no id, type-coercion failures (boolean / string / non-finite
+  / negative), tolerant of unknown vehicleId at parse time (35 tests)
 - `src/simulation/commands/VehicleCommandQueue.test.ts` — FIFO
   ordering, drain semantics, defensive-copy on drain, clear (6 tests)
 - `src/simulation/commands/VehicleCommandSystem.test.ts` — drains
@@ -1096,6 +1138,10 @@ deterministic, replayable, and renderer/transport-agnostic.
   arrow + IJKL bindings, sign convention, opposing-key cancellation,
   no double-count when both key aliases are held, timestamp /
   vehicleId pass-through (9 tests)
+- `src/ui/input/KeyboardControlState.test.ts` — `deriveKeyboardControlState`
+  returns defaults for missing interaction / keyboardControl, partial
+  overrides preserve other defaults, and each call returns a fresh
+  copy (5 tests)
 - `src/simulation/communication/PeriodicPublisher.test.ts` — period
   enforcement, dt validation, reset, async-callback detachment
   (6 tests)

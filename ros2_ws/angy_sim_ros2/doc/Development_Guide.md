@@ -429,6 +429,56 @@ engine produces a paused trail.
 
 ---
 
+### Bad: keyboard-control flags on `VehicleEntity` or `SimulationState`
+
+```ts
+// in VehicleEntity
+this.keyboardEnabled = true
+// in SimulationState
+this.activeKeyboardVehicleId = 'ego'
+```
+
+Keyboard control is **interaction / UI configuration**, not a
+physical property of the world. Storing it on entities or in the
+state would (a) leak UI concerns into the simulation core, (b) make
+headless / batch runs care about keyboard, and (c) prevent the
+Inspector from overriding scenario defaults at runtime without
+mutating the engine.
+
+Correct path:
+
+```text
+scenario.interaction.keyboardControl  ──┐
+                                        │ (parsed by ScenarioLoader)
+                                        ▼
+              ControlPanel ──onScenarioLoaded(spec)──▶ AppShell
+                                                         │
+                                                         ▼
+                                deriveKeyboardControlState(spec.interaction)
+                                                         │
+                                                         ▼
+                                React state (KeyboardControlUiState)
+                                                         │
+                                                         ├──▶ KeyboardControlPanel  (Inspector override)
+                                                         └──▶ SimulatorKeyboardControls
+                                                                       │
+                                                                       ▼
+                                                   useKeyboardVehicleControl
+                                                                       │
+                                                                       ▼
+                                                   commandQueue.push(VehicleCommand)
+```
+
+The simulation core never reads `interaction`. Engine `reset` (manual
+or implicit inside `loadScenario`) reapplies the most recently loaded
+scenario's defaults, so resets are deterministic with respect to the
+scenario file. Disabling the hook pushes one final
+`{ linearVelocity: 0, angularVelocity: 0 }` command for the
+previously controlled vehicle so it doesn't coast on its last sticky
+command.
+
+---
+
 ## When to Update Architecture.md
 
 Update `Architecture.md` only when a real design decision changes.

@@ -5,7 +5,14 @@ import { VehicleEntity } from '../entities/VehicleEntity'
 import { StaticObstacleEntity } from '../entities/StaticObstacleEntity'
 import { DynamicActorEntity } from '../entities/DynamicActorEntity'
 import type { Entity } from '../entities/Entity'
-import type { EntitySpec, PathPointSpec, PathSpec, ScenarioSpec } from './Scenario'
+import type {
+  EntitySpec,
+  KeyboardControlScenarioConfig,
+  PathPointSpec,
+  PathSpec,
+  ScenarioInteractionConfig,
+  ScenarioSpec,
+} from './Scenario'
 
 export class ScenarioParseError extends Error {
   constructor(message: string) {
@@ -32,11 +39,14 @@ export class ScenarioLoader {
       typeof input.description === 'string' ? input.description : undefined
     const paths =
       input.paths !== undefined ? parsePaths(input.paths) : undefined
+    const interaction =
+      input.interaction !== undefined ? parseInteraction(input.interaction) : undefined
     return {
       name: input.name,
       description,
       entities: input.entities.map((e: unknown, i: number) => parseEntity(e, i)),
       paths,
+      interaction,
     }
   }
 
@@ -180,6 +190,51 @@ function parsePaths(input: unknown): PathSpec[] {
     throw new ScenarioParseError('scenario.paths must be an array')
   }
   return input.map((p: unknown, i: number) => parsePath(p, i))
+}
+
+function parseInteraction(input: unknown): ScenarioInteractionConfig {
+  if (!isObj(input)) {
+    throw new ScenarioParseError('scenario.interaction must be an object')
+  }
+  const keyboardControl =
+    input.keyboardControl !== undefined
+      ? parseKeyboardControl(input.keyboardControl)
+      : undefined
+  return { keyboardControl }
+}
+
+function parseKeyboardControl(input: unknown): KeyboardControlScenarioConfig {
+  const path = 'scenario.interaction.keyboardControl'
+  if (!isObj(input)) {
+    throw new ScenarioParseError(`${path} must be an object`)
+  }
+  if (input.enabled !== undefined && typeof input.enabled !== 'boolean') {
+    throw new ScenarioParseError(`${path}.enabled must be a boolean`)
+  }
+  if (input.vehicleId !== undefined && typeof input.vehicleId !== 'string') {
+    throw new ScenarioParseError(`${path}.vehicleId must be a string`)
+  }
+  return {
+    enabled: typeof input.enabled === 'boolean' ? input.enabled : undefined,
+    // Per spec: enabled === true with no vehicleId defaults to "ego".
+    vehicleId:
+      typeof input.vehicleId === 'string'
+        ? input.vehicleId
+        : input.enabled === true
+          ? 'ego'
+          : undefined,
+    forwardSpeed: optionalNonNegative(input.forwardSpeed, `${path}.forwardSpeed`),
+    reverseSpeed: optionalNonNegative(input.reverseSpeed, `${path}.reverseSpeed`),
+    angularSpeed: optionalNonNegative(input.angularSpeed, `${path}.angularSpeed`),
+  }
+}
+
+function optionalNonNegative(v: unknown, path: string): number | undefined {
+  if (v === undefined) return undefined
+  if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) {
+    throw new ScenarioParseError(`${path} must be a finite non-negative number`)
+  }
+  return v
 }
 
 function parseEntity(input: unknown, index: number): EntitySpec {

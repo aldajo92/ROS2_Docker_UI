@@ -1,9 +1,19 @@
 import { useState } from 'react'
 import { useSimulation, useSimulationRunning } from '../app/useSimulation'
+import { ScenarioLoader } from '../simulation/scenarios/ScenarioLoader'
+import type { ScenarioSpec } from '../simulation/scenarios/Scenario'
 
 interface ScenarioOption {
   label: string
   url: string
+}
+
+export interface ControlPanelProps {
+  /** Notified after a scenario is parsed but BEFORE it's handed to
+   *  the engine. The App uses this to seed UI state (e.g. keyboard
+   *  control defaults) so it's already applied when the engine emits
+   *  `reset` and `scenarioLoaded` synchronously inside `loadScenario`. */
+  onScenarioLoaded?: (spec: ScenarioSpec) => void
 }
 
 /**
@@ -21,7 +31,7 @@ const SCENARIO_OPTIONS: readonly ScenarioOption[] = [
   { label: 'Reference path (S-curve)', url: '/scenarios/reference-path-scenario.json' },
 ]
 
-export function ControlPanel() {
+export function ControlPanel({ onScenarioLoaded }: ControlPanelProps = {}) {
   const { controller } = useSimulation()
   const isRunning = useSimulationRunning()
   const [loading, setLoading] = useState(false)
@@ -32,7 +42,13 @@ export function ControlPanel() {
     setLoading(true)
     setError(null)
     try {
-      await controller.loadScenarioFromUrl(selectedUrl)
+      // Fetch + parse separately from `controller.loadScenarioFromUrl`
+      // so the App can seed UI state (keyboard control defaults, etc.)
+      // from the parsed spec BEFORE the engine emits `reset` and
+      // `scenarioLoaded` inside `loadScenarioFromJson`.
+      const spec = await ScenarioLoader.loadFromUrl(selectedUrl)
+      onScenarioLoaded?.(spec)
+      controller.loadScenarioFromJson(spec)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
