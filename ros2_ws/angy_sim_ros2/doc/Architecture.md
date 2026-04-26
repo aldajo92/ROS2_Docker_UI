@@ -379,9 +379,12 @@ WebGPU) follow the same shape and live as siblings under
   Exposes `resize()`, `clearTrails()`, `setCameraMode(mode)`.
 - **`renderers/three/core/ThreeSceneContext.ts`** — small
   pass-by-reference struct (`scene`, `camera`, `renderer`,
-  `container`) that every sub-renderer needs. Treated as immutable by
-  sub-renderers; the camera mode manager is the only actor allowed to
-  swap the camera's pose.
+  `container`, `requestRender`) that every sub-renderer needs.
+  Treated as immutable by sub-renderers; the camera mode manager is
+  the only actor allowed to swap the camera's pose. The
+  `requestRender` callback is bound by the renderer to its own
+  `render(lastState)` so interactive components (OrbitControls
+  drag / zoom) can repaint between engine ticks.
 - **`renderers/three/core/ThreeRenderObjectRegistry.ts`** — typed
   `Map<string, T extends THREE.Object3D>`. Each per-entity sub-renderer
   owns one; lifecycle (create lazy, sync, evict stale, dispose) lives
@@ -465,23 +468,54 @@ beyond the public read API.
   controller takes over.
 - **`TopDownCameraController`** — fixed top-down minimap view. Sets
   `camera.up = (0, 0, -1)` so screen-up corresponds to sim +Y.
-- **`OrbitCameraController`** — fixed 3/4 elevated view. Wiring real
-  drag/zoom is left to a follow-up; the controller is structured so
-  installing `OrbitControls` only requires changes in this file.
+- **`OrbitCameraController`** — interactive 3/4 view using Three.js's
+  built-in `OrbitControls` (left-drag rotates, wheel zooms, right-drag
+  pans). No `@react-three/drei` / fiber dependency — everything goes
+  through the existing `three` package. The controller forwards
+  `OrbitControls`'s `change` event to `context.requestRender()` so
+  drags / zooms repaint the canvas even while the engine is paused.
+  Damping is intentionally off so each input event maps to exactly
+  one render.
 - **`FollowVehicleCameraController`** — chase-cam behind and above
   the first vehicle in `state.entities`. Reads `vehicle.pose`;
   never mutates it.
 - **`CameraControllerManager`** — owns one instance per
   `CameraMode`, handles `attach` / `detach` on `setMode`, and is
-  cheap to swap modes (no recreation).
+  cheap to swap modes (no recreation). Exposes `reattachActive()`
+  for the top-level renderer to call after swapping the camera
+  object (e.g. on a perspective ↔ orthographic toggle), so the
+  active controller rebinds to the new camera.
+- **`Projection`** — `'perspective' | 'orthographic'`. Orthogonal
+  to `CameraMode`: any combination is allowed. The renderer owns
+  the live `Projection` and exposes `setProjection` /
+  `getProjection`; switching projections rebuilds the underlying
+  `THREE.Camera`, updates `ThreeSceneContext.camera`, then calls
+  `cameraControllerManager.reattachActive()` so OrbitControls and
+  `up`-vector setup re-bind to the new camera object.
+
+### Camera input (`ui/viewport/ThreeSimulationViewport.tsx`)
+
+- **`c`** cycles through `orbit → followVehicle → topDown → orbit`
+  via `renderer.setCameraMode(...)`.
+- **`p`** toggles `perspective ↔ orthographic` via
+  `renderer.setProjection(...)`.
+- Listeners attach to `window` so the keys work regardless of focus,
+  but bail out when the event target is an `<input>` / `<textarea>` /
+  `<select>` / `contenteditable` to avoid stealing typing.
+- A small HUD chip in the viewport header shows the current
+  `mode · projection`; this state lives in React and is updated only
+  on key press, never per frame.
 
 ### Config (`renderers/three/config/`)
 
 - **`ThreeRendererConfig`** with `showGrid`, `showAxes`, `showDebug`,
-  `trailLength`, `cameraMode`. The renderer reads it once on
-  construction; flags can be flipped later via dedicated setters.
-  Single-renderer flags belong on the renderer itself, not in this
-  shared struct — add to it only when ≥ 2 sub-renderers care.
+  `trailLength`, `cameraMode`, `projection`, `orthoFrustumHeight`.
+  The renderer reads it once on construction; flags can be flipped
+  later via dedicated setters. Single-renderer flags belong on the
+  renderer itself, not in this shared struct — add to it only when
+  ≥ 2 sub-renderers care. `orthoFrustumHeight` is the world-space
+  vertical extent of the orthographic frustum (m); horizontal
+  extent follows the canvas aspect on every `resize()`.
 
 ### What renderers must never do
 

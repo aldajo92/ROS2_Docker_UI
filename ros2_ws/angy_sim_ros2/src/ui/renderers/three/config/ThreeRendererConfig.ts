@@ -1,4 +1,5 @@
 import type { CameraMode } from '../cameras/CameraMode'
+import type { Projection } from '../cameras/Projection'
 
 /**
  * Visual / behavioral switches for the Three.js renderer. Renderers
@@ -16,6 +17,10 @@ export interface ThreeRendererConfig {
   /** Max points retained per vehicle trail. */
   trailLength: number
   cameraMode: CameraMode
+  projection: Projection
+  /** Vertical world-space extent of the orthographic frustum (m).
+   *  Width is derived from the canvas aspect ratio. */
+  orthoFrustumHeight: number
 }
 
 export const DEFAULT_THREE_RENDERER_CONFIG: ThreeRendererConfig = {
@@ -23,5 +28,9 @@ export const DEFAULT_THREE_RENDERER_CONFIG: ThreeRendererConfig = {
   showAxes: true,
   showDebug: true,
   trailLength: 200,
-  cameraMode: 'topDown',
+  // Default to interactive orbit so users get drag-rotate / wheel-zoom
+  // immediately, matching the angelos_sim_ros2 dev-cell behavior.
+  cameraMode: 'orbit',
+  projection: 'perspective',
+  orthoFrustumHeight: 20,
 }

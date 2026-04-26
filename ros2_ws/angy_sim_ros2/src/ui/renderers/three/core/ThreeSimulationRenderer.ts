@@ -16,6 +16,7 @@ import {
   type ThreeRendererConfig,
 } from '../config/ThreeRendererConfig'
 import type { CameraMode } from '../cameras/CameraMode'
+import type { Projection } from '../cameras/Projection'
 
 /**
  * Top-level Three.js renderer. Owns the scene, camera, WebGL renderer,
@@ -35,6 +36,9 @@ export class ThreeSimulationRenderer implements SimulationRenderer {
   private readonly config: ThreeRendererConfig
 
   private context?: ThreeSceneContext
+  /** Last state passed to `render()`. Used to re-paint on demand
+   *  (e.g. after an OrbitControls "change" event while paused). */
+  private lastState?: SimulationState
 
   private groundRenderer?: ThreeGroundRenderer
   private axesRenderer?: ThreeAxesRenderer
@@ -45,10 +49,12 @@ export class ThreeSimulationRenderer implements SimulationRenderer {
   private pathRenderer?: ThreePathRenderer
   private debugLayer?: ThreeDebugLayer
   private cameraControllerManager?: CameraControllerManager
+  private projection: Projection
 
   constructor(container: HTMLElement, config: Partial<ThreeRendererConfig> = {}) {
     this.container = container
     this.config = { ...DEFAULT_THREE_RENDERER_CONFIG, ...config }
+    this.projection = this.config.projection
   }
 
   init(state: SimulationState): void {
@@ -60,14 +66,22 @@ export class ThreeSimulationRenderer implements SimulationRenderer {
     const scene = new THREE.Scene()
     scene.background = new THREE.Color(0x111118)
 
-    const camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 1000)
+    const camera = this.createCamera(this.projection, width, height)
 
     const renderer = new THREE.WebGLRenderer({ antialias: true })
     renderer.setPixelRatio(window.devicePixelRatio)
     renderer.setSize(width, height)
     this.container.appendChild(renderer.domElement)
 
-    this.context = { scene, camera, renderer, container: this.container }
+    this.context = {
+      scene,
+      camera,
+      renderer,
+      container: this.container,
+      requestRender: () => {
+        if (this.lastState) this.render(this.lastState)
+      },
+    }
 
     this.addLights(scene)
 
@@ -101,6 +115,7 @@ export class ThreeSimulationRenderer implements SimulationRenderer {
 
   render(state: SimulationState): void {
     if (!this.context) return
+    this.lastState = state
 
     this.vehicleRenderer?.sync(state)
     this.staticObstacleRenderer?.sync(state)
@@ -125,8 +140,15 @@ export class ThreeSimulationRenderer implements SimulationRenderer {
       camera.aspect = width / height
       camera.updateProjectionMatrix()
     } else if (camera instanceof THREE.OrthographicCamera) {
-      // No useful default — orthographic resize will be implemented
-      // alongside the first orthographic camera mode.
+      // Recompute the orthographic frustum so the scene neither
+      // squashes nor crops on aspect changes. Vertical extent is
+      // fixed (`orthoFrustumHeight`); horizontal extent follows aspect.
+      const frustumH = this.config.orthoFrustumHeight
+      const aspect = width / height
+      camera.left = (-frustumH * aspect) / 2
+      camera.right = (frustumH * aspect) / 2
+      camera.top = frustumH / 2
+      camera.bottom = -frustumH / 2
       camera.updateProjectionMatrix()
     }
 
@@ -153,6 +175,7 @@ export class ThreeSimulationRenderer implements SimulationRenderer {
     }
 
     this.context = undefined
+    this.lastState = undefined
     this.groundRenderer = undefined
     this.axesRenderer = undefined
     this.vehicleRenderer = undefined
@@ -173,9 +196,59 @@ export class ThreeSimulationRenderer implements SimulationRenderer {
     this.cameraControllerManager?.setMode(mode)
   }
 
+  getCameraMode(): CameraMode | undefined {
+    return this.cameraControllerManager?.getMode()
+  }
+
+  /**
+   * Swap the underlying camera between perspective and orthographic.
+   * The active controller (e.g. OrbitControls) is rebound against
+   * the new camera object via `cameraControllerManager.reattachActive()`.
+   * Idempotent: same projection is a no-op.
+   */
+  setProjection(projection: Projection): void {
+    if (!this.context) return
+    if (projection === this.projection) return
+
+    const width = this.container.clientWidth || 1
+    const height = this.container.clientHeight || 1
+    const newCamera = this.createCamera(projection, width, height)
+
+    this.context.camera = newCamera
+    this.projection = projection
+
+    this.cameraControllerManager?.reattachActive()
+
+    if (this.lastState) this.render(this.lastState)
+  }
+
+  getProjection(): Projection {
+    return this.projection
+  }
+
   /** Read-only access for renderers / tests that need the path renderer. */
   getPathRenderer(): ThreePathRenderer | undefined {
     return this.pathRenderer
+  }
+
+  private createCamera(
+    projection: Projection,
+    width: number,
+    height: number,
+  ): THREE.PerspectiveCamera | THREE.OrthographicCamera {
+    if (projection === 'perspective') {
+      return new THREE.PerspectiveCamera(60, width / height, 0.1, 1000)
+    }
+    const frustumH = this.config.orthoFrustumHeight
+    const aspect = width / height
+    return new THREE.OrthographicCamera(
+      (-frustumH * aspect) / 2,
+      (frustumH * aspect) / 2,
+      frustumH / 2,
+      -frustumH / 2,
+      0.1,
+      1000,
+    )
   }
 
   private addLights(scene: THREE.Scene): void {

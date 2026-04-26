@@ -44,6 +44,18 @@ export class CameraControllerManager {
     return this.mode
   }
 
+  /**
+   * Detach + re-attach the currently active controller against the
+   * (possibly mutated) `ThreeSceneContext`. Call this after the
+   * renderer swaps `context.camera` (e.g. perspective ↔ orthographic)
+   * so OrbitControls / lookAt / `up`-vector setup all rebind to the
+   * new camera object.
+   */
+  reattachActive(): void {
+    this.active.detach(this.context)
+    this.active.attach(this.context)
+  }
+
   update(state: SimulationState): void {
     this.active.update(state, this.context)
   }

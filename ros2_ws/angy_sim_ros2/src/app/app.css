@@ -130,6 +130,24 @@ body,
   backdrop-filter: blur(6px);
 }
 
+.viewport-camera-indicator {
+  pointer-events: auto;
+  background: rgba(15, 17, 21, 0.72);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-family: ui-monospace, "SFMono-Regular", monospace;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--fg-muted);
+  backdrop-filter: blur(6px);
+}
+
+.viewport-key-hint {
+  margin-left: 6px;
+  opacity: 0.6;
+}
+
 .viewport-stage {
   position: absolute;
   inset: 0;
