@@ -349,6 +349,121 @@ body,
   margin: 0;
 }
 
+/* ----- renderer settings panel ---------------------------------------- *
+ * Single-column form with a tight grid of label/input rows. Inputs
+ * inherit the dark-panel look from the surrounding `.panel`. The
+ * checkbox row collapses its grid template so the toggle hugs the
+ * label instead of flex-stretching to the column width.
+ */
+.renderer-settings-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.renderer-settings-row {
+  display: grid;
+  grid-template-columns: 1fr 130px;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--fg);
+}
+
+.renderer-settings-row > span {
+  color: var(--fg-muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.renderer-settings-row--checkbox {
+  grid-template-columns: auto 1fr;
+}
+
+.renderer-settings-row--checkbox > span {
+  order: 2;
+  color: var(--fg);
+  font-size: 13px;
+}
+
+.renderer-settings-row input[type='number'],
+.renderer-settings-row input[type='range'],
+.renderer-settings-row select {
+  width: 100%;
+  background: var(--bg-panel-2);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-family: ui-monospace, "SFMono-Regular", monospace;
+  font-size: 12px;
+}
+
+.renderer-settings-row select {
+  cursor: pointer;
+  appearance: none;
+}
+
+.renderer-settings-row input[type='range'] {
+  padding: 0;
+  height: 26px;
+}
+
+.renderer-settings-row input[type='color'] {
+  width: 100%;
+  height: 28px;
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px;
+  cursor: pointer;
+}
+
+.renderer-settings-row input[type='checkbox'] {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.renderer-settings-value {
+  font-family: ui-monospace, "SFMono-Regular", monospace;
+  color: var(--fg);
+  font-size: 11px;
+}
+
+.renderer-settings-hint {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-muted);
+  opacity: 0.7;
+}
+
+.renderer-settings-actions {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+}
+
+.renderer-settings-actions button {
+  background: var(--bg-panel-2);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 120ms;
+}
+
+.renderer-settings-actions button:hover {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+
 @media (max-width: 700px) {
   .app-shell {
     height: auto;

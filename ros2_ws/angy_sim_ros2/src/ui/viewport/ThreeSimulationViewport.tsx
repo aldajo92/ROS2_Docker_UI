@@ -1,8 +1,15 @@
-import { useEffect, useRef, useState } from 'react'
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from 'react'
 import { useSimulation } from '../../app/useSimulation'
 import { ThreeSimulationRenderer } from '../renderers/three/core/ThreeSimulationRenderer'
 import type { CameraMode } from '../renderers/three/cameras/CameraMode'
 import type { Projection } from '../renderers/three/cameras/Projection'
+import type { ThreeTrailConfig } from '../renderers/three/config/ThreeRendererConfig'
 
 /** Cycle order used by the `c` key. Matches the manager's mode set. */
 const CAMERA_MODE_CYCLE: readonly CameraMode[] = [
@@ -18,6 +25,26 @@ const MODE_LABEL: Record<CameraMode, string> = {
 }
 
 /**
+ * Imperative surface exposed to the parent for renderer-only side
+ * effects (e.g. wiping trail history) that React state can't model
+ * without forcing a re-render. Keep this surface tiny — anything
+ * that's well-modeled as state should stay in props.
+ */
+export interface ThreeSimulationViewportHandle {
+  clearTrails(): void
+}
+
+export interface ThreeSimulationViewportProps {
+  /**
+   * Trail visualization config. Owned by the parent (e.g. `App.tsx`)
+   * so the Inspector can edit it in React state. Changes are pushed
+   * into the renderer via `useEffect`; the renderer instance itself
+   * is NOT recreated on config change.
+   */
+  trailConfig?: ThreeTrailConfig
+}
+
+/**
  * React-side mount point for the Three.js renderer.
  *
  * Responsibilities (and only these):
@@ -29,17 +56,19 @@ const MODE_LABEL: Record<CameraMode, string> = {
  *       `c` → cycle camera mode (orbit → follow → top-down → orbit)
  *       `p` → toggle perspective ↔ orthographic projection
  *     This mirrors the ergonomics of `angelos_sim_ros2`.
+ *   - Apply renderer-config props (`trailConfig`) without recreating
+ *     the renderer.
  *   - Tear everything down on unmount.
  *
  * Explicitly NOT here:
  *   - Anything Three.js (`THREE.*` lives in `renderers/three/...`).
  *   - Vehicle / physics / scenario logic.
  *   - Calls to `entity.update(...)`. The engine owns the tick.
- *
- * Note: the spec mentions `engine.getState()`, but the real engine
- * exposes `engine.state` directly. We use the property accessor.
  */
-export function ThreeSimulationViewport() {
+export const ThreeSimulationViewport = forwardRef<
+  ThreeSimulationViewportHandle,
+  ThreeSimulationViewportProps
+>(function ThreeSimulationViewport({ trailConfig }, ref) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const rendererRef = useRef<ThreeSimulationRenderer | null>(null)
   const { engine } = useSimulation()
@@ -50,11 +79,24 @@ export function ThreeSimulationViewport() {
   const [cameraMode, setCameraMode] = useState<CameraMode>('orbit')
   const [projection, setProjection] = useState<Projection>('perspective')
 
+  useImperativeHandle(
+    ref,
+    () => ({
+      clearTrails: () => {
+        rendererRef.current?.clearTrails()
+      },
+    }),
+    [],
+  )
+
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
 
-    const renderer = new ThreeSimulationRenderer(container)
+    const renderer = new ThreeSimulationRenderer(
+      container,
+      trailConfig ? { trail: trailConfig } : {},
+    )
     rendererRef.current = renderer
     renderer.init(engine.state)
 
@@ -101,7 +143,21 @@ export function ThreeSimulationViewport() {
       renderer.dispose()
       rendererRef.current = null
     }
+    // The renderer is rebuilt only when the engine identity changes
+    // (effectively never — `SimulationProvider` keeps a single engine
+    // across StrictMode passes). `trailConfig` updates are applied via
+    // a separate effect to avoid recreating the renderer on every
+    // Inspector slider tick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine])
+
+  // Push trail-config changes into the live renderer without
+  // recreating it. The renderer triggers its own repaint internally,
+  // so we don't have to call `renderer.render(...)` from here.
+  useEffect(() => {
+    if (!trailConfig) return
+    rendererRef.current?.setTrailConfig(trailConfig)
+  }, [trailConfig])
 
   // Keyboard controls (c = cycle camera mode, p = toggle projection).
   // Listening on `window` matches the angelos sim's ergonomics, where
@@ -160,4 +216,4 @@ export function ThreeSimulationViewport() {
       />
     </section>
   )
-}
+})

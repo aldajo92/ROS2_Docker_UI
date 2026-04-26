@@ -14,6 +14,7 @@ import { CameraControllerManager } from '../cameras/CameraControllerManager'
 import {
   DEFAULT_THREE_RENDERER_CONFIG,
   type ThreeRendererConfig,
+  type ThreeTrailConfig,
 } from '../config/ThreeRendererConfig'
 import type { CameraMode } from '../cameras/CameraMode'
 import type { Projection } from '../cameras/Projection'
@@ -97,7 +98,7 @@ export class ThreeSimulationRenderer implements SimulationRenderer {
     this.vehicleRenderer = new ThreeVehicleRenderer(this.context)
     this.staticObstacleRenderer = new ThreeStaticObstacleRenderer(this.context)
     this.dynamicActorRenderer = new ThreeDynamicActorRenderer(this.context)
-    this.trailRenderer = new ThreeTrailRenderer(this.context, this.config.trailLength)
+    this.trailRenderer = new ThreeTrailRenderer(this.context, this.config.trail)
     this.pathRenderer = new ThreePathRenderer(this.context)
 
     if (this.config.showDebug) {
@@ -190,6 +191,27 @@ export class ThreeSimulationRenderer implements SimulationRenderer {
   /** Wipe trails — call from `reset` / `scenarioLoaded` event handlers. */
   clearTrails(): void {
     this.trailRenderer?.clear()
+    if (this.lastState) this.render(this.lastState)
+  }
+
+  /**
+   * Apply a partial trail-config update. The trail renderer takes
+   * effect immediately (color / opacity / height / max-points / etc.
+   * are reflected on the next paint), and we trigger a render so the
+   * change is visible even if the simulation is paused.
+   */
+  setTrailConfig(config: Partial<ThreeTrailConfig>): void {
+    this.config.trail = { ...this.config.trail, ...config }
+    this.trailRenderer?.setConfig(config)
+    if (this.lastState) this.render(this.lastState)
+  }
+
+  setTrailEnabled(enabled: boolean): void {
+    this.setTrailConfig({ enabled })
+  }
+
+  getTrailConfig(): ThreeTrailConfig {
+    return this.trailRenderer?.getConfig() ?? this.config.trail
   }
 
   setCameraMode(mode: CameraMode): void {

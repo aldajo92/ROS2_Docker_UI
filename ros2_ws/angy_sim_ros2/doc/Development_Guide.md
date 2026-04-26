@@ -108,6 +108,12 @@ schedule simulation ticks
 
 Three.js, Phaser, Pixi, Canvas, or WebGPU are visualization adapters only.
 
+Renderer-only state (e.g. `ThreeTrailConfig`, debug-layer toggles)
+lives in React state at the App / Inspector level and is pushed into
+the renderer through dedicated setters (`setTrailConfig`,
+`setTrailEnabled`, `clearTrails`, `setCameraMode`, `setProjection`).
+Never store it in `SimulationState`, on entities, or in scenario JSON.
+
 ---
 
 ### 5. Collision goes through backends
@@ -379,6 +385,47 @@ engine 'tick'      -> useKeyboardVehicleControl
                     -> KeyboardVehicleCommandMapper
                     -> commandQueue.push(VehicleCommand)
 ```
+
+---
+
+### Bad: trail config in `SimulationState` or `VehicleEntity`
+
+```ts
+// in SimulationState
+this.trailLength = 500
+// in VehicleEntity
+this.trailColor = '#ff5050'
+```
+
+Trail visualization is renderer-only state. Tucking it onto the
+simulation core would (a) leak through scenario JSON, (b) couple the
+core to a specific renderer, and (c) force every alternative
+renderer to reproduce the same fields.
+
+Correct path:
+
+```text
+React state (App.tsx)  ──ThreeTrailConfig──▶  ThreeSimulationViewport
+                                            (useEffect)
+                                                │
+                                                ▼
+                                ThreeSimulationRenderer.setTrailConfig(...)
+                                                │
+                                                ▼
+                                       ThreeTrailRenderer.setConfig(...)
+```
+
+The Inspector edits a `ThreeTrailConfig` in React state and passes
+it down. The viewport applies updates to the renderer in a separate
+`useEffect` so slider edits don't recreate the renderer instance.
+
+`ThreeTrailConfig.samplingMode` selects between two strategies:
+`pointCount` keeps the last `maxPoints` appended samples (the
+historical default — a stationary vehicle still grows the trail);
+`timeWindow` prunes by sim time (`state.clock.time()`), throttles
+appends with `minSampleDtSec`, and uses `maxPoints` only as a
+safety cap. Both modes use sim time, never wall-clock — a paused
+engine produces a paused trail.
 
 ---
 
