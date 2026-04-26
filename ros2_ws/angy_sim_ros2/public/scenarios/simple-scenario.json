@@ -1,0 +1,38 @@
+{
+  "name": "simple-scenario",
+  "description": "One vehicle driving forward with a slight CCW yaw rate, with three static obstacles and one dynamic actor crossing the path.",
+  "entities": [
+    {
+      "kind": "vehicle",
+      "id": "ego",
+      "pose": { "x": 0, "y": 0, "yaw": 0 },
+      "controls": { "v": 0.5, "w": 0.2 },
+      "radius": 0.4
+    },
+    {
+      "kind": "static_obstacle",
+      "id": "obstacle_a",
+      "position": { "x": 3, "y": 1 },
+      "radius": 0.5
+    },
+    {
+      "kind": "static_obstacle",
+      "id": "obstacle_b",
+      "position": { "x": -2, "y": 2 },
+      "radius": 0.5
+    },
+    {
+      "kind": "static_obstacle",
+      "id": "obstacle_c",
+      "position": { "x": 0, "y": -3 },
+      "radius": 0.5
+    },
+    {
+      "kind": "dynamic_actor",
+      "id": "actor_1",
+      "pose": { "x": 5, "y": -2, "yaw": 0 },
+      "velocity": { "vx": -0.3, "vy": 0.2, "w": 0 },
+      "radius": 0.3
+    }
+  ]
+}

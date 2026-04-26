@@ -1,0 +1,178 @@
+:root {
+  --bg: #0f1115;
+  --bg-panel: #1a1d24;
+  --bg-panel-2: #232732;
+  --fg: #e6e8eb;
+  --fg-muted: #8b94a3;
+  --accent: #60a5fa;
+  --accent-fg: #0b1220;
+  --danger: #f87171;
+  --border: #2a2f3a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+.app-shell {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px 16px 48px;
+}
+
+.app-shell header h1 {
+  margin: 0;
+  font-size: 24px;
+  letter-spacing: 0.02em;
+}
+
+.app-shell header .subtitle {
+  margin: 4px 0 24px;
+  color: var(--fg-muted);
+  font-size: 13px;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  gap: 16px;
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.column.wide {
+  min-width: 0;
+}
+
+.panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+}
+
+.panel h2 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg-muted);
+}
+
+.control-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.control-buttons button {
+  background: var(--bg-panel-2);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 120ms;
+}
+
+.control-buttons button:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+
+.control-buttons button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.error {
+  color: var(--danger);
+  font-size: 13px;
+  margin: 12px 0 0;
+}
+
+.time-value {
+  font-family: ui-monospace, "SFMono-Regular", monospace;
+  font-size: 26px;
+  margin: 0;
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 0;
+}
+
+.metrics div {
+  display: flex;
+  flex-direction: column;
+}
+
+.metrics dt {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg-muted);
+}
+
+.metrics dd {
+  margin: 2px 0 0;
+  font-family: ui-monospace, "SFMono-Regular", monospace;
+  font-size: 16px;
+}
+
+.entity-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: ui-monospace, "SFMono-Regular", monospace;
+  font-size: 12px;
+}
+
+.entity-table th,
+.entity-table td {
+  padding: 6px 8px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.entity-table th {
+  color: var(--fg-muted);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 11px;
+}
+
+.entity-table td {
+  color: var(--fg);
+}
+
+.empty {
+  color: var(--fg-muted);
+  font-size: 13px;
+  margin: 0;
+}
+
+@media (max-width: 800px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+}
