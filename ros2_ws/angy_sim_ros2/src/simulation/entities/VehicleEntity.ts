@@ -11,6 +11,28 @@ export interface VehicleControls {
   w: number
 }
 
+/**
+ * Higher-level, partial command shape. Unlike `VehicleControls`, fields
+ * are optional and may include richer inputs (`throttle`, `brake`,
+ * `steering`) that future kinematic models may consume. The unicycle
+ * model only reads `linearVelocity` / `angularVelocity`; richer fields
+ * are accepted but ignored.
+ *
+ * Designed to be the canonical input for external command channels
+ * (e.g. ROS / WebSocket bridges). Adapters at the communication layer
+ * translate transport-specific messages into this shape.
+ */
+export interface VehicleCommand {
+  /** Commanded forward speed, m/s. Maps to `controls.v` for unicycles. */
+  linearVelocity?: number
+  /** Commanded angular rate, rad/s (CCW positive). Maps to `controls.w`. */
+  angularVelocity?: number
+  /** Future use — bicycle / Ackermann models. Ignored by unicycles. */
+  throttle?: number
+  brake?: number
+  steering?: number
+}
+
 export interface VehicleEntityOptions {
   id: string
   pose?: Pose2D
@@ -51,6 +73,27 @@ export class VehicleEntity extends BaseEntity {
 
   setControls(controls: VehicleControls): void {
     this.controls = controls
+  }
+
+  /**
+   * Apply a high-level command. Only fields present on the command are
+   * touched; everything else is left at the previously commanded value.
+   *
+   * For the unicycle model, this is a thin mapping:
+   *
+   *   linearVelocity  → controls.v
+   *   angularVelocity → controls.w
+   *
+   * `throttle` / `brake` / `steering` are intentionally ignored here so
+   * external callers can keep using a single canonical command shape;
+   * a richer kinematic model (bicycle, Ackermann) can override this
+   * method to consume them.
+   */
+  setCommand(command: VehicleCommand): void {
+    const next: VehicleControls = { v: this.controls.v, w: this.controls.w }
+    if (command.linearVelocity !== undefined) next.v = command.linearVelocity
+    if (command.angularVelocity !== undefined) next.w = command.angularVelocity
+    this.controls = next
   }
 
   override update(dt: number, _state: SimulationState): void {
