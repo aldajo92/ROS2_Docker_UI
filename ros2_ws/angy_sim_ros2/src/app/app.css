@@ -147,6 +147,20 @@ body,
   letter-spacing: 0.04em;
 }
 
+/* Three.js mounts a <canvas> directly into .three-viewport. We
+   override the flex centering inherited from .viewport-stage and
+   stretch the canvas to fill so window resize feels native. */
+.three-viewport {
+  display: block;
+  background: #111118;
+}
+
+.three-viewport > canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
 .panel {
   background: var(--bg-panel);
   border: 1px solid var(--border);

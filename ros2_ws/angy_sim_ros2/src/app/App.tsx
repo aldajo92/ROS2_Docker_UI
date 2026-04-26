@@ -3,7 +3,7 @@ import { ControlPanel } from '../ui/ControlPanel'
 import { SimulationTimeDisplay } from '../ui/SimulationTimeDisplay'
 import { EntityListPanel } from '../ui/EntityListPanel'
 import { MetricsPanel } from '../ui/MetricsPanel'
-import { SimulationViewport } from '../ui/SimulationViewport'
+import { ThreeSimulationViewport } from '../ui/viewport/ThreeSimulationViewport'
 
 export default function App() {
   return (
@@ -17,7 +17,7 @@ export default function App() {
         </header>
         <div className="layout">
           <div className="layout-left">
-            <SimulationViewport />
+            <ThreeSimulationViewport />
           </div>
           <aside className="layout-right" aria-label="Inspector">
             <h2 className="layout-title">Inspector</h2>

@@ -29,7 +29,17 @@ any renderer that implements the `SimulationRenderer` interface.
 ```
 src/
   app/                React shell — providers, hooks, top-level App
-  ui/                 Leaf React components (panels, viewport)
+  ui/
+    viewport/         React mount point for the active renderer
+    renderers/
+      three/          Three.js renderer adapter
+        core/           Coordinator, scene context, registry, disposal
+        mapping/        sim ↔ three coordinate / yaw conversion
+        objects/        Per-entity sub-renderers (vehicle, obstacle, …)
+        cameras/        CameraController interface + modes + manager
+        debug/          Bounding circles, heading arrows, etc.
+        config/         ThreeRendererConfig + defaults
+    *.tsx             Inspector panels (Control, Metrics, Entities, …)
   math/
     geometry/         Point/Vector/Pose/Line/Segment/Transform + ops
   simulation/
@@ -180,7 +190,8 @@ systems can be added via `engine.addSystem(...)`.
 - **UI components (`src/ui/`)** —
   `ControlPanel` (Start / Pause / Step / Reset / Load Scenario),
   `SimulationTimeDisplay`, `MetricsPanel`, `EntityListPanel`,
-  `SimulationViewport` (placeholder black stage; no renderer yet).
+  and `viewport/ThreeSimulationViewport` (the live Three.js mount;
+  see Layer 9 below).
 - **Layout** — `src/app/App.tsx` + `src/app/app.css`: full-viewport
   flex shell, two-column grid (viewport left, Inspector right), no
   fixed-position overlays.
@@ -340,6 +351,162 @@ Notes:
 - For tests and local development, swap `WebSocketTransport` for
   `MockTransport` or `InMemoryTransport` without touching the rest.
 
+## Layer 9 — rendering adapters (`src/ui/renderers/`, `src/ui/viewport/`)
+
+Renderers are **pure consumers** of `SimulationState`. They live
+entirely outside the simulation core: nothing under `src/simulation/`
+or `src/math/` imports a rendering library, DOM API, or React. The
+core only knows the `SimulationRenderer` interface; concrete renderers
+plug in through the React shell.
+
+The current ship is a Three.js renderer at
+`src/ui/renderers/three/`. Future renderers (Phaser, Pixi, Canvas 2D,
+WebGPU) follow the same shape and live as siblings under
+`src/ui/renderers/`.
+
+### Three.js renderer — modules
+
+- **`viewport/ThreeSimulationViewport.tsx`** — the React mount. Owns
+  the container `<div>`, instantiates `ThreeSimulationRenderer`, calls
+  `init(state)` once, forwards engine events (`tick`, `reset`,
+  `scenarioLoaded`, `entityAdded`, `entityRemoved`, `collision`) and
+  `window.resize` / `ResizeObserver` to the renderer, and disposes on
+  unmount. Contains zero Three.js imports and zero simulation logic.
+- **`renderers/three/core/ThreeSimulationRenderer.ts`** — top-level
+  Three.js coordinator. Implements `SimulationRenderer`. Creates the
+  `THREE.Scene`, camera, `WebGLRenderer`, lights, and every
+  sub-renderer; orchestrates them in `init` / `render` / `dispose`.
+  Exposes `resize()`, `clearTrails()`, `setCameraMode(mode)`.
+- **`renderers/three/core/ThreeSceneContext.ts`** — small
+  pass-by-reference struct (`scene`, `camera`, `renderer`,
+  `container`) that every sub-renderer needs. Treated as immutable by
+  sub-renderers; the camera mode manager is the only actor allowed to
+  swap the camera's pose.
+- **`renderers/three/core/ThreeRenderObjectRegistry.ts`** — typed
+  `Map<string, T extends THREE.Object3D>`. Each per-entity sub-renderer
+  owns one; lifecycle (create lazy, sync, evict stale, dispose) lives
+  on the sub-renderer.
+- **`renderers/three/core/threeDisposal.ts`** — depth-first disposal
+  walker. Disposes geometries, materials (single + array), and the
+  common texture map slots (`map`, `normalMap`, `roughnessMap`,
+  `metalnessMap`, `aoMap`, `emissiveMap`, `alphaMap`). Forgetting GPU
+  cleanup leaks one buffer per add/remove cycle in long sessions —
+  this helper is the only place renderers touch `dispose()`.
+
+### Coordinate convention & mapping
+
+Engine: right-handed, **+X right / +Y forward / +Z up**, radians, SI.
+Three.js: right-handed, **+X right / +Y up / +Z toward camera**.
+
+The mapping is kept in **one** place — `mapping/simToThree.ts`
+(forward) and `mapping/threeToSim.ts` (reverse) — and documented as
+constants in `mapping/coordinateConventions.ts` for tooling /
+discoverability.
+
+```
+sim.x → three.x
+sim.y → three.z
+sim.z → three.y
+yaw   → rotation.y = -yaw     (vehicle mesh local forward = +X)
+```
+
+The yaw inversion comes from Three.js's positive `rotation.y` rotating
++X → −Z; we want sim yaw=π/2 (forward = sim+Y = three+Z) to land mesh
+forward on +Z, so we negate. The derivation lives at the top of
+`simToThree.ts`; renderers must never re-derive it inline.
+
+### Object sub-renderers (`renderers/three/objects/`)
+
+Each sub-renderer is responsible for **one entity type** (or one
+piece of static scenery) and has the same lifecycle:
+`sync(state)` → upsert objects, drop stale ones; `dispose()` →
+remove + GPU-dispose everything. None of them touch entity internals
+beyond the public read API.
+
+- **`ThreeGroundRenderer`** — static ground plane (40×40 m) plus a
+  1 m grid. Created once, never reads `SimulationState`.
+- **`ThreeAxesRenderer`** — `THREE.AxesHelper` placed at the origin
+  to ground users in the engine frame.
+- **`ThreeVehicleRenderer`** — one `BoxGeometry` per vehicle, mesh
+  long axis along sim +X (matching the yaw convention). Repositions
+  via `simPoint2DToThree`; rotates via `simYawToThreeRotationY`.
+- **`ThreeStaticObstacleRenderer`** — cylinders for static obstacles.
+- **`ThreeDynamicActorRenderer`** — spheres for dynamic actors.
+- **`ThreeTrailRenderer`** — visual breadcrumb trail per vehicle.
+  Trail points live **only** here (never on the entity); a per-id
+  sliding window is rebuilt into a `THREE.Line` each tick. `clear()`
+  is invoked from the viewport on `reset` / `scenarioLoaded`.
+- **`ThreePathRenderer`** — placeholder for displayed paths (e.g.
+  from a Python planner over the upcoming communication layer).
+  Exposes `setPath(id, points)` / `removePath(id)`; `sync` is a
+  no-op until a `PathEntity` or `SimPathMessage` exists.
+
+### Debug layer (`renderers/three/debug/`)
+
+- **`ThreeDebugLayer`** — fans out `sync` to per-flag debug
+  renderers; `setOptions` toggles them at runtime.
+- **`BoundingCircleRenderer`** — thin ring at each entity's
+  bounding-circle radius. Picks up any entity that exposes
+  `radius` and either `position` or `pose.position`.
+- **`HeadingArrowRenderer`** — stylized arrow showing each
+  vehicle's yaw (shaft + cone, both pre-rotated to local +X).
+- **`VelocityVectorRenderer`** — thin segment from the vehicle pose
+  along its current forward velocity (length = `v` m). Off by
+  default until the UI grows a toggle.
+- **`CollisionHighlightRenderer`** — placeholder; will pulse a ring
+  on `collision` events once a renderer-side animation clock lands.
+
+### Cameras (`renderers/three/cameras/`)
+
+- **`CameraController`** interface — `attach`, `update`, `detach`,
+  optional `dispose`. `attach` parks the camera at the mode default;
+  `update` runs on every render to track moving targets; `detach`
+  resets shared state (e.g. the camera's `up` vector) before another
+  controller takes over.
+- **`TopDownCameraController`** — fixed top-down minimap view. Sets
+  `camera.up = (0, 0, -1)` so screen-up corresponds to sim +Y.
+- **`OrbitCameraController`** — fixed 3/4 elevated view. Wiring real
+  drag/zoom is left to a follow-up; the controller is structured so
+  installing `OrbitControls` only requires changes in this file.
+- **`FollowVehicleCameraController`** — chase-cam behind and above
+  the first vehicle in `state.entities`. Reads `vehicle.pose`;
+  never mutates it.
+- **`CameraControllerManager`** — owns one instance per
+  `CameraMode`, handles `attach` / `detach` on `setMode`, and is
+  cheap to swap modes (no recreation).
+
+### Config (`renderers/three/config/`)
+
+- **`ThreeRendererConfig`** with `showGrid`, `showAxes`, `showDebug`,
+  `trailLength`, `cameraMode`. The renderer reads it once on
+  construction; flags can be flipped later via dedicated setters.
+  Single-renderer flags belong on the renderer itself, not in this
+  shared struct — add to it only when ≥ 2 sub-renderers care.
+
+### What renderers must never do
+
+- Mutate `SimulationState`, entity fields, or fire engine events.
+- Compute physics, collisions, or scenario logic.
+- Schedule the simulation (the engine owns the tick — the viewport
+  only invokes `render(state)` in response to engine events and DOM
+  resize).
+- Duplicate the sim ↔ three coordinate or yaw mapping. Always go
+  through `mapping/simToThree.ts`.
+
+### Adding a new renderer (Phaser, Pixi, Canvas 2D, WebGPU)
+
+1. Create `src/ui/renderers/<name>/` with the same internal split
+   (`core/`, `mapping/`, `objects/`, `cameras/`, `config/`,
+   optionally `debug/`).
+2. Implement `SimulationRenderer` in
+   `src/ui/renderers/<name>/core/<Name>SimulationRenderer.ts`.
+3. Add `src/ui/viewport/<Name>SimulationViewport.tsx`.
+4. Swap (or feature-flag) the viewport import in `App.tsx`.
+
+Every existing renderer-agnostic invariant (mapping in one place,
+sub-renderers per entity type, registry-based lifecycle, full GPU
+disposal) carries over verbatim.
+
 ## Tick pipeline (control flow)
 
 ```
@@ -356,11 +523,19 @@ SimulationLoop  ──tick(dt)──▶  SimulationEngine.tick
                                  ├─ state.metrics.ticks += 1
                                  └─ events.emit('tick', …)
                                             │
-                                            ▼
-                            React hooks (useSyncExternalStore)
+                                            ├──▶ React hooks (useSyncExternalStore)
+                                            │           │
+                                            │           ▼
+                                            │   Re-render only the subscribed leaves
                                             │
-                                            ▼
-                          Re-render only the subscribed leaves
+                                            └──▶ ThreeSimulationViewport
+                                                        │
+                                                        ▼
+                                          renderer.render(engine.state)
+                                                        │
+                                                        ├─ sub-renderers .sync(state)
+                                                        ├─ camera controller .update(state)
+                                                        └─ WebGLRenderer.render(scene, camera)
 
   External world  ──Transport.subscribe──▶  TopicBridge
                                               │
@@ -422,3 +597,17 @@ SimulationLoop  ──tick(dt)──▶  SimulationEngine.tick
 - `src/infrastructure/communication/memory/InMemoryTransport.test.ts`
   — microtask dispatch ordering, lifecycle, subscription clearing
   (4 tests)
+- `src/ui/renderers/three/mapping/simToThree.test.ts` — sim ↔ three
+  point/vector mapping + yaw inversion + round-trip through
+  `threeToSim` (8 tests)
+- `src/ui/renderers/three/core/ThreeRenderObjectRegistry.test.ts` —
+  set / get / iteration order / delete / clear (3 tests)
+- `src/ui/renderers/three/core/threeDisposal.test.ts` — geometry +
+  single material + multi-material + nested children + texture-map
+  disposal (5 tests)
+
+WebGL-bound renderer code (lights, `WebGLRenderer`, full `init`) is
+intentionally not unit-tested under vitest's `node` environment —
+those paths are exercised in the running app. Headless WebGL would
+require `jsdom` + a software GL backend, which is overkill for this
+project right now.
