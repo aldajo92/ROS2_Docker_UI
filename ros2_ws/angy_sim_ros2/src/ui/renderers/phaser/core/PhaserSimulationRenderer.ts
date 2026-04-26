@@ -1,0 +1,246 @@
+import * as Phaser from 'phaser'
+import type { SimulationRenderer } from '../../../../simulation/render/SimulationRenderer'
+import type { SimulationState } from '../../../../simulation/core/SimulationState'
+import {
+  DEFAULT_PHASER_RENDERER_CONFIG,
+  type PhaserRendererConfig,
+  type PhaserTrailConfig,
+} from '../config/PhaserRendererConfig'
+import type { PhaserSceneContext } from './PhaserSceneContext'
+import type { PhaserViewport } from '../mapping/simToPhaser'
+import { PhaserVehicleRenderer } from '../objects/PhaserVehicleRenderer'
+import { PhaserStaticObstacleRenderer } from '../objects/PhaserStaticObstacleRenderer'
+import { PhaserDynamicActorRenderer } from '../objects/PhaserDynamicActorRenderer'
+import { PhaserPathRenderer } from '../objects/PhaserPathRenderer'
+import { PhaserTrailRenderer } from '../objects/PhaserTrailRenderer'
+import { PhaserGroundRenderer } from '../objects/PhaserGroundRenderer'
+import { PhaserAxesRenderer } from '../objects/PhaserAxesRenderer'
+import { PhaserDebugLayer } from '../debug/PhaserDebugLayer'
+
+/**
+ * Top-level Phaser renderer. Owns the `Phaser.Game`, the single
+ * rendering scene, the shared `PhaserSceneContext`, and every
+ * per-domain sub-renderer. It is the only Phaser object the React
+ * layer interacts with directly — `PhaserSimulationViewport` knows
+ * about this class and nothing else from `phaser`.
+ *
+ * Strict separation of concerns mirrors the Three.js adapter:
+ *   - DOM lifecycle (mount, unmount, resize) is driven by the React
+ *     viewport component; this class is framework-agnostic.
+ *   - Per-entity rendering lives in `objects/...` and `debug/...`.
+ *   - Coordinate conversion lives in `mapping/...`.
+ *   - The renderer NEVER mutates `SimulationState`. It only reads
+ *     entities, paths, and `state.clock`.
+ */
+export class PhaserSimulationRenderer implements SimulationRenderer {
+  private readonly container: HTMLElement
+  private readonly config: PhaserRendererConfig
+
+  private game?: Phaser.Game
+  private scene?: Phaser.Scene
+  private context?: PhaserSceneContext
+  private lastState?: SimulationState
+
+  private groundRenderer?: PhaserGroundRenderer
+  private axesRenderer?: PhaserAxesRenderer
+  private vehicleRenderer?: PhaserVehicleRenderer
+  private staticObstacleRenderer?: PhaserStaticObstacleRenderer
+  private dynamicActorRenderer?: PhaserDynamicActorRenderer
+  private pathRenderer?: PhaserPathRenderer
+  private trailRenderer?: PhaserTrailRenderer
+  private debugLayer?: PhaserDebugLayer
+
+  constructor(
+    container: HTMLElement,
+    config: Partial<PhaserRendererConfig> = {},
+  ) {
+    this.container = container
+    this.config = { ...DEFAULT_PHASER_RENDERER_CONFIG, ...config }
+  }
+
+  init(state: SimulationState): void {
+    if (this.game) return // Idempotent: tolerate double-init.
+
+    const width = this.container.clientWidth || 1
+    const height = this.container.clientHeight || 1
+
+    const onCreated = (scene: Phaser.Scene): void => {
+      this.onSceneCreated(scene, state)
+    }
+    class SimulationScene extends Phaser.Scene {
+      constructor() {
+        super({ key: 'simulation' })
+      }
+      create(): void {
+        onCreated(this)
+      }
+    }
+
+    this.game = new Phaser.Game({
+      type: Phaser.AUTO,
+      parent: this.container,
+      width,
+      height,
+      backgroundColor: this.config.backgroundColor,
+      // Phaser's `Scale.RESIZE` mode keeps the canvas at the parent's
+      // size on every browser resize automatically — we still listen
+      // for the `resize` event below to redraw the grid / axes which
+      // depend on the canvas dimensions.
+      scale: {
+        mode: Phaser.Scale.RESIZE,
+        autoCenter: Phaser.Scale.NO_CENTER,
+        width,
+        height,
+      },
+      scene: SimulationScene,
+      // We don't need Phaser's input handlers, animation system, or
+      // physics for a pure-visual renderer.
+      banner: false,
+      audio: { noAudio: true },
+    })
+  }
+
+  render(state: SimulationState): void {
+    this.lastState = state
+    if (!this.scene || !this.context) {
+      // Scene `create()` hasn't run yet. Repaint will happen on the
+      // next engine event after `sceneReady` resolves; until then the
+      // initial `render(state)` we issue from `onSceneCreated` covers
+      // the first frame.
+      return
+    }
+    this.syncAll(state)
+  }
+
+  resize(): void {
+    if (!this.context || !this.scene || !this.game) return
+    const w = this.container.clientWidth || 1
+    const h = this.container.clientHeight || 1
+    this.game.scale.resize(w, h)
+    this.recenterViewport()
+    this.groundRenderer?.redraw()
+    this.axesRenderer?.redraw()
+    this.trailRenderer?.reproject()
+    if (this.lastState) this.syncAll(this.lastState)
+  }
+
+  dispose(): void {
+    this.debugLayer?.dispose()
+    this.pathRenderer?.dispose()
+    this.trailRenderer?.dispose()
+    this.dynamicActorRenderer?.dispose()
+    this.staticObstacleRenderer?.dispose()
+    this.vehicleRenderer?.dispose()
+    this.axesRenderer?.dispose()
+    this.groundRenderer?.dispose()
+
+    // `destroy(true)` removes the canvas from the DOM as well, which
+    // is exactly what we want when React unmounts the viewport.
+    this.game?.destroy(true)
+
+    this.game = undefined
+    this.scene = undefined
+    this.context = undefined
+    this.lastState = undefined
+    this.groundRenderer = undefined
+    this.axesRenderer = undefined
+    this.vehicleRenderer = undefined
+    this.staticObstacleRenderer = undefined
+    this.dynamicActorRenderer = undefined
+    this.pathRenderer = undefined
+    this.trailRenderer = undefined
+    this.debugLayer = undefined
+  }
+
+  /** Wipe trails — call from `reset` / `scenarioLoaded` event handlers. */
+  clearTrails(): void {
+    this.trailRenderer?.clear()
+  }
+
+  setTrailConfig(partial: Partial<PhaserTrailConfig>): void {
+    this.config.trail = { ...this.config.trail, ...partial }
+    this.trailRenderer?.setConfig(partial)
+  }
+
+  setTrailEnabled(enabled: boolean): void {
+    this.setTrailConfig({ enabled })
+  }
+
+  getTrailConfig(): PhaserTrailConfig {
+    return this.trailRenderer?.getConfig() ?? this.config.trail
+  }
+
+  /** Internal: invoked by the Phaser scene's `create()` once the
+   *  display list and camera are alive. Builds the shared context and
+   *  every sub-renderer, then issues an initial `render(state)` so
+   *  the canvas isn't blank before the engine emits its first tick. */
+  private onSceneCreated(scene: Phaser.Scene, state: SimulationState): void {
+    this.scene = scene
+
+    const w = scene.scale.width
+    const h = scene.scale.height
+    const viewport: PhaserViewport = {
+      originX: w / 2,
+      originY: h / 2,
+      pixelsPerMeter: this.config.pixelsPerMeter,
+    }
+
+    this.context = {
+      game: this.game!,
+      scene,
+      container: this.container,
+      viewport,
+    }
+
+    if (this.config.showGrid) {
+      this.groundRenderer = new PhaserGroundRenderer(this.context)
+      this.groundRenderer.init()
+    }
+    if (this.config.showAxes) {
+      this.axesRenderer = new PhaserAxesRenderer(this.context)
+      this.axesRenderer.init()
+    }
+
+    this.pathRenderer = new PhaserPathRenderer(this.context)
+    this.staticObstacleRenderer = new PhaserStaticObstacleRenderer(this.context)
+    this.dynamicActorRenderer = new PhaserDynamicActorRenderer(this.context)
+    this.vehicleRenderer = new PhaserVehicleRenderer(this.context)
+
+    if (this.config.showTrails) {
+      this.trailRenderer = new PhaserTrailRenderer(this.context, this.config.trail)
+    }
+    if (this.config.showDebug) {
+      this.debugLayer = new PhaserDebugLayer(this.context)
+    }
+
+    // Phaser `Scale.RESIZE` fires its own resize event when the canvas
+    // changes size; tie our redraw + reproject in there so external
+    // CSS-driven resizes (e.g. inspector panel toggles) keep the
+    // origin centered.
+    scene.scale.on('resize', () => {
+      this.recenterViewport()
+      this.groundRenderer?.redraw()
+      this.axesRenderer?.redraw()
+      this.trailRenderer?.reproject()
+      if (this.lastState) this.syncAll(this.lastState)
+    })
+
+    // First frame so the user sees the static scene before pressing Start.
+    this.syncAll(state)
+  }
+
+  private syncAll(state: SimulationState): void {
+    this.pathRenderer?.sync(state)
+    this.staticObstacleRenderer?.sync(state)
+    this.dynamicActorRenderer?.sync(state)
+    this.vehicleRenderer?.sync(state)
+    this.trailRenderer?.sync(state)
+    this.debugLayer?.sync(state)
+  }
+
+  private recenterViewport(): void {
+    if (!this.scene || !this.context) return
+    this.context.viewport.originX = this.scene.scale.width / 2
+    this.context.viewport.originY = this.scene.scale.height / 2
+  }
+}
