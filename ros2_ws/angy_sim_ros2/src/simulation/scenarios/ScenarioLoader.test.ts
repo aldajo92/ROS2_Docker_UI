@@ -144,6 +144,150 @@ describe('ScenarioLoader.buildEntity', () => {
   })
 })
 
+describe('ScenarioLoader.parse — paths', () => {
+  it('parses a scenario with paths', () => {
+    const spec = ScenarioLoader.parse({
+      name: 'path-scenario',
+      entities: [],
+      paths: [
+        {
+          id: 'ego-ref',
+          name: 'Ego reference path',
+          vehicleId: 'ego',
+          frameId: 'map',
+          points: [
+            { x: 0, y: 0, yaw: 0, targetVelocity: 1.0 },
+            { x: 2, y: 0, yaw: 0, targetVelocity: 1.0 },
+            { x: 4, y: 1, yaw: 0.3, targetVelocity: 0.8 },
+          ],
+        },
+      ],
+    })
+    expect(spec.paths).toHaveLength(1)
+    const path = spec.paths![0]
+    expect(path.id).toBe('ego-ref')
+    expect(path.name).toBe('Ego reference path')
+    expect(path.vehicleId).toBe('ego')
+    expect(path.frameId).toBe('map')
+    expect(path.points).toHaveLength(3)
+    expect(path.points[2].yaw).toBeCloseTo(0.3)
+    expect(path.points[2].targetVelocity).toBe(0.8)
+  })
+
+  it('paths field absent → spec.paths is undefined', () => {
+    const spec = ScenarioLoader.parse({ name: 'no-paths', entities: [] })
+    expect(spec.paths).toBeUndefined()
+  })
+
+  it('preserves path order', () => {
+    const spec = ScenarioLoader.parse({
+      name: 'ordered',
+      entities: [],
+      paths: [
+        { id: 'first', points: [{ x: 0, y: 0 }] },
+        { id: 'second', points: [{ x: 1, y: 1 }] },
+        { id: 'third', points: [{ x: 2, y: 2 }] },
+      ],
+    })
+    expect(spec.paths!.map((p) => p.id)).toEqual(['first', 'second', 'third'])
+  })
+
+  it('optional point fields pass through when present', () => {
+    const spec = ScenarioLoader.parse({
+      name: 's',
+      entities: [],
+      paths: [
+        {
+          id: 'p',
+          points: [{ x: 1, y: 2, yaw: 0.5, targetVelocity: 2.0, timeSec: 3.0 }],
+        },
+      ],
+    })
+    const pt = spec.paths![0].points[0]
+    expect(pt.yaw).toBe(0.5)
+    expect(pt.targetVelocity).toBe(2.0)
+    expect(pt.timeSec).toBe(3.0)
+  })
+
+  it('optional point fields absent → undefined', () => {
+    const spec = ScenarioLoader.parse({
+      name: 's',
+      entities: [],
+      paths: [{ id: 'p', points: [{ x: 1, y: 2 }] }],
+    })
+    const pt = spec.paths![0].points[0]
+    expect(pt.yaw).toBeUndefined()
+    expect(pt.targetVelocity).toBeUndefined()
+    expect(pt.timeSec).toBeUndefined()
+  })
+
+  it('throws if paths is not an array', () => {
+    expect(() =>
+      ScenarioLoader.parse({ name: 's', entities: [], paths: 'bad' }),
+    ).toThrow(ScenarioParseError)
+  })
+
+  it('throws on path with missing id', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        paths: [{ points: [{ x: 0, y: 0 }] }],
+      }),
+    ).toThrow(ScenarioParseError)
+  })
+
+  it('throws on path with empty id string', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        paths: [{ id: '', points: [{ x: 0, y: 0 }] }],
+      }),
+    ).toThrow(ScenarioParseError)
+  })
+
+  it('throws on path with empty points array', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        paths: [{ id: 'p', points: [] }],
+      }),
+    ).toThrow(ScenarioParseError)
+  })
+
+  it('throws on point with NaN x', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        paths: [{ id: 'p', points: [{ x: NaN, y: 0 }] }],
+      }),
+    ).toThrow(ScenarioParseError)
+  })
+
+  it('throws on point with Infinity y', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        paths: [{ id: 'p', points: [{ x: 0, y: Infinity }] }],
+      }),
+    ).toThrow(ScenarioParseError)
+  })
+
+  it('throws on non-finite optional field', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        paths: [{ id: 'p', points: [{ x: 0, y: 0, yaw: NaN }] }],
+      }),
+    ).toThrow(ScenarioParseError)
+  })
+})
+
 describe('ScenarioLoader.loadFromUrl', () => {
   it('fetches and parses a scenario via an injected fetch', async () => {
     const fakeFetch = (async () =>

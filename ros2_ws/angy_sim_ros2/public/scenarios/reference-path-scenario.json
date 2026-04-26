@@ -1,0 +1,58 @@
+{
+  "name": "reference-path-scenario",
+  "description": "Ego vehicle with a planned S-curve reference path and static obstacles. The path shows the intended route; the vehicle drives open-loop and will drift from it.",
+  "entities": [
+    {
+      "kind": "vehicle",
+      "id": "ego",
+      "pose": { "x": 0, "y": 0, "yaw": 0 },
+      "controls": { "v": 0.6, "w": 0.15 },
+      "radius": 0.4
+    },
+    {
+      "kind": "static_obstacle",
+      "id": "cone_a",
+      "position": { "x": 2, "y": 1 },
+      "radius": 0.2
+    },
+    {
+      "kind": "static_obstacle",
+      "id": "cone_b",
+      "position": { "x": 4, "y": -1 },
+      "radius": 0.2
+    },
+    {
+      "kind": "static_obstacle",
+      "id": "cone_c",
+      "position": { "x": 6, "y": 2 },
+      "radius": 0.2
+    },
+    {
+      "kind": "static_obstacle",
+      "id": "cone_d",
+      "position": { "x": 8, "y": -0.5 },
+      "radius": 0.2
+    }
+  ],
+  "paths": [
+    {
+      "id": "ego-reference",
+      "name": "Ego reference path",
+      "vehicleId": "ego",
+      "frameId": "map",
+      "points": [
+        { "x": 0.0, "y":  0.0,  "yaw":  0.00, "targetVelocity": 0.6 },
+        { "x": 1.0, "y":  0.3,  "yaw":  0.30, "targetVelocity": 0.6 },
+        { "x": 2.0, "y":  0.8,  "yaw":  0.45, "targetVelocity": 0.6 },
+        { "x": 3.0, "y":  0.8,  "yaw":  0.00, "targetVelocity": 0.6 },
+        { "x": 4.0, "y":  0.3,  "yaw": -0.45, "targetVelocity": 0.6 },
+        { "x": 5.0, "y": -0.3,  "yaw": -0.30, "targetVelocity": 0.6 },
+        { "x": 6.0, "y":  0.0,  "yaw":  0.30, "targetVelocity": 0.6 },
+        { "x": 7.0, "y":  0.8,  "yaw":  0.45, "targetVelocity": 0.5 },
+        { "x": 8.0, "y":  1.0,  "yaw":  0.00, "targetVelocity": 0.5 },
+        { "x": 9.0, "y":  0.5,  "yaw": -0.30, "targetVelocity": 0.5 },
+        { "x": 10.0,"y":  0.0,  "yaw":  0.00, "targetVelocity": 0.5 }
+      ]
+    }
+  ]
+}

@@ -99,7 +99,8 @@ The runtime spine.
 - **`SimulationState`** — the per-tick "context" object passed to every
   system. Aggregates clock + entities + event bus + logger + scenario
   name + a `metrics` object (`ticks`, `totalDistance`, `peakSpeed`,
-  `collisionCount`).
+  `collisionCount`) + a `paths` `PathRegistry` (planned/reference
+  paths from scenarios or future communication bridges).
 - **`SimulationEngine`** — owns all of the above; exposes `start /
   pause / step / reset / loadScenario / addEntity / removeEntity /
   addSystem / setSpeedFactor / isRunning / getFixedDt`. Internal `tick`
@@ -261,15 +262,43 @@ A heavy backend (Rapier, Matter.js, Box2D, …) goes under
 - **`Scenario.ts`** — pure JSON-friendly type definitions:
   `PoseSpec`, `VehicleSpec`, `StaticObstacleSpec`,
   `DynamicActorSpec`, `EntitySpec` (discriminated by `type`),
-  `ScenarioSpec`.
+  `PathPointSpec`, `PathSpec`, `ScenarioSpec`.
 - **`ScenarioLoader`** — `parse(input)` validates raw JSON and throws
   a `ScenarioParseError` on failure; `loadFromUrl(url)` fetches +
   parses; `buildEntity(spec)` instantiates the concrete entity class.
   The engine's `loadScenario(spec)` resets the world, materializes
-  entities, and emits `scenarioLoaded`.
+  entities, loads scenario paths into `state.paths`, and emits
+  `scenarioLoaded`.
 - **`public/scenarios/simple-scenario.json`** — sample with one
   vehicle (v=0.5 m/s, w=0.2 rad/s), three static obstacles, and a
   dynamic actor crossing.
+
+## Layer 5b — paths (`src/simulation/paths/`)
+
+Planned and reference paths are **simulation data**, not renderer data.
+
+- **`PathPoint2D`** — JSON-friendly point `{ x, y, yaw?, targetVelocity?, timeSec? }` in SI units (meters, radians). No Three.js or DOM types.
+- **`Path2D`** — collection type `{ id, name?, frameId?, vehicleId?, points, metadata? }`. JSON round-trip safe.
+- **`PathRegistry`** — `Map<string, Path2D>` wrapper owned by `SimulationState`. API: `add / remove / get / has / toArray / clear / size`.
+
+**Sources of paths** (in priority order):
+1. Scenario file — declared in `ScenarioSpec.paths`; loaded by `SimulationEngine.loadScenario`.
+2. Future: communication bridge — `SimPathMessage` → `PathBridge` → `state.paths.add(path)`.
+
+**Renderer rules:**
+- Renderers read `state.paths.toArray()` (read-only).
+- Renderers must not mutate `state.paths` or any `Path2D`.
+- `ThreePathRenderer.sync(state)` visualises paths as `THREE.Line` objects and removes stale lines when paths disappear.
+
+**Path vs Trail distinction:**
+
+| | Path | Trail |
+|---|---|---|
+| What | Planned or reference route | Actual vehicle history |
+| Owner | `SimulationState.paths` | `ThreeTrailRenderer` (renderer-only) |
+| Source | Scenario, planner, bridge | Vehicle pose each tick |
+| Reset | Cleared by `SimulationEngine.reset()` | Cleared by `ThreeTrailRenderer.clear()` |
+| On entity | No | No |
 
 ## Layer 6 — render / events / logging
 
@@ -596,10 +625,10 @@ beyond the public read API.
   Trail points live **only** here (never on the entity); a per-id
   sliding window is rebuilt into a `THREE.Line` each tick. `clear()`
   is invoked from the viewport on `reset` / `scenarioLoaded`.
-- **`ThreePathRenderer`** — placeholder for displayed paths (e.g.
-  from a Python planner over the upcoming communication layer).
-  Exposes `setPath(id, points)` / `removePath(id)`; `sync` is a
-  no-op until a `PathEntity` or `SimPathMessage` exists.
+- **`ThreePathRenderer`** — renders planned/reference paths from
+  `state.paths`. One `THREE.Line` per `Path2D.id`; stale lines are
+  removed when paths disappear. Uses `simPoint2DToThree` from the
+  central mapping module; never mutates `SimulationState` or `Path2D`.
 
 ### Debug layer (`renderers/three/debug/`)
 

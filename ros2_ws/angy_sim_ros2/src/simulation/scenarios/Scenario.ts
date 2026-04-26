@@ -39,8 +39,25 @@ export interface DynamicActorSpec {
 
 export type EntitySpec = VehicleSpec | StaticObstacleSpec | DynamicActorSpec
 
+export interface PathPointSpec {
+  x: number
+  y: number
+  yaw?: number
+  targetVelocity?: number
+  timeSec?: number
+}
+
+export interface PathSpec {
+  id: string
+  name?: string
+  frameId?: 'map' | 'world' | string
+  vehicleId?: string
+  points: PathPointSpec[]
+}
+
 export interface ScenarioSpec {
   name: string
   description?: string
   entities: EntitySpec[]
+  paths?: PathSpec[]
 }

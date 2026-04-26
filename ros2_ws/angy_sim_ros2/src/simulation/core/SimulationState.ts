@@ -1,5 +1,6 @@
 import { EntityManager } from './EntityManager'
 import { SimulationClock } from './SimulationClock'
+import { PathRegistry } from '../paths/PathRegistry'
 import type { TypedEventBus } from '../events/EventBus'
 import type { SimulationEvents } from '../events/SimulationEvents'
 import type { Logger } from '../logging/Logger'
@@ -19,7 +20,7 @@ export interface MetricsState {
 /**
  * The "world" passed to every system update. Centralizes everything
  * a system might want to read or write: entities, clock, metrics,
- * event bus, logger, current scenario name.
+ * event bus, logger, current scenario name, and planned/reference paths.
  */
 export class SimulationState {
   readonly clock: SimulationClock
@@ -27,6 +28,7 @@ export class SimulationState {
   readonly metrics: MetricsState
   readonly events: TypedEventBus<SimulationEvents>
   readonly logger: Logger
+  readonly paths: PathRegistry
   scenarioName: string | null
 
   constructor(
@@ -39,6 +41,7 @@ export class SimulationState {
     this.entities = entities
     this.events = events
     this.logger = logger
+    this.paths = new PathRegistry()
     this.metrics = {
       collisionCount: 0,
       totalDistance: 0,

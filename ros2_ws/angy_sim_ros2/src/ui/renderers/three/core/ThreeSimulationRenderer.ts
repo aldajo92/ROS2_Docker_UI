@@ -117,11 +117,11 @@ export class ThreeSimulationRenderer implements SimulationRenderer {
     if (!this.context) return
     this.lastState = state
 
+    this.pathRenderer?.sync(state)
     this.vehicleRenderer?.sync(state)
     this.staticObstacleRenderer?.sync(state)
     this.dynamicActorRenderer?.sync(state)
     this.trailRenderer?.sync(state)
-    this.pathRenderer?.sync(state)
     this.debugLayer?.sync(state)
 
     this.cameraControllerManager?.update(state)
@@ -224,11 +224,6 @@ export class ThreeSimulationRenderer implements SimulationRenderer {
 
   getProjection(): Projection {
     return this.projection
-  }
-
-  /** Read-only access for renderers / tests that need the path renderer. */
-  getPathRenderer(): ThreePathRenderer | undefined {
-    return this.pathRenderer
   }
 
   private createCamera(

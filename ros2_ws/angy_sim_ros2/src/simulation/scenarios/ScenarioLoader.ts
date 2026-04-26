@@ -5,7 +5,7 @@ import { VehicleEntity } from '../entities/VehicleEntity'
 import { StaticObstacleEntity } from '../entities/StaticObstacleEntity'
 import { DynamicActorEntity } from '../entities/DynamicActorEntity'
 import type { Entity } from '../entities/Entity'
-import type { EntitySpec, ScenarioSpec } from './Scenario'
+import type { EntitySpec, PathPointSpec, PathSpec, ScenarioSpec } from './Scenario'
 
 export class ScenarioParseError extends Error {
   constructor(message: string) {
@@ -30,10 +30,13 @@ export class ScenarioLoader {
     }
     const description =
       typeof input.description === 'string' ? input.description : undefined
+    const paths =
+      input.paths !== undefined ? parsePaths(input.paths) : undefined
     return {
       name: input.name,
       description,
       entities: input.entities.map((e: unknown, i: number) => parseEntity(e, i)),
+      paths,
     }
   }
 
@@ -137,6 +140,46 @@ function parseVelocity(
     vy: optionalNumber(v.vy, `${path}.vy`),
     w: optionalNumber(v.w, `${path}.w`),
   }
+}
+
+function parsePathPoint(input: unknown, pathIndex: number, pointIndex: number): PathPointSpec {
+  const loc = `paths[${pathIndex}].points[${pointIndex}]`
+  if (!isObj(input)) throw new ScenarioParseError(`${loc} must be an object`)
+  return {
+    x: requireNumber(input.x, `${loc}.x`),
+    y: requireNumber(input.y, `${loc}.y`),
+    yaw: optionalNumber(input.yaw, `${loc}.yaw`),
+    targetVelocity: optionalNumber(input.targetVelocity, `${loc}.targetVelocity`),
+    timeSec: optionalNumber(input.timeSec, `${loc}.timeSec`),
+  }
+}
+
+function parsePath(input: unknown, index: number): PathSpec {
+  const loc = `paths[${index}]`
+  if (!isObj(input)) throw new ScenarioParseError(`${loc} must be an object`)
+  if (typeof input.id !== 'string' || input.id.length === 0) {
+    throw new ScenarioParseError(`${loc}.id must be a non-empty string`)
+  }
+  if (!Array.isArray(input.points) || input.points.length === 0) {
+    throw new ScenarioParseError(`${loc}.points must be a non-empty array`)
+  }
+  const name = typeof input.name === 'string' ? input.name : undefined
+  const frameId = typeof input.frameId === 'string' ? input.frameId : undefined
+  const vehicleId = typeof input.vehicleId === 'string' ? input.vehicleId : undefined
+  return {
+    id: input.id,
+    name,
+    frameId,
+    vehicleId,
+    points: input.points.map((p: unknown, pi: number) => parsePathPoint(p, index, pi)),
+  }
+}
+
+function parsePaths(input: unknown): PathSpec[] {
+  if (!Array.isArray(input)) {
+    throw new ScenarioParseError('scenario.paths must be an array')
+  }
+  return input.map((p: unknown, i: number) => parsePath(p, i))
 }
 
 function parseEntity(input: unknown, index: number): EntitySpec {

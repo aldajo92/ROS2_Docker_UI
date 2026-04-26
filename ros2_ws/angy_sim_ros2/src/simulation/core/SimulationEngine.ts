@@ -77,6 +77,7 @@ export class SimulationEngine {
     this.clock.reset()
     this.entities.clear()
     this.state.resetMetrics()
+    this.state.paths.clear()
     this.state.scenarioName = null
     this.systems.reset()
     this.events.emit('reset', undefined)
@@ -90,6 +91,15 @@ export class SimulationEngine {
       const entity = ScenarioLoader.buildEntity(entitySpec)
       this.entities.add(entity)
       this.events.emit('entityAdded', { id: entity.id })
+    }
+    for (const pathSpec of spec.paths ?? []) {
+      this.state.paths.add({
+        id: pathSpec.id,
+        name: pathSpec.name,
+        frameId: pathSpec.frameId,
+        vehicleId: pathSpec.vehicleId,
+        points: pathSpec.points,
+      })
     }
     this.state.scenarioName = spec.name
     this.events.emit('scenarioLoaded', { name: spec.name })
