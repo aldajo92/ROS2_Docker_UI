@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@dimforge/rapier2d-compat": "^0.19.3",
+    "phaser": "^4.0.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "three": "^0.184.0"

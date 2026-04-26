@@ -51,6 +51,7 @@ Do not mutate entities from:
 ```text
 React components
 Three.js renderers
+Phaser renderers
 keyboard handlers
 WebSocket callbacks
 Topic bridges
@@ -187,24 +188,32 @@ They must not mutate vehicles directly.
 
 ---
 
-### 7. Three.js mapping is centralized
+### 7. Renderer-specific mapping is centralized
 
-All sim-to-Three.js conversion must go through:
+Each renderer adapter has exactly one module that knows how to map
+simulation coordinates and yaw onto its target frame. Object
+renderers, debug layers, and camera controllers must never
+reimplement these conversions inline.
+
+Three.js mapping (right-handed, +Y up in three):
 
 ```text
 src/ui/renderers/three/mapping/
+  sim.x -> three.x
+  sim.y -> -three.z
+  sim.z -> three.y
+  yaw   -> rotation.y = yaw
 ```
 
-Current mapping:
+Phaser mapping (2D canvas, +X right, +Y screen-down by default; we
+flip Y so simulation +Y appears upward):
 
 ```text
-sim.x -> three.x
-sim.y -> -three.z
-sim.z -> three.y
-yaw   -> rotation.y = yaw
+src/ui/renderers/phaser/mapping/
+  phaser.x = originX + sim.x * pixelsPerMeter
+  phaser.y = originY - sim.y * pixelsPerMeter
+  rotation = -yaw   (because we flipped screen Y)
 ```
-
-Do not reimplement this mapping inside renderers, debug layers, or camera controllers.
 
 ---
 
@@ -227,6 +236,12 @@ New Three.js visual:
 
 New Three.js debug visual:
   src/ui/renderers/three/debug/
+
+New Phaser visual:
+  src/ui/renderers/phaser/objects/
+
+New Phaser debug visual:
+  src/ui/renderers/phaser/debug/
 
 New input device:
   src/ui/input/
@@ -302,7 +317,7 @@ Before changing code, answer:
 [ ] No direct entity mutation outside systems.
 [ ] Vehicle commands go through VehicleCommandQueue.
 [ ] Collisions go through CollisionBackend2D.
-[ ] Three.js mapping helpers are used.
+[ ] Renderer-specific mapping helpers are used (simToThree / simToPhaser).
 [ ] Tests were added or updated if behavior changed.
 [ ] Architecture.md is updated only if a design decision changed.
 ```

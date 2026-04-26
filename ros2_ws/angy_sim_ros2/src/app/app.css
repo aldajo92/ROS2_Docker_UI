@@ -179,6 +179,32 @@ body,
   height: 100% !important;
 }
 
+/* Phaser injects its own <canvas> into the container the same way
+   Three.js does, so the layout rules mirror `.three-viewport`. */
+.phaser-viewport {
+  display: block;
+  background: #111118;
+  overflow: hidden;
+}
+
+.phaser-viewport > canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.renderer-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.75rem;
+}
+
+.renderer-picker-label {
+  font-size: 0.85rem;
+  color: var(--text-muted, #aaa);
+}
+
 .panel {
   background: var(--bg-panel);
   border: 1px solid var(--border);

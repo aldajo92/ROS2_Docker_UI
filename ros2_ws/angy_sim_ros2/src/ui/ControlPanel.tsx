@@ -2,6 +2,10 @@ import { useState } from 'react'
 import { useSimulation, useSimulationRunning } from '../app/useSimulation'
 import { ScenarioLoader } from '../simulation/scenarios/ScenarioLoader'
 import type { ScenarioSpec } from '../simulation/scenarios/Scenario'
+import {
+  RENDERER_LABELS,
+  type RendererType,
+} from './viewport/RendererType'
 
 interface ScenarioOption {
   label: string
@@ -14,7 +18,16 @@ export interface ControlPanelProps {
    *  control defaults) so it's already applied when the engine emits
    *  `reset` and `scenarioLoaded` synchronously inside `loadScenario`. */
   onScenarioLoaded?: (spec: ScenarioSpec) => void
+  /** Currently active renderer adapter. Owned by the App; the panel
+   *  only reads it and emits change events. */
+  rendererType?: RendererType
+  /** Notified when the user picks a different renderer. The App
+   *  swaps which viewport is mounted; the engine is untouched. */
+  onRendererTypeChange?: (next: RendererType) => void
 }
+
+/** Order of renderer options in the dropdown. */
+const RENDERER_OPTIONS: readonly RendererType[] = ['three', 'phaser']
 
 /**
  * The full set of bundled scenarios is small and known at build time;
@@ -31,7 +44,11 @@ const SCENARIO_OPTIONS: readonly ScenarioOption[] = [
   { label: 'Reference path (S-curve)', url: '/scenarios/reference-path-scenario.json' },
 ]
 
-export function ControlPanel({ onScenarioLoaded }: ControlPanelProps = {}) {
+export function ControlPanel({
+  onScenarioLoaded,
+  rendererType,
+  onRendererTypeChange,
+}: ControlPanelProps = {}) {
   const { controller } = useSimulation()
   const isRunning = useSimulationRunning()
   const [loading, setLoading] = useState(false)
@@ -94,6 +111,26 @@ export function ControlPanel({ onScenarioLoaded }: ControlPanelProps = {}) {
         </div>
       </div>
       {error && <p className="error">Failed to load scenario: {error}</p>}
+      {rendererType !== undefined && onRendererTypeChange && (
+        <div className="renderer-picker">
+          <label className="renderer-picker-label" htmlFor="renderer-select">
+            Renderer
+          </label>
+          <select
+            id="renderer-select"
+            value={rendererType}
+            onChange={(event) =>
+              onRendererTypeChange(event.target.value as RendererType)
+            }
+          >
+            {RENDERER_OPTIONS.map((option) => (
+              <option key={option} value={option}>
+                {RENDERER_LABELS[option]}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
     </section>
   )
 }

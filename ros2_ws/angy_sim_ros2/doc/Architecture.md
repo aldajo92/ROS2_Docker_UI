@@ -39,6 +39,12 @@ src/
         cameras/        CameraController interface + modes + manager
         debug/          Bounding circles, heading arrows, etc.
         config/         ThreeRendererConfig + defaults
+      phaser/         Phaser renderer adapter (2D top-down)
+        core/           Coordinator, scene context, registry
+        mapping/        sim ↔ phaser canvas / yaw conversion
+        objects/        Per-entity sub-renderers + ground/axes
+        debug/          Bounding circles, heading arrows
+        config/         PhaserRendererConfig + defaults
     input/            Browser-input adapters (keyboard, …)
     *.tsx             Inspector panels (Control, Metrics, Entities, …)
   math/
@@ -341,10 +347,12 @@ Planned and reference paths are **simulation data**, not renderer data.
   - `useSimulationRunning()` → updates on `started`/`paused`/`reset`
   - `useEntityListVersion()` → updates on entity add/remove + tick
 - **UI components (`src/ui/`)** —
-  `ControlPanel` (Start / Pause / Step / Reset / Load Scenario),
-  `SimulationTimeDisplay`, `MetricsPanel`, `EntityListPanel`,
-  and `viewport/ThreeSimulationViewport` (the live Three.js mount;
-  see Layer 9 below).
+  `ControlPanel` (Start / Pause / Step / Reset / Load Scenario / pick
+  Renderer), `SimulationTimeDisplay`, `MetricsPanel`,
+  `EntityListPanel`, and `viewport/SimulationViewportSwitcher` which
+  conditionally mounts either `ThreeSimulationViewport` or
+  `PhaserSimulationViewport` based on UI-only React state. See
+  Layer 9 for the renderer adapters.
 - **Layout** — `src/app/App.tsx` + `src/app/app.css`: full-viewport
   flex shell, two-column grid (viewport left, Inspector right), no
   fixed-position overlays.
@@ -526,10 +534,25 @@ or `src/math/` imports a rendering library, DOM API, or React. The
 core only knows the `SimulationRenderer` interface; concrete renderers
 plug in through the React shell.
 
-The current ship is a Three.js renderer at
-`src/ui/renderers/three/`. Future renderers (Phaser, Pixi, Canvas 2D,
-WebGPU) follow the same shape and live as siblings under
-`src/ui/renderers/`.
+Two renderers ship today, both as siblings under `src/ui/renderers/`:
+
+- **Three.js** (`src/ui/renderers/three/`) — the default 3D adapter,
+  with full debug overlays and three camera modes (orbit, follow,
+  top-down).
+- **Phaser** (`src/ui/renderers/phaser/`) — a 2D canvas adapter for
+  cases where a flat top-down view is the natural fit.
+
+The active renderer is React UI state owned by the App
+(`RendererType = "three" | "phaser"`). `SimulationViewportSwitcher`
+unmounts the previous viewport (which disposes its renderer cleanly)
+and mounts the next one; the engine is owned by `SimulationProvider`
+higher up the tree, so a renderer switch does **not** reset the
+simulation. Both adapters subscribe to the same engine events
+(`tick`, `reset`, `scenarioLoaded`, `entityAdded`, `entityRemoved`,
+`collision`).
+
+Future renderers (Pixi, Canvas 2D, WebGPU) follow the same shape and
+live as siblings under `src/ui/renderers/`.
 
 ### Three.js renderer — modules
 
@@ -785,19 +808,78 @@ beyond the public read API.
 - Duplicate the sim ↔ three coordinate or yaw mapping. Always go
   through `mapping/simToThree.ts`.
 
-### Adding a new renderer (Phaser, Pixi, Canvas 2D, WebGPU)
+### Phaser renderer — modules
+
+The Phaser adapter (`src/ui/renderers/phaser/`) mirrors the Three.js
+shape one-for-one so that adding it required no changes to the
+simulation core. The renderer is purely 2D — the sim Z axis is
+ignored. Phaser-specific notes:
+
+- **`viewport/PhaserSimulationViewport.tsx`** — React mount.
+  Equivalent to `ThreeSimulationViewport` (event forwarding, resize,
+  imperative `clearTrails()` handle, no simulation logic).
+- **`renderers/phaser/core/PhaserSimulationRenderer.ts`** — top-level
+  coordinator. Implements `SimulationRenderer`. Owns a `Phaser.Game`
+  configured with `Scale.RESIZE`, a single `Phaser.Scene` named
+  `simulation`, and a shared `PhaserSceneContext` threaded into
+  every sub-renderer. Disables Phaser's banner, audio, and physics
+  systems — none are needed for a pure visual adapter.
+- **`renderers/phaser/core/PhaserSceneContext.ts`** — pass-by-reference
+  struct (`game`, `scene`, `container`, `viewport`). The viewport
+  field is mutable because the canvas size — and therefore the
+  on-screen origin — changes on resize.
+- **`renderers/phaser/core/PhaserRenderObjectRegistry.ts`** —
+  generic `Map<string, T extends Phaser.GameObjects.GameObject>`.
+  Same lifecycle pattern as the Three.js registry.
+- **`renderers/phaser/mapping/simToPhaser.ts`** — single source of
+  truth for sim → screen conversion. Sim +X maps to canvas +X,
+  sim +Y maps to canvas −Y (so simulation +Y appears upward), sim
+  yaw maps to negated Phaser rotation (Phaser positive rotation is
+  CW; we negate so a CCW sim yaw renders as CCW on screen because
+  we already flipped the screen Y axis). The module has zero
+  `phaser` imports — it speaks in plain `{ x, y }` records and
+  primitive numbers, which keeps the unit tests free of Phaser's
+  DOM/canvas dependency.
+- **`renderers/phaser/mapping/phaserToSim.ts`** — inverse helpers
+  for canvas → sim (used by interaction code that picks pixels and
+  needs sim meters).
+- **`renderers/phaser/objects/`** — sub-renderers per entity kind
+  (`PhaserVehicleRenderer`, `PhaserStaticObstacleRenderer`,
+  `PhaserDynamicActorRenderer`, `PhaserPathRenderer`,
+  `PhaserTrailRenderer`) plus the static scene
+  (`PhaserGroundRenderer`, `PhaserAxesRenderer`). Each owns a
+  registry and disposes its `Phaser.GameObject`s on `dispose()`.
+- **`renderers/phaser/debug/PhaserDebugLayer.ts`** — composes
+  `PhaserBoundingCircleRenderer` and `PhaserHeadingArrowRenderer`,
+  toggled together via `setOptions`.
+- **`renderers/phaser/objects/VisualStyle.ts`** — Phaser-side color
+  / size constants. Kept independent of the Three.js style file
+  because Phaser uses `0xRRGGBB` ints whereas Three uses CSS
+  strings; centralizing avoids hex/string conversions at every
+  draw site.
+- **`renderers/phaser/config/PhaserRendererConfig.ts`** — config
+  type and defaults. Includes `pixelsPerMeter`, `showGrid`,
+  `showAxes`, `showDebug`, `showTrails`, `backgroundColor`, and a
+  trail sub-config (`PhaserTrailConfig`) that's an
+  intentionally-narrower subset of `ThreeTrailConfig` — Phaser
+  uses point-count sampling only.
+
+### Adding a new renderer (Pixi, Canvas 2D, WebGPU)
 
 1. Create `src/ui/renderers/<name>/` with the same internal split
-   (`core/`, `mapping/`, `objects/`, `cameras/`, `config/`,
-   optionally `debug/`).
+   (`core/`, `mapping/`, `objects/`, optionally `cameras/`,
+   `config/`, `debug/`).
 2. Implement `SimulationRenderer` in
    `src/ui/renderers/<name>/core/<Name>SimulationRenderer.ts`.
 3. Add `src/ui/viewport/<Name>SimulationViewport.tsx`.
-4. Swap (or feature-flag) the viewport import in `App.tsx`.
+4. Add the `RendererType` literal in
+   `src/ui/viewport/RendererType.ts`, a `case` in
+   `SimulationViewportSwitcher`, and an `<option>` in the
+   renderer selector inside `ControlPanel`.
 
 Every existing renderer-agnostic invariant (mapping in one place,
-sub-renderers per entity type, registry-based lifecycle, full GPU
-disposal) carries over verbatim.
+sub-renderers per entity type, registry-based lifecycle, full
+disposal of GPU/native handles) carries over verbatim.
 
 ## Layer 10 — collision adapters (`src/infrastructure/collision/`)
 
@@ -1192,6 +1274,11 @@ deterministic, replayable, and renderer/transport-agnostic.
 - `src/ui/renderers/three/mapping/simToThree.test.ts` — sim ↔ three
   point/vector mapping + yaw identity under the right-handed mapping
   + round-trip through `threeToSim` (8 tests)
+- `src/ui/renderers/phaser/mapping/simToPhaser.test.ts` — sim ↔
+  phaser point / vector / length mapping (origin placement, +Y
+  flip, fractional pixelsPerMeter), yaw direction (CCW sim ↔ CCW on
+  screen via `-yaw`), zero edge cases, and round-trips through
+  `phaserToSim` (15 tests)
 - `src/ui/renderers/three/core/ThreeRenderObjectRegistry.test.ts` —
   set / get / iteration order / delete / clear (3 tests)
 - `src/ui/renderers/three/core/threeDisposal.test.ts` — geometry +

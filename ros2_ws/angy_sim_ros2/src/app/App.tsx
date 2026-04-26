@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { SimulationProvider } from './SimulationProvider'
 import { useSimulation } from './useSimulation'
 import { ControlPanel } from '../ui/ControlPanel'
@@ -8,9 +8,13 @@ import { MetricsPanel } from '../ui/MetricsPanel'
 import { RendererSettingsPanel } from '../ui/RendererSettingsPanel'
 import { KeyboardControlPanel } from '../ui/KeyboardControlPanel'
 import {
-  ThreeSimulationViewport,
-  type ThreeSimulationViewportHandle,
-} from '../ui/viewport/ThreeSimulationViewport'
+  SimulationViewportSwitcher,
+  type SimulationViewportSwitcherHandle,
+} from '../ui/viewport/SimulationViewportSwitcher'
+import {
+  DEFAULT_RENDERER_TYPE,
+  type RendererType,
+} from '../ui/viewport/RendererType'
 import { SimulatorKeyboardControls } from '../ui/input/SimulatorKeyboardControls'
 import {
   DEFAULT_KEYBOARD_CONTROL_UI_STATE,
@@ -21,6 +25,10 @@ import {
   DEFAULT_THREE_TRAIL_CONFIG,
   type ThreeTrailConfig,
 } from '../ui/renderers/three/config/ThreeRendererConfig'
+import {
+  DEFAULT_PHASER_TRAIL_CONFIG,
+  type PhaserTrailConfig,
+} from '../ui/renderers/phaser/config/PhaserRendererConfig'
 import type {
   ScenarioInteractionConfig,
   ScenarioSpec,
@@ -49,7 +57,30 @@ function AppShell() {
   const [trailConfig, setTrailConfig] = useState<ThreeTrailConfig>(
     DEFAULT_THREE_TRAIL_CONFIG,
   )
-  const viewportRef = useRef<ThreeSimulationViewportHandle | null>(null)
+  // Phaser keeps its own trail-config slice. The Inspector currently
+  // edits the Three.js settings; we mirror the relevant fields onto
+  // the Phaser side so the two adapters stay visually aligned. If/when
+  // the Inspector grows separate Phaser controls, this can split.
+  const phaserTrailConfig = useMemo<PhaserTrailConfig>(
+    () => ({
+      ...DEFAULT_PHASER_TRAIL_CONFIG,
+      enabled: trailConfig.enabled,
+      maxPoints: trailConfig.maxPoints,
+      minDistance: trailConfig.minDistance,
+      color: trailConfig.color,
+      opacity: trailConfig.opacity,
+      lineWidth: trailConfig.lineWidth,
+    }),
+    [trailConfig],
+  )
+
+  // Active renderer adapter. UI-only state — the engine doesn't see
+  // it, and switching adapters does NOT reset the simulation.
+  const [rendererType, setRendererType] = useState<RendererType>(
+    DEFAULT_RENDERER_TYPE,
+  )
+
+  const viewportRef = useRef<SimulationViewportSwitcherHandle | null>(null)
 
   const handleClearTrails = useCallback(() => {
     viewportRef.current?.clearTrails()
@@ -96,14 +127,20 @@ function AppShell() {
         </header>
         <div className="layout">
           <div className="layout-left">
-            <ThreeSimulationViewport
+            <SimulationViewportSwitcher
               ref={viewportRef}
-              trailConfig={trailConfig}
+              rendererType={rendererType}
+              threeTrailConfig={trailConfig}
+              phaserTrailConfig={phaserTrailConfig}
             />
           </div>
           <aside className="layout-right" aria-label="Inspector">
             <h2 className="layout-title">Inspector</h2>
-            <ControlPanel onScenarioLoaded={handleScenarioLoaded} />
+            <ControlPanel
+              onScenarioLoaded={handleScenarioLoaded}
+              rendererType={rendererType}
+              onRendererTypeChange={setRendererType}
+            />
             <SimulationTimeDisplay />
             <MetricsPanel />
             <KeyboardControlPanel
