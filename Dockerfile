@@ -1,7 +1,7 @@
 # humble, jazzy
 ARG ROS_DISTRO=humble
 
-FROM osrf/ros:${ROS_DISTRO}-desktop
+FROM arm64v8/ros:${ROS_DISTRO}
 ENV ROS_DISTRO=${ROS_DISTRO}
 
 ## Install new gazebo (ionic, harmonic, fortress)
@@ -13,11 +13,11 @@ ENV ROS_DISTRO=${ROS_DISTRO}
 # RUN apt update && apt install -y \
 #     ros-${ROS_DISTRO}-ros-gz
 
-RUN apt update && apt install -y \
-    ros-${ROS_DISTRO}-gazebo-ros-pkgs \
-    ros-${ROS_DISTRO}-gazebo-ros2-control \
-    ros-${ROS_DISTRO}-ros-gz \
-    ros-${ROS_DISTRO}-ros-ign-bridge
+# RUN apt update && apt install -y \
+#     ros-${ROS_DISTRO}-gazebo-ros-pkgs \
+#     ros-${ROS_DISTRO}-gazebo-ros2-control \
+#     ros-${ROS_DISTRO}-ros-gz \
+#     ros-${ROS_DISTRO}-ros-ign-bridge
 
 RUN apt update && apt install -y \
     ros-${ROS_DISTRO}-robot-state-publisher \
@@ -49,7 +49,7 @@ RUN apt update && apt install -y curl \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt install -y nodejs
 
-RUN npm install -g npm@latest
+RUN npm install -g npm@latest && npm cache clean --force
 
 # RUN apt update && apt install -y \
 #     ros-${ROS_DISTRO}-turtlesim
@@ -66,8 +66,10 @@ ARG HOST_GID
 #     && usermod -aG sudo dockeruser \
 #     && echo "dockeruser ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
-RUN groupadd --gid ${HOST_GID} hostgroup \
-    && useradd --uid ${HOST_UID} --gid hostgroup --create-home dockeruser
+RUN if ! getent group ${HOST_GID} > /dev/null 2>&1; then \
+        groupadd --gid ${HOST_GID} hostgroup; \
+    fi \
+    && useradd --uid ${HOST_UID} --gid ${HOST_GID} --create-home dockeruser
 
 USER dockeruser
 ENV HOME=/home/dockeruser
