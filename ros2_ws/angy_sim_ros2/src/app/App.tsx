@@ -3,6 +3,7 @@ import { ControlPanel } from '../ui/ControlPanel'
 import { SimulationTimeDisplay } from '../ui/SimulationTimeDisplay'
 import { EntityListPanel } from '../ui/EntityListPanel'
 import { MetricsPanel } from '../ui/MetricsPanel'
+import { SimulationViewport } from '../ui/SimulationViewport'
 
 export default function App() {
   return (
@@ -15,14 +16,16 @@ export default function App() {
           </p>
         </header>
         <div className="layout">
-          <div className="column">
+          <div className="layout-left">
+            <SimulationViewport />
+          </div>
+          <aside className="layout-right" aria-label="Inspector">
+            <h2 className="layout-title">Inspector</h2>
             <ControlPanel />
             <SimulationTimeDisplay />
             <MetricsPanel />
-          </div>
-          <div className="column wide">
             <EntityListPanel />
-          </div>
+          </aside>
         </div>
       </main>
     </SimulationProvider>

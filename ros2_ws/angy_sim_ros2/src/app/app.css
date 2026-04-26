@@ -25,10 +25,23 @@ body,
   font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
 }
 
+/* ----- app shell ------------------------------------------------------- *
+ * The shell fills the full viewport height: a top header followed by a
+ * two-column grid (simulation viewport on the left, inspector on the
+ * right) that absorbs the remaining vertical space.
+ */
+
 .app-shell {
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 24px 16px 48px;
+  max-width: none;
+  height: 100vh;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.app-shell header {
+  flex: 0 0 auto;
 }
 
 .app-shell header h1 {
@@ -38,25 +51,100 @@ body,
 }
 
 .app-shell header .subtitle {
-  margin: 4px 0 24px;
+  margin: 4px 0 0;
   color: var(--fg-muted);
   font-size: 13px;
 }
 
 .layout {
+  flex: 1 1 0;
+  min-height: 0;
   display: grid;
-  grid-template-columns: 1fr 1.4fr;
+  grid-template-columns: minmax(0, 1fr) min(380px, 36vw);
   gap: 16px;
+  align-items: stretch;
 }
 
-.column {
+.layout-left {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.layout-right {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
-.column.wide {
-  min-width: 0;
+.layout-title {
+  margin: 0;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--fg-muted);
+}
+
+/* Simulation viewport — full-bleed black stage that fills the left
+   column. Its header floats absolutely on top so it doesn't steal
+   vertical space from the stage. */
+.viewport {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  background: #000;
+  overflow: hidden;
+}
+
+.viewport-header {
+  position: absolute;
+  top: 12px;
+  left: 16px;
+  right: 16px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  pointer-events: none;
+}
+
+.viewport-header h2 {
+  margin: 0;
+  pointer-events: auto;
+  background: rgba(15, 17, 21, 0.72);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg-muted);
+  backdrop-filter: blur(6px);
+}
+
+.viewport-stage {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.viewport-placeholder {
+  margin: 0;
+  color: #6b7280;
+  font-family: ui-monospace, "SFMono-Regular", monospace;
+  font-size: 14px;
+  letter-spacing: 0.04em;
 }
 
 .panel {
@@ -171,8 +259,23 @@ body,
   margin: 0;
 }
 
-@media (max-width: 800px) {
+@media (max-width: 700px) {
+  .app-shell {
+    height: auto;
+    min-height: 100vh;
+  }
+
   .layout {
     grid-template-columns: 1fr;
+  }
+
+  .layout-right {
+    height: auto;
+    overflow-y: visible;
+  }
+
+  .viewport {
+    height: 60vh;
+    min-height: 320px;
   }
 }
