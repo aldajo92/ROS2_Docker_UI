@@ -58,6 +58,14 @@ export class ThreeTrailRenderer {
    *  re-project the buffer without waiting for a new sync, and so
    *  `timeWindow` pruning has the data it needs. */
   private readonly samples = new Map<string, TrailSample[]>()
+  /** Last sim time at which we appended a sample. Used to ignore
+   *  repaints that don't correspond to a real engine tick — e.g.
+   *  OrbitControls "change" events, config edits, resize. Without
+   *  this, idle-but-repainting frames would push duplicate samples
+   *  at the current pose; in `pointCount` mode that silently evicts
+   *  earlier real-motion samples, making the trail appear to fade
+   *  while the vehicle is parked. */
+  private lastSampledTime: number = Number.NaN
 
   constructor(
     context: ThreeSceneContext,
@@ -71,6 +79,11 @@ export class ThreeTrailRenderer {
     const vehicles = state.entities.byType<VehicleEntity>('vehicle')
     const liveIds = new Set<string>()
     const now = state.clock.time()
+    // Sample only when the simulation clock has actually advanced.
+    // Repaints triggered by camera drag, config edits, or resize all
+    // call this method with an unchanged `state.clock.time()` and
+    // must NOT enter the trail's history.
+    const tickAdvanced = now !== this.lastSampledTime
 
     for (const vehicle of vehicles) {
       liveIds.add(vehicle.id)
@@ -78,12 +91,19 @@ export class ThreeTrailRenderer {
       const line = this.getOrCreateLine(vehicle.id)
 
       if (this.config.enabled) {
-        this.appendIfAllowed(buffer, vehicle.pose.position, now)
-        this.pruneBuffer(buffer, now)
+        if (tickAdvanced) {
+          this.appendIfAllowed(buffer, vehicle.pose.position, now)
+          this.pruneBuffer(buffer, now)
+        }
+        // Always repaint: visual properties (height, color, etc.)
+        // and re-projection on viewport change must reflect the
+        // latest config even when no new sample was added.
         this.repaintLine(line, buffer)
       }
       line.visible = this.config.enabled
     }
+
+    if (tickAdvanced) this.lastSampledTime = now
 
     for (const [id, line] of [...this.registry.entries()]) {
       if (!liveIds.has(id)) {
@@ -103,6 +123,10 @@ export class ThreeTrailRenderer {
     for (const line of this.registry.values()) {
       ;(line.geometry as THREE.BufferGeometry).setDrawRange(0, 0)
     }
+    // Forget the last sim time we sampled at so the next tick after
+    // a reset (which rewinds `state.clock.time()` to 0) is treated
+    // as fresh and re-seeds the trail.
+    this.lastSampledTime = Number.NaN
   }
 
   dispose(): void {

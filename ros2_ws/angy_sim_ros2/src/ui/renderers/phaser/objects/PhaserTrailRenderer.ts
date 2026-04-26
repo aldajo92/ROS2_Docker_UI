@@ -40,6 +40,11 @@ export class PhaserTrailRenderer {
   /** Per-vehicle sim-frame point history. Plain `Point2D[]` so a
    *  resize can re-project the buffer without waiting for a new sync. */
   private readonly samples = new Map<string, Point2D[]>()
+  /** Last sim time at which we appended a sample. Repaints driven by
+   *  the canvas (resize, config edits) call `sync()` with the same
+   *  `state.clock.time()` and must NOT enter the trail history; only
+   *  ticks that actually advanced the sim clock should add points. */
+  private lastSampledTime: number = Number.NaN
 
   constructor(
     context: PhaserSceneContext,
@@ -52,6 +57,8 @@ export class PhaserTrailRenderer {
   sync(state: SimulationState): void {
     const vehicles = state.entities.byType<VehicleEntity>('vehicle')
     const liveIds = new Set<string>()
+    const now = state.clock.time()
+    const tickAdvanced = now !== this.lastSampledTime
 
     for (const vehicle of vehicles) {
       liveIds.add(vehicle.id)
@@ -59,12 +66,18 @@ export class PhaserTrailRenderer {
       const g = this.getOrCreateGraphics(vehicle.id)
 
       if (this.config.enabled) {
-        this.appendIfAllowed(buffer, vehicle.pose.position)
-        this.trimToMaxPoints(buffer)
+        if (tickAdvanced) {
+          this.appendIfAllowed(buffer, vehicle.pose.position)
+          this.trimToMaxPoints(buffer)
+        }
+        // Always repaint so config edits / canvas resize take effect
+        // even on non-tick syncs.
         this.repaint(g, buffer)
       }
       g.setVisible(this.config.enabled)
     }
+
+    if (tickAdvanced) this.lastSampledTime = now
 
     for (const [id, g] of [...this.graphics.entries()]) {
       if (!liveIds.has(id)) {
@@ -82,6 +95,9 @@ export class PhaserTrailRenderer {
   clear(): void {
     for (const buffer of this.samples.values()) buffer.length = 0
     for (const g of this.graphics.values()) g.clear()
+    // Forget the last sim time so the next post-reset tick (which
+    // rewinds `state.clock.time()` to 0) is treated as fresh.
+    this.lastSampledTime = Number.NaN
   }
 
   dispose(): void {

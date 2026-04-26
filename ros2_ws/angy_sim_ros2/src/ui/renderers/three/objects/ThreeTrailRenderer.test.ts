@@ -95,10 +95,12 @@ describe('ThreeTrailRenderer', () => {
     state.entities.add(vehicle)
 
     renderer.sync(state)
+    state.clock.tick(0.1)
     moveVehicle(vehicle, 0.1, 0)
     renderer.sync(state)
     expect(pointCount(findLine(ctx.scene))).toBe(1)
 
+    state.clock.tick(0.1)
     moveVehicle(vehicle, 0.6, 0)
     renderer.sync(state)
     expect(pointCount(findLine(ctx.scene))).toBe(2)
@@ -116,6 +118,7 @@ describe('ThreeTrailRenderer', () => {
     state.entities.add(vehicle)
 
     for (let i = 0; i < 5; i++) {
+      state.clock.tick(0.1)
       moveVehicle(vehicle, i, 0)
       renderer.sync(state)
     }
@@ -137,12 +140,14 @@ describe('ThreeTrailRenderer', () => {
     renderer.setEnabled(false)
     expect(findLine(ctx.scene).visible).toBe(false)
 
+    state.clock.tick(0.1)
     moveVehicle(vehicle, 5, 0)
     renderer.sync(state)
     expect(pointCount(findLine(ctx.scene))).toBe(initialCount)
 
     renderer.setEnabled(true)
     expect(findLine(ctx.scene).visible).toBe(true)
+    state.clock.tick(0.1)
     renderer.sync(state)
     expect(pointCount(findLine(ctx.scene))).toBeGreaterThan(initialCount)
   })
@@ -157,6 +162,7 @@ describe('ThreeTrailRenderer', () => {
     const vehicle = vehicleAt('ego', 0, 0)
     state.entities.add(vehicle)
     renderer.sync(state)
+    state.clock.tick(0.1)
     moveVehicle(vehicle, 1, 0)
     renderer.sync(state)
     expect(pointCount(findLine(ctx.scene))).toBe(2)
@@ -243,6 +249,7 @@ describe('ThreeTrailRenderer', () => {
     const vehicle = vehicleAt('ego', 0, 0)
     state.entities.add(vehicle)
     for (let i = 0; i < 6; i++) {
+      state.clock.tick(0.1)
       moveVehicle(vehicle, i, 0)
       renderer.sync(state)
     }
@@ -271,6 +278,42 @@ describe('ThreeTrailRenderer', () => {
 
     renderer.setConfig({ height: 0.5 })
     expect(positionAttr.getY(0)).toBeCloseTo(0.5)
+  })
+
+  describe('non-tick syncs (camera repaints, config edits)', () => {
+    it('does NOT add samples when state.clock.time() did not advance', () => {
+      // Regression: previously, OrbitControls "change" events caused
+      // `render(state)` -> `sync(state)` to fire with the same sim
+      // time, silently piling up duplicate samples. In `pointCount`
+      // mode that evicts real-motion samples and makes the trail
+      // appear to shrink while the vehicle is parked.
+      const ctx = makeContext()
+      const renderer = new ThreeTrailRenderer(ctx, {
+        ...DEFAULT_THREE_TRAIL_CONFIG,
+        samplingMode: 'pointCount',
+        minDistance: 0,
+      })
+      const state = makeState()
+      const vehicle = vehicleAt('ego', 0, 0)
+      state.entities.add(vehicle)
+
+      // One real tick → one sample.
+      state.clock.tick(0.1)
+      renderer.sync(state)
+      const baseline = pointCount(findLine(ctx.scene))
+      expect(baseline).toBe(1)
+
+      // 10 repaints at the same sim time (e.g. orbit-control drag).
+      // None of them must touch the trail buffer.
+      for (let i = 0; i < 10; i++) renderer.sync(state)
+      expect(pointCount(findLine(ctx.scene))).toBe(baseline)
+
+      // Next real tick adds exactly one new sample.
+      state.clock.tick(0.1)
+      moveVehicle(vehicle, 1, 0)
+      renderer.sync(state)
+      expect(pointCount(findLine(ctx.scene))).toBe(baseline + 1)
+    })
   })
 
   describe('pointCount mode', () => {
