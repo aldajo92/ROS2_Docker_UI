@@ -78,6 +78,7 @@ export class SimulationEngine {
     this.entities.clear()
     this.state.resetMetrics()
     this.state.scenarioName = null
+    this.systems.reset()
     this.events.emit('reset', undefined)
   }
 

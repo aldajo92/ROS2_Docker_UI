@@ -222,6 +222,64 @@ body,
   cursor: not-allowed;
 }
 
+.scenario-picker {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.scenario-picker-label {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+.scenario-picker-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.scenario-picker-row select {
+  flex: 1;
+  background: var(--bg-panel-2);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.scenario-picker-row select:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.scenario-picker-row button {
+  background: var(--bg-panel-2);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 120ms;
+}
+
+.scenario-picker-row button:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+
+.scenario-picker-row button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .error {
   color: var(--danger);
   font-size: 13px;

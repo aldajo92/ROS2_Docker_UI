@@ -1,0 +1,37 @@
+{
+  "name": "keyboard-drive",
+  "description": "Empty plaza with the ego vehicle at rest. Drive it with the keyboard: ArrowUp/I forward, ArrowDown/K reverse, ArrowLeft/J turn left, ArrowRight/L turn right. A few static obstacles to bump into.",
+  "entities": [
+    {
+      "kind": "vehicle",
+      "id": "ego",
+      "pose": { "x": 0, "y": 0, "yaw": 0 },
+      "controls": { "v": 0, "w": 0 },
+      "radius": 0.4
+    },
+    {
+      "kind": "static_obstacle",
+      "id": "pillar_ne",
+      "position": { "x": 4, "y": 4 },
+      "radius": 0.5
+    },
+    {
+      "kind": "static_obstacle",
+      "id": "pillar_nw",
+      "position": { "x": -4, "y": 4 },
+      "radius": 0.5
+    },
+    {
+      "kind": "static_obstacle",
+      "id": "pillar_sw",
+      "position": { "x": -4, "y": -4 },
+      "radius": 0.5
+    },
+    {
+      "kind": "static_obstacle",
+      "id": "pillar_se",
+      "position": { "x": 4, "y": -4 },
+      "radius": 0.5
+    }
+  ]
+}

@@ -30,6 +30,21 @@ export class SystemManager {
     for (const sys of this.systems) sys.update(dt, state)
   }
 
+  /** Invoke `reset` on every system that defines it. Order follows
+   *  registration order. Errors propagate to the caller. */
+  reset(): void {
+    for (const sys of this.systems) sys.reset?.()
+  }
+
+  /** Invoke `dispose` on every system that defines it, in reverse
+   *  registration order so dependencies tear down before their
+   *  prerequisites. Errors propagate. */
+  dispose(): void {
+    for (let i = this.systems.length - 1; i >= 0; i--) {
+      this.systems[i].dispose?.()
+    }
+  }
+
   list(): readonly SimulationSystem[] {
     return this.systems
   }

@@ -1,93 +1,81 @@
 import type { SimulationState } from '../core/SimulationState'
 import type { SimulationSystem } from './SimulationSystem'
-import { VehicleEntity } from '../entities/VehicleEntity'
-import { StaticObstacleEntity } from '../entities/StaticObstacleEntity'
-import { DynamicActorEntity } from '../entities/DynamicActorEntity'
+import type { CollisionBackend2D } from '../collision/CollisionBackend2D'
+import { buildCollisionShapes2DFromState } from '../collision/buildCollisionShapes2DFromState'
+import { collisionPairKey } from '../collision/CollisionPairKey'
 
 /**
- * Naive O(n²) circle-vs-circle collision check.
+ * Orchestrator. Does NOT implement the collision algorithm — it
+ * delegates to a pluggable `CollisionBackend2D`. Responsibilities:
  *
- * Pairs that *start* overlapping fire a `collision` event once and
- * bump the counter. They do not re-fire every tick while still in
- * contact — the system tracks active pairs and only counts the
- * leading edge. When pairs separate they're eligible again.
+ *   1. Snapshot 2D shapes from `SimulationState`.
+ *   2. Ask the backend for current contacts.
+ *   3. Diff against the previous tick to detect leading-edge pairs.
+ *   4. Bump `metrics.collisionCount` and emit `collision` once per
+ *      *new* pair (steady contact does not re-fire).
+ *   5. Drop pairs that are no longer in contact so they're eligible
+ *      to fire again on re-contact.
  *
- * For larger scenes swap in a spatial hash; the entity API doesn't
- * change.
+ * Architectural rules enforced here:
+ *   - No imports from Rapier, Three.js, or `infrastructure/...`.
+ *   - The simulation state remains the source of truth for poses;
+ *     the backend may build internal structures but must not be
+ *     allowed to mutate entities. (See `CollisionBackend2D`'s
+ *     "do not mutate" contract.)
  */
 export class CollisionSystem implements SimulationSystem {
   readonly name = 'collision'
 
+  private readonly backend: CollisionBackend2D
   private active = new Set<string>()
 
+  constructor(backend: CollisionBackend2D) {
+    this.backend = backend
+  }
+
   update(_dt: number, state: SimulationState): void {
+    const shapes = buildCollisionShapes2DFromState(state)
+    const contacts = this.backend.detect(shapes)
+
     const next = new Set<string>()
-    const vehicles = state.entities.byType<VehicleEntity>('vehicle')
-    const staticObs = state.entities.byType<StaticObstacleEntity>('static_obstacle')
-    const dynamics = state.entities.byType<DynamicActorEntity>('dynamic_actor')
 
-    for (const v of vehicles) {
-      const vx = v.pose.position.x
-      const vy = v.pose.position.y
-      for (const o of staticObs) {
-        if (overlap(vx, vy, v.radius, o.position.x, o.position.y, o.radius)) {
-          this.recordPair(v.id, o.id, state, next)
-        }
-      }
-      for (const d of dynamics) {
-        if (overlap(vx, vy, v.radius, d.pose.position.x, d.pose.position.y, d.radius)) {
-          this.recordPair(v.id, d.id, state, next)
-        }
-      }
-    }
+    for (const contact of contacts) {
+      const key = collisionPairKey(contact.entityAId, contact.entityBId)
+      if (next.has(key)) continue // backend reported same pair twice; ignore.
+      next.add(key)
 
-    for (let i = 0; i < vehicles.length; i++) {
-      for (let j = i + 1; j < vehicles.length; j++) {
-        const a = vehicles[i]
-        const b = vehicles[j]
-        if (
-          overlap(
-            a.pose.position.x,
-            a.pose.position.y,
-            a.radius,
-            b.pose.position.x,
-            b.pose.position.y,
-            b.radius,
-          )
-        ) {
-          this.recordPair(a.id, b.id, state, next)
-        }
-      }
+      if (this.active.has(key)) continue // ongoing contact, no event.
+
+      // Leading edge: orient the pair the same way the key does so
+      // event consumers see a stable (a, b) ordering.
+      const aFirst = contact.entityAId < contact.entityBId
+      const a = aFirst ? contact.entityAId : contact.entityBId
+      const b = aFirst ? contact.entityBId : contact.entityAId
+      const normal =
+        contact.normal && !aFirst
+          ? { x: -contact.normal.x, y: -contact.normal.y }
+          : contact.normal
+
+      state.metrics.collisionCount += 1
+      state.events.emit('collision', {
+        a,
+        b,
+        time: state.clock.time(),
+        normal,
+        penetrationDepth: contact.penetrationDepth,
+      })
     }
 
     this.active = next
   }
 
-  private recordPair(
-    a: string,
-    b: string,
-    state: SimulationState,
-    next: Set<string>,
-  ): void {
-    const key = a < b ? `${a}|${b}` : `${b}|${a}`
-    next.add(key)
-    if (!this.active.has(key)) {
-      state.metrics.collisionCount += 1
-      state.events.emit('collision', { a, b, time: state.clock.time() })
-    }
+  reset(): void {
+    this.active.clear()
+    this.backend.reset?.()
   }
-}
 
-function overlap(
-  ax: number,
-  ay: number,
-  ar: number,
-  bx: number,
-  by: number,
-  br: number,
-): boolean {
-  const dx = ax - bx
-  const dy = ay - by
-  const r = ar + br
-  return dx * dx + dy * dy < r * r
+  dispose(): void {
+    this.active.clear()
+    this.backend.dispose?.()
+  }
 }

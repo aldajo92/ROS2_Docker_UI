@@ -12,17 +12,24 @@ export interface VehicleControls {
 }
 
 /**
- * Higher-level, partial command shape. Unlike `VehicleControls`, fields
- * are optional and may include richer inputs (`throttle`, `brake`,
- * `steering`) that future kinematic models may consume. The unicycle
- * model only reads `linearVelocity` / `angularVelocity`; richer fields
- * are accepted but ignored.
+ * Entity-local command shape — the form that lands on a single
+ * `VehicleEntity` via `setCommand`. Fields are partial; only those
+ * present on the call are applied (the rest keep their previous
+ * commanded value).
  *
- * Designed to be the canonical input for external command channels
- * (e.g. ROS / WebSocket bridges). Adapters at the communication layer
- * translate transport-specific messages into this shape.
+ * This type is distinct from `VehicleCommand` in
+ * `simulation/commands/VehicleCommand.ts`, which is the **addressed**
+ * command (carries `vehicleId`, `source`, `timestampSec`) flowing
+ * through `VehicleCommandQueue`. `VehicleCommandSystem` consumes the
+ * addressed form and translates it into this entity-local form before
+ * calling `setCommand`.
+ *
+ * The unicycle model reads `linearVelocity` / `angularVelocity`;
+ * `throttle` / `brake` / `steering` are accepted for forward
+ * compatibility with bicycle / Ackermann models but ignored by the
+ * default integrator.
  */
-export interface VehicleCommand {
+export interface AppliedVehicleCommand {
   /** Commanded forward speed, m/s. Maps to `controls.v` for unicycles. */
   linearVelocity?: number
   /** Commanded angular rate, rad/s (CCW positive). Maps to `controls.w`. */
@@ -76,8 +83,15 @@ export class VehicleEntity extends BaseEntity {
   }
 
   /**
-   * Apply a high-level command. Only fields present on the command are
-   * touched; everything else is left at the previously commanded value.
+   * Apply a high-level command. Sticky semantics: only fields present
+   * on the call are touched; everything else is left at the previously
+   * commanded value. This is what lets external bridges send partial
+   * commands (e.g. just a steering angle) without zeroing the rest.
+   *
+   * Callers that want "release-to-stop" behavior (keyboard, joystick)
+   * must therefore send explicit numeric `linearVelocity` /
+   * `angularVelocity` every tick — `0` when no input is active. That's
+   * exactly what `KeyboardVehicleCommandMapper` does.
    *
    * For the unicycle model, this is a thin mapping:
    *
@@ -89,11 +103,16 @@ export class VehicleEntity extends BaseEntity {
    * a richer kinematic model (bicycle, Ackermann) can override this
    * method to consume them.
    */
-  setCommand(command: VehicleCommand): void {
+  setCommand(command: AppliedVehicleCommand): void {
     const next: VehicleControls = { v: this.controls.v, w: this.controls.w }
     if (command.linearVelocity !== undefined) next.v = command.linearVelocity
     if (command.angularVelocity !== undefined) next.w = command.angularVelocity
     this.controls = next
+  }
+
+  /** Read the currently-commanded controls (read-only snapshot). */
+  getControls(): Readonly<VehicleControls> {
+    return { v: this.controls.v, w: this.controls.w }
   }
 
   override update(dt: number, _state: SimulationState): void {

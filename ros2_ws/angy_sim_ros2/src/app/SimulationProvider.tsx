@@ -4,8 +4,11 @@ import { SimulationEngine } from '../simulation/core/SimulationEngine'
 import { SimulationController } from '../simulation/core/SimulationController'
 import { VehicleDynamicsSystem } from '../simulation/systems/VehicleDynamicsSystem'
 import { CollisionSystem } from '../simulation/systems/CollisionSystem'
+import { SimpleCircleCollisionBackend2D } from '../simulation/collision/SimpleCircleCollisionBackend2D'
 import { MetricsSystem } from '../simulation/systems/MetricsSystem'
 import { ScenarioSystem } from '../simulation/systems/ScenarioSystem'
+import { VehicleCommandQueue } from '../simulation/commands/VehicleCommandQueue'
+import { VehicleCommandSystem } from '../simulation/commands/VehicleCommandSystem'
 import { SimulationContext } from './SimulationContext'
 import type { SimulationContextValue } from './SimulationContext'
 
@@ -34,10 +37,22 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
 
 function buildContext(): SimulationContextValue {
   const engine = new SimulationEngine()
-  engine.systems.add(new VehicleDynamicsSystem())
-  engine.systems.add(new CollisionSystem())
-  engine.systems.add(new MetricsSystem())
+  const commandQueue = new VehicleCommandQueue()
+
+  // Registration order is the tick order. Keep it explicit:
+  //   1. ScenarioSystem        — may emit commands or spawn entities
+  //   2. VehicleCommandSystem  — drains the queue onto vehicles
+  //   3. VehicleDynamicsSystem — integrates pose using the new commands
+  //   4. CollisionSystem       — checks collisions on the integrated state
+  //   5. MetricsSystem         — last so it observes the final state
+  // Default to the simple O(n²) circle backend; Rapier can be wired
+  // in via an explicit async setup path (see `RapierCollisionBackend2D`).
   engine.systems.add(new ScenarioSystem())
+  engine.systems.add(new VehicleCommandSystem(commandQueue))
+  engine.systems.add(new VehicleDynamicsSystem())
+  engine.systems.add(new CollisionSystem(new SimpleCircleCollisionBackend2D()))
+  engine.systems.add(new MetricsSystem())
+
   const controller = new SimulationController(engine)
-  return { controller, engine }
+  return { controller, engine, commandQueue }
 }
