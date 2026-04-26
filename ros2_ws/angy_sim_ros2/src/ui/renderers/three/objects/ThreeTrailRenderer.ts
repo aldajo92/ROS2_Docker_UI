@@ -5,6 +5,7 @@ import { ThreeRenderObjectRegistry } from '../core/ThreeRenderObjectRegistry'
 import { disposeObject3D } from '../core/threeDisposal'
 import { simPoint2DToThree } from '../mapping/simToThree'
 import { VehicleEntity } from '../../../../simulation/entities/VehicleEntity'
+import { TRAIL_COLOR } from '../config/VisualStyle'
 
 /**
  * Visual-only breadcrumb trail for vehicles. Trail points live ONLY
@@ -86,7 +87,7 @@ export class ThreeTrailRenderer {
 
   private createTrailLine(): THREE.Line {
     const geometry = new THREE.BufferGeometry()
-    const material = new THREE.LineBasicMaterial({ color: 0x4a8df0 })
+    const material = new THREE.LineBasicMaterial({ color: TRAIL_COLOR })
     const line = new THREE.Line(geometry, material)
     line.frustumCulled = false
     line.name = 'vehicle-trail'

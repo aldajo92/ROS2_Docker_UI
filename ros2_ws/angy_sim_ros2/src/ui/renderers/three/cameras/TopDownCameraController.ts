@@ -5,39 +5,34 @@ import {
   attachOrbitControls,
   type OrbitControlsHandle,
 } from './attachOrbitControls'
+import {
+  getThreeCameraUpForSimulationZUp,
+  getThreeCameraUpForTopDown,
+  getThreePositionForTopDownCamera,
+} from '../mapping/simToThree'
 
 /**
  * Top-down "minimap" view with **drag-pan and zoom only** — no
- * rotation. Mirrors the behavior of `angelos_sim_ros2`'s follow-mode
- * camera (`enableRotate={camMode === 'orbit'}`): the user can scroll
- * around the world and zoom in / out, but the camera always looks
- * straight down so the +Y axis (sim "forward") is always screen-up.
+ * rotation. The camera looks straight down the simulation Z axis at
+ * the X/Y plane. The orientation is pinned via a Gazebo-style
+ * choice of `up`:
  *
- * Camera setup:
- *   - Position is `(0, height, 0)` in THREE-space — straight above
- *     the world origin.
- *   - `up = (0, 0, -1)` (THREE) so screen-up corresponds to sim +Y.
- *     With this `up`, `OrbitControls`'s pan moves the target across
- *     the world XZ plane, which is exactly the simulation ground.
- *   - `lookAt(0, 0, 0)` for the initial view; `OrbitControls` then
- *     owns subsequent target / position updates.
+ *   - `position` is sim `(0, 0, height)` mapped to three space.
+ *   - `up` is the three-space image of sim `+Y`, so screen-up
+ *     corresponds to sim "forward" and **+X appears to the right of
+ *     the screen**, **+Y appears upward on the screen**.
  *
- * Interaction is delegated to the shared `attachOrbitControls` helper
- * with `enableRotate: false` (the diff vs orbit) and
- * `screenSpacePanning: true` (the diff vs the helper default).
+ * Both values are pulled from the mapping module — no raw axis
+ * literals here. If the sim→three mapping ever changes, this file
+ * needs no edits.
  *
- * Why `screenSpacePanning: true` here specifically: when the camera
- * looks straight down, OrbitControls' default `screenSpacePanning =
- * false` derives its pan-up axis as `cross(camera.up, camera.right)`,
- * which for our `up = (0, 0, -1)` collapses to **world Y** — i.e.
- * straight up/down. Dragging vertically would then move the camera
- * toward / away from the ground and look exactly like a zoom on top
- * of the actual pan. Switching to screen-space panning makes the
- * pan-up axis equal to the camera's local up (= world `-Z` here, =
- * sim `+Y`), so dragging up on screen scrolls the map "north" with
- * no vertical motion. Orbit mode keeps the default because there
- * `false` correctly produces a ground-parallel pan regardless of
- * camera pitch.
+ * `screenSpacePanning: true` is required: when the camera looks
+ * straight down, OrbitControls' default panning derives the pan-up
+ * axis from `cross(camera.up, camera.right)`. With our `up` pointing
+ * sideways in three space, the default would conflate pan with
+ * dolly. Screen-space panning aligns the pan axes to the camera's
+ * own X/Y, which is what the user intuits from a "drag the map"
+ * gesture.
  */
 export class TopDownCameraController implements CameraController {
   private readonly height: number
@@ -49,8 +44,8 @@ export class TopDownCameraController implements CameraController {
 
   attach(context: ThreeSceneContext): void {
     const { camera } = context
-    camera.up.set(0, 0, -1)
-    camera.position.set(0, this.height, 0)
+    camera.up.copy(getThreeCameraUpForTopDown())
+    camera.position.copy(getThreePositionForTopDownCamera(this.height))
     camera.lookAt(0, 0, 0)
 
     this.handle = attachOrbitControls(context, {
@@ -69,9 +64,11 @@ export class TopDownCameraController implements CameraController {
   detach(context: ThreeSceneContext): void {
     this.handle?.dispose()
     this.handle = undefined
-    // Restore the conventional up vector so the next controller
-    // (orbit / follow) starts from a clean orientation.
-    context.camera.up.set(0, 1, 0)
+    // Restore the conventional up vector (sim +Z = three +Y) so the
+    // next controller (orbit / follow) starts from a stable
+    // orientation. Pulling from the mapping helper keeps this in
+    // lockstep with whatever convention `simToThree` declares.
+    context.camera.up.copy(getThreeCameraUpForSimulationZUp())
   }
 
   dispose(): void {

@@ -5,6 +5,7 @@ import { ThreeRenderObjectRegistry } from '../core/ThreeRenderObjectRegistry'
 import { disposeObject3D } from '../core/threeDisposal'
 import { simPoint2DToThree } from '../mapping/simToThree'
 import { StaticObstacleEntity } from '../../../../simulation/entities/StaticObstacleEntity'
+import { OBSTACLE_COLOR, OBSTACLE_HEIGHT_RATIO } from '../config/VisualStyle'
 
 /**
  * Cylinders for `StaticObstacleEntity`. Static obstacles never move,
@@ -31,7 +32,10 @@ export class ThreeStaticObstacleRenderer {
         this.registry.set(obstacle.id, mesh)
         this.context.scene.add(mesh)
       }
-      mesh.position.copy(simPoint2DToThree(obstacle.position, obstacle.radius * 0.5))
+      // Lift the cylinder so its base sits on the ground plane —
+      // half the pillar height in three's vertical axis.
+      const halfHeight = (obstacle.radius * OBSTACLE_HEIGHT_RATIO) / 2
+      mesh.position.copy(simPoint2DToThree(obstacle.position, halfHeight))
     }
 
     for (const [id, mesh] of [...this.registry.entries()]) {
@@ -53,11 +57,14 @@ export class ThreeStaticObstacleRenderer {
 
   private createObstacleMesh(obstacle: StaticObstacleEntity): THREE.Mesh {
     const radius = obstacle.radius
-    const height = radius
-    // Cylinder, vertical axis aligned with three +Y (i.e. sim +Z up).
+    // Pillar proportions match angelos's `Obstacle`: at OBSTACLE_RADIUS=0.15
+    // the cylinder is 0.5 m tall (≈ 3.33 × radius). Vertical axis aligned
+    // with three +Y (i.e. sim +Z up); cylinders are built along three +Y
+    // by default so no rotation is required here.
+    const height = radius * OBSTACLE_HEIGHT_RATIO
     const geometry = new THREE.CylinderGeometry(radius, radius, height, 24)
     const material = new THREE.MeshStandardMaterial({
-      color: 0xc25b3f,
+      color: OBSTACLE_COLOR,
       roughness: 0.8,
       metalness: 0,
     })

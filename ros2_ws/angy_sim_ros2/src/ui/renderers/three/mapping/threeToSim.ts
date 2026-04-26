@@ -7,28 +7,29 @@ import { Point3D } from '../../../../math/geometry/Point3D'
  * (pointer picking, click-to-place, drag-to-edit) to project Three.js
  * world coordinates back into the simulation frame.
  *
- * Inverse of:
+ * Inverse of the forward (right-handed) mapping:
  *
- *     sim.x → three.x
- *     sim.y → three.z
- *     sim.z → three.y
+ *     sim.x → three.x          sim.x =  three.x
+ *     sim.y → three.-z   ⇒     sim.y = -three.z
+ *     sim.z → three.y          sim.z =  three.y
  */
 
 /** Three.js world position projected onto the sim ground plane (Z dropped). */
 export function threeVectorToSimPoint2D(vector: THREE.Vector3): Point2D {
-  return Point2D.of(vector.x, vector.z)
+  return Point2D.of(vector.x, -vector.z)
 }
 
 /** Three.js world position → sim 3D point. */
 export function threeVectorToSimPoint3D(vector: THREE.Vector3): Point3D {
-  return Point3D.of(vector.x, vector.z, vector.y)
+  return Point3D.of(vector.x, -vector.z, vector.y)
 }
 
 /**
- * Inverse of `simYawToThreeRotationY` (assuming mesh local forward = +X).
- * Used when a user manipulates a mesh and we need to push the new yaw
- * back into the simulation.
+ * Inverse of `simYawToThreeRotationY`. With the right-handed mapping
+ * the relationship is identity, so this is here purely for symmetry
+ * with the forward helper — call sites read more clearly when the
+ * direction is explicit.
  */
 export function threeRotationYToSimYaw(rotationY: number): number {
-  return -rotationY
+  return rotationY
 }

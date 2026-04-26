@@ -5,6 +5,12 @@ import { ThreeRenderObjectRegistry } from '../core/ThreeRenderObjectRegistry'
 import { disposeObject3D } from '../core/threeDisposal'
 import { simPoint2DToThree, simYawToThreeRotationY } from '../mapping/simToThree'
 import { VehicleEntity } from '../../../../simulation/entities/VehicleEntity'
+import {
+  VEHICLE_BODY_COLOR,
+  VEHICLE_HEIGHT_RATIO,
+  VEHICLE_LENGTH_RATIO,
+  VEHICLE_WIDTH_RATIO,
+} from '../config/VisualStyle'
 
 /**
  * Box-on-wheels-shaped placeholder for `VehicleEntity`. One mesh per
@@ -57,14 +63,19 @@ export class ThreeVehicleRenderer {
 
   private createVehicleMesh(vehicle: VehicleEntity): THREE.Mesh {
     const radius = vehicle.radius
-    // Long axis along sim +X (mesh local forward), so length > width.
-    const length = radius * 4
-    const width = radius * 2
-    const height = radius * 1.2
+    // Proportions scaled off `radius` (see VisualStyle). At angelos's
+    // CAR_RADIUS=0.3 these reproduce the original 0.5 × 0.3 × 0.3 box.
+    // Long axis is along sim +X (mesh local forward) so the vehicle
+    // points where `simYawToThreeRotationY` says it does.
+    const length = radius * VEHICLE_LENGTH_RATIO
+    const width = radius * VEHICLE_WIDTH_RATIO
+    const height = radius * VEHICLE_HEIGHT_RATIO
 
+    // BoxGeometry args are (three X, three Y, three Z); sim length is
+    // along three X, sim width is along three Z, height is three Y.
     const geometry = new THREE.BoxGeometry(length, height, width)
     const material = new THREE.MeshStandardMaterial({
-      color: 0x4a8df0,
+      color: VEHICLE_BODY_COLOR,
       roughness: 0.5,
       metalness: 0.1,
     })
@@ -75,8 +86,8 @@ export class ThreeVehicleRenderer {
   }
 
   private syncVehicleMesh(mesh: THREE.Mesh, vehicle: VehicleEntity): void {
-    // Lift mesh so its base rests on the ground plane (y = half height).
-    const halfHeight = vehicle.radius * 0.6
+    // Lift the mesh so its base rests on the ground plane.
+    const halfHeight = (vehicle.radius * VEHICLE_HEIGHT_RATIO) / 2
     mesh.position.copy(simPoint2DToThree(vehicle.pose.position, halfHeight))
     mesh.rotation.set(0, simYawToThreeRotationY(vehicle.pose.yaw), 0)
   }

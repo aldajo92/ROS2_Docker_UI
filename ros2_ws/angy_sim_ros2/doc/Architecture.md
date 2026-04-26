@@ -513,16 +513,37 @@ constants in `mapping/coordinateConventions.ts` for tooling /
 discoverability.
 
 ```
-sim.x → three.x
-sim.y → three.z
-sim.z → three.y
-yaw   → rotation.y = -yaw     (vehicle mesh local forward = +X)
+sim.x →  three.x
+sim.y → -three.z          (sign flip — preserves handedness)
+sim.z →  three.y
+yaw   →  rotation.y = +yaw     (vehicle mesh local forward = +X)
 ```
 
-The yaw inversion comes from Three.js's positive `rotation.y` rotating
-+X → −Z; we want sim yaw=π/2 (forward = sim+Y = three+Z) to land mesh
-forward on +Z, so we negate. The derivation lives at the top of
-`simToThree.ts`; renderers must never re-derive it inline.
+**Why the sign flip on Y.** Without it (`sim.y → +three.z`) the embedded
+sim frame is **left-handed** in three space — `simX × simY` evaluates
+to `−simZ`. A Three.js camera local frame is always right-handed, so a
+left-handed embedding makes Gazebo-style top-down (`+X right, +Y up,
+X×Y = +Z toward viewer`) **mathematically impossible**: the `lookAt`
+cross-product math forces one axis to flip on screen no matter how
+`up` is configured. With the sign flip, embedding handedness matches
+three's and Gazebo conventions become natural.
+
+**Yaw under the right-handed mapping is identity.** A sim yaw of +π/2
+takes heading from sim+X to sim+Y, i.e. from three+X to three−Z.
+Rotation about three+Y by θ takes +X to (cos θ, 0, −sin θ); at
+θ=+π/2 that's (0, 0, −1) = three−Z ✓. Hence `rotation.y = +yaw`.
+The derivation lives at the top of `simToThree.ts`; renderers must
+never re-derive it inline.
+
+**Camera presets live in the mapping module too.** Top-down and
+Gazebo-like (3/4 perspective) camera position + `up` vectors are
+exposed as helpers — `getThreePositionForTopDownCamera`,
+`getThreeCameraUpForTopDown`, `getThreePositionForGazeboLikeCamera`,
+`getThreeCameraUpForSimulationZUp` — so camera controllers contain no
+raw axis literals. Tests in `simToThree.test.ts` verify the
+right-handedness of the embedding *and* assert the on-screen
+orientation derived from these presets via the same lookAt math
+Three.js uses internally.
 
 ### Object sub-renderers (`renderers/three/objects/`)
 
@@ -534,8 +555,13 @@ beyond the public read API.
 
 - **`ThreeGroundRenderer`** — static ground plane (40×40 m) plus a
   1 m grid. Created once, never reads `SimulationState`.
-- **`ThreeAxesRenderer`** — `THREE.AxesHelper` placed at the origin
-  to ground users in the engine frame.
+- **`ThreeAxesRenderer`** — three custom arrow primitives at the
+  origin, one per simulation axis (red / green / blue = X / Y / Z),
+  oriented through `simDirection3DToThree` so the renderer never
+  encodes the mapping directly. Adds a small flat green origin
+  marker. Uses *custom* arrows rather than `THREE.AxesHelper`
+  because the helper draws three's native axes, which under our
+  sim→three mapping are *not* the simulation axes.
 - **`ThreeVehicleRenderer`** — one `BoxGeometry` per vehicle, mesh
   long axis along sim +X (matching the yaw convention). Repositions
   via `simPoint2DToThree`; rotates via `simYawToThreeRotationY`.
@@ -581,24 +607,30 @@ beyond the public read API.
   difference (rotate vs no-rotate, distance limits, target) is a
   flag passed in here, not duplicated logic.
 - **`TopDownCameraController`** — top-down minimap with **drag-pan
-  and zoom only** (no rotation), mirroring the
-  `enableRotate={camMode === 'orbit'}` pattern from the original
-  `angelos_sim_ros2` reference. Sets `camera.up = (0, 0, -1)` so
-  screen-up corresponds to sim +Y, then delegates to
-  `attachOrbitControls(..., { enableRotate: false,
-  screenSpacePanning: true })`. The `screenSpacePanning: true`
-  override is required specifically for the top-down view: with the
-  default (`false`), OrbitControls derives its pan-up axis as
-  `cross(camera.up, camera.right)`, which for `up = (0, 0, -1)`
-  collapses to world Y — vertical drag would then move the camera
-  toward / away from the ground and feel like a simultaneous zoom.
-  Switching to screen-space panning makes the pan-up axis equal to
-  the camera's local up (= world −Z = sim +Y) so vertical drag
-  scrolls the map "north" without any vertical motion.
-- **`OrbitCameraController`** — interactive 3/4 view: left-drag
-  rotates, wheel zooms, right-drag pans. Wraps `attachOrbitControls`
-  with `enableRotate: true`. No `@react-three/drei` / fiber
-  dependency — everything goes through the stock `three` package.
+  and zoom only** (no rotation). Pulls position and `up` from the
+  mapping module (`getThreePositionForTopDownCamera`,
+  `getThreeCameraUpForTopDown`) so on-screen orientation matches
+  Gazebo: **+X right, +Y up**. Delegates to `attachOrbitControls(...,
+  { enableRotate: false, screenSpacePanning: true })`. The
+  `screenSpacePanning: true` override is required specifically for
+  the top-down view: with the default (`false`), OrbitControls
+  derives its pan-up axis as `cross(camera.up, camera.right)`,
+  which for a top-down `up` collapses to world Y — vertical drag
+  would then move the camera toward / away from the ground and
+  feel like a simultaneous zoom. Screen-space panning makes the
+  pan-up axis equal to the camera's local up so vertical drag
+  scrolls the map "north" without any vertical motion. On detach
+  the controller restores `camera.up` to
+  `getThreeCameraUpForSimulationZUp()` so the next mode starts
+  clean.
+- **`OrbitCameraController`** — interactive 3/4 view with a
+  **Gazebo-like default placement**: camera sits at sim
+  `(+d, -d, +d)` (mapped through `getThreePositionForGazeboLikeCamera`)
+  with `up = sim +Z` (`getThreeCameraUpForSimulationZUp`), looking
+  back at the origin. Left-drag rotates, wheel zooms, right-drag
+  pans. Wraps `attachOrbitControls` with `enableRotate: true`. No
+  `@react-three/drei` / fiber dependency — everything goes through
+  the stock `three` package.
 - **`FollowVehicleCameraController`** — chase-cam behind and above
   the first vehicle in `state.entities`. Reads `vehicle.pose`;
   never mutates it.

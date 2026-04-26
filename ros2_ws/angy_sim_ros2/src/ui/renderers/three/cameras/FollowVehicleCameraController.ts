@@ -2,7 +2,10 @@ import type { SimulationState } from '../../../../simulation/core/SimulationStat
 import type { CameraController } from './CameraController'
 import type { ThreeSceneContext } from '../core/ThreeSceneContext'
 import type { VehicleEntity } from '../../../../simulation/entities/VehicleEntity'
-import { simPoint2DToThree } from '../mapping/simToThree'
+import {
+  getThreeCameraUpForSimulationZUp,
+  simPoint2DToThree,
+} from '../mapping/simToThree'
 
 /**
  * Chase-cam: tracks the first vehicle in `state.entities` (treated as
@@ -25,7 +28,9 @@ export class FollowVehicleCameraController implements CameraController {
   }
 
   attach(context: ThreeSceneContext): void {
-    context.camera.up.set(0, 1, 0)
+    // Sim +Z = three +Y; pull through the helper so this stays in
+    // lockstep with whatever the mapping declares.
+    context.camera.up.copy(getThreeCameraUpForSimulationZUp())
   }
 
   update(state: SimulationState, context: ThreeSceneContext): void {

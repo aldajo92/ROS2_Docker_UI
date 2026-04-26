@@ -5,13 +5,27 @@ import { ThreeRenderObjectRegistry } from '../core/ThreeRenderObjectRegistry'
 import { disposeObject3D } from '../core/threeDisposal'
 import { simPoint2DToThree, simYawToThreeRotationY } from '../mapping/simToThree'
 import { VehicleEntity } from '../../../../simulation/entities/VehicleEntity'
+import { createArrow } from '../objects/createArrow'
+import {
+  ARROW_LENGTH_RATIO,
+  ARROW_SHAFT_RADIUS_RATIO,
+  ARROW_TIP_LENGTH_RATIO,
+  ARROW_TIP_RADIUS_RATIO,
+  HEADING_ARROW_COLOR,
+  VEHICLE_HEIGHT_RATIO,
+  VEHICLE_LENGTH_RATIO,
+} from '../config/VisualStyle'
 
 /**
- * Short arrow pointing along each vehicle's local +X (forward). We
- * use a child mesh inside a parent group so the parent's
- * `rotation.y` (driven through `simYawToThreeRotationY`) handles
- * yaw, and the child's geometry stays a plain arrow on +X. Keeping
- * yaw conversion in one place is the whole point of this layer.
+ * Heading arrow that visually matches angelos's car: starts at the
+ * vehicle's front bumper and extends `ARROW_LENGTH_RATIO × radius`
+ * along the vehicle's local +X. Yaw is applied via the parent
+ * group's `rotation.y` (driven through `simYawToThreeRotationY`) so
+ * the child geometry stays a plain "arrow on +X" — keeping yaw
+ * conversion in exactly one place.
+ *
+ * The shaft + cone construction is shared with `ThreeAxesRenderer`
+ * via `createArrow`; only colors and proportions differ.
  */
 export class HeadingArrowRenderer {
   private readonly context: ThreeSceneContext
@@ -29,11 +43,17 @@ export class HeadingArrowRenderer {
       liveIds.add(vehicle.id)
       let group = this.registry.get(vehicle.id)
       if (!group) {
-        group = createHeadingArrow(vehicle.radius)
+        group = createHeadingArrowFor(vehicle.radius)
         this.registry.set(vehicle.id, group)
         this.context.scene.add(group)
       }
-      group.position.copy(simPoint2DToThree(vehicle.pose.position, 0.04))
+      // Lift to the vehicle's mid-body height so the arrow emerges
+      // horizontally from the front face — angelos achieved this by
+      // making `<Arrow>` a child of the car group whose centroid
+      // already sits at `halfHeight`. We replicate that vertical
+      // anchor here without parenting the renderers.
+      const halfHeight = (vehicle.radius * VEHICLE_HEIGHT_RATIO) / 2
+      group.position.copy(simPoint2DToThree(vehicle.pose.position, halfHeight))
       group.rotation.set(0, simYawToThreeRotationY(vehicle.pose.yaw), 0)
     }
 
@@ -55,26 +75,19 @@ export class HeadingArrowRenderer {
   }
 }
 
-function createHeadingArrow(radius: number): THREE.Group {
-  const length = radius * 3
-  const headLen = radius * 0.6
-  const headRadius = radius * 0.35
+function createHeadingArrowFor(radius: number): THREE.Group {
+  // Front-bumper offset: half the box length, so the arrow visually
+  // emerges from the front of the vehicle just like in angelos.
+  const halfBodyLength = (radius * VEHICLE_LENGTH_RATIO) / 2
 
-  const group = new THREE.Group()
+  const group = createArrow({
+    length: radius * ARROW_LENGTH_RATIO,
+    shaftRadius: radius * ARROW_SHAFT_RADIUS_RATIO,
+    tipRadius: radius * ARROW_TIP_RADIUS_RATIO,
+    tipLength: radius * ARROW_TIP_LENGTH_RATIO,
+    color: HEADING_ARROW_COLOR,
+    shaftStartX: halfBodyLength,
+  })
   group.name = 'heading-arrow'
-
-  const shaftGeo = new THREE.CylinderGeometry(radius * 0.08, radius * 0.08, length, 12)
-  // The cylinder is built along +Y by default; rotate it to lie along +X.
-  shaftGeo.rotateZ(-Math.PI / 2)
-  shaftGeo.translate(length / 2, 0, 0)
-  const shaftMat = new THREE.MeshBasicMaterial({ color: 0xff7f50 })
-  group.add(new THREE.Mesh(shaftGeo, shaftMat))
-
-  const headGeo = new THREE.ConeGeometry(headRadius, headLen, 16)
-  headGeo.rotateZ(-Math.PI / 2)
-  headGeo.translate(length + headLen / 2, 0, 0)
-  const headMat = new THREE.MeshBasicMaterial({ color: 0xff5024 })
-  group.add(new THREE.Mesh(headGeo, headMat))
-
   return group
 }

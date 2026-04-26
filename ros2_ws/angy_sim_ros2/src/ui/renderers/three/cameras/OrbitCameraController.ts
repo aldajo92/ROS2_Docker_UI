@@ -5,28 +5,40 @@ import {
   attachOrbitControls,
   type OrbitControlsHandle,
 } from './attachOrbitControls'
+import {
+  getThreeCameraUpForSimulationZUp,
+  getThreePositionForGazeboLikeCamera,
+} from '../mapping/simToThree'
 
 /**
  * Interactive 3/4 view: drag to rotate, right-drag to pan, wheel to
- * zoom. The actual `OrbitControls` wiring lives in `attachOrbitControls`
- * so this class is just a small policy: where to put the camera
- * initially, and which interaction flags to enable.
+ * zoom. The default placement matches Gazebo Classic's `pose 5 -5 5`
+ * convention — camera ahead-and-right-and-above the origin, looking
+ * back at it — which gives an immediately readable view of all three
+ * axes plus the ground plane.
+ *
+ * Position / up are pulled from the sim→three mapping module so the
+ * Gazebo-likeness is encoded in one place rather than being a magic
+ * triple of three-space numbers here.
  */
 export class OrbitCameraController implements CameraController {
   private readonly initialDistance: number
-  private readonly initialHeight: number
   private handle?: OrbitControlsHandle
 
-  constructor(distance = 12, height = 12) {
-    this.initialDistance = distance
-    this.initialHeight = height
+  /**
+   * @param initialDistance Sim-frame radius of the default camera
+   *                        triple `(+d, -d, +d)` (Gazebo convention).
+   *                        Larger = more zoomed-out scene.
+   */
+  constructor(initialDistance = 8) {
+    this.initialDistance = initialDistance
   }
 
   attach(context: ThreeSceneContext): void {
     const { camera } = context
 
-    camera.up.set(0, 1, 0)
-    camera.position.set(this.initialDistance, this.initialHeight, this.initialDistance)
+    camera.up.copy(getThreeCameraUpForSimulationZUp())
+    camera.position.copy(getThreePositionForGazeboLikeCamera(this.initialDistance))
     camera.lookAt(0, 0, 0)
 
     this.handle = attachOrbitControls(context, {
