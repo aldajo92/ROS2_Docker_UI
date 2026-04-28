@@ -1,0 +1,75 @@
+{
+  "enabled": true,
+  "trajectoryCount": 2,
+  "totalSampleCount": 838,
+  "perEntity": [
+    {
+      "entityId": "ego",
+      "sampleCount": 419,
+      "hasLine": true,
+      "visible": true,
+      "attachedToScene": true,
+      "positionAttributeCount": 1,
+      "materialOpacity": 1,
+      "materialTransparent": false,
+      "materialColor": "#ff5050",
+      "lineRenderOrder": 0,
+      "firstMappedPoint": {
+        "x": 0.013333259150385857,
+        "y": 0.029999999329447746,
+        "z": -0.00004444436126505025
+      },
+      "lastMappedPoint": {
+        "x": 0.013333259150385857,
+        "y": 0.029999999329447746,
+        "z": -0.00004444436126505025
+      },
+      "geometryBoundingBox": {
+        "min": {
+          "x": 0.013333259150385857,
+          "y": 0.029999999329447746,
+          "z": -0.00004444436126505025
+        },
+        "max": {
+          "x": 0.013333259150385857,
+          "y": 0.029999999329447746,
+          "z": -0.00004444436126505025
+        }
+      }
+    },
+    {
+      "entityId": "actor_1",
+      "sampleCount": 419,
+      "hasLine": true,
+      "visible": true,
+      "attachedToScene": true,
+      "positionAttributeCount": 1,
+      "materialOpacity": 1,
+      "materialTransparent": false,
+      "materialColor": "#ff5050",
+      "lineRenderOrder": 0,
+      "firstMappedPoint": {
+        "x": 5.994166851043701,
+        "y": 0.029999999329447746,
+        "z": 2.996999979019165
+      },
+      "lastMappedPoint": {
+        "x": 5.994166851043701,
+        "y": 0.029999999329447746,
+        "z": 2.996999979019165
+      },
+      "geometryBoundingBox": {
+        "min": {
+          "x": 5.994166851043701,
+          "y": 0.029999999329447746,
+          "z": 2.996999979019165
+        },
+        "max": {
+          "x": 5.994166851043701,
+          "y": 0.029999999329447746,
+          "z": 2.996999979019165
+        }
+      }
+    }
+  ]
+}

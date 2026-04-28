@@ -1,0 +1,51 @@
+{
+  "name": "trajectory-tracking-enabled",
+  "description": "Scenario with simulation-owned trajectory tracking enabled for all supported entities.",
+  "trajectoryTracking": {
+    "enabled": true,
+    "trackAllSupportedEntities": true,
+    "defaultSamplingMode": "timeWindow",
+    "defaultMaxSamples": 500,
+    "defaultTimeWindowSec": 12,
+    "defaultMinSampleDtSec": 0,
+    "defaultMinDistance": 0,
+    "entities": [
+      {
+        "entityId": "ego",
+        "enabled": true,
+        "samplingMode": "pointCount",
+        "maxSamples": 600,
+        "minSampleDtSec": 0,
+        "minDistance": 0
+      }
+    ]
+  },
+  "entities": [
+    {
+      "kind": "vehicle",
+      "id": "ego",
+      "pose": { "x": 0, "y": 0, "yaw": 0 },
+      "controls": { "v": 0.8, "w": 0.2 },
+      "radius": 0.4
+    },
+    {
+      "kind": "dynamic_actor",
+      "id": "actor_1",
+      "pose": { "x": 6, "y": -3, "yaw": 0 },
+      "velocity": { "vx": -0.35, "vy": 0.18, "w": 0.05 },
+      "radius": 0.3
+    },
+    {
+      "kind": "static_obstacle",
+      "id": "obstacle_a",
+      "position": { "x": 2.5, "y": 1.2 },
+      "radius": 0.5
+    },
+    {
+      "kind": "static_obstacle",
+      "id": "obstacle_b",
+      "position": { "x": -2.5, "y": 2.8 },
+      "radius": 0.5
+    }
+  ]
+}
