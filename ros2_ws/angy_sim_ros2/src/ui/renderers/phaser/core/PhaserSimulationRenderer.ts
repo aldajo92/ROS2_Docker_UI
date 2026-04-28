@@ -4,7 +4,7 @@ import type { SimulationState } from '../../../../simulation/core/SimulationStat
 import {
   DEFAULT_PHASER_RENDERER_CONFIG,
   type PhaserRendererConfig,
-  type PhaserTrailConfig,
+  type PhaserTrajectoryVisualizationConfig,
 } from '../config/PhaserRendererConfig'
 import type { PhaserSceneContext } from './PhaserSceneContext'
 import type { PhaserViewport } from '../mapping/simToPhaser'
@@ -12,7 +12,10 @@ import { PhaserVehicleRenderer } from '../objects/PhaserVehicleRenderer'
 import { PhaserStaticObstacleRenderer } from '../objects/PhaserStaticObstacleRenderer'
 import { PhaserDynamicActorRenderer } from '../objects/PhaserDynamicActorRenderer'
 import { PhaserPathRenderer } from '../objects/PhaserPathRenderer'
-import { PhaserTrailRenderer } from '../objects/PhaserTrailRenderer'
+import {
+  PhaserTrajectoryRenderer,
+  type PhaserTrajectoryRendererDebugSummary,
+} from '../objects/PhaserTrajectoryRenderer'
 import { PhaserGroundRenderer } from '../objects/PhaserGroundRenderer'
 import { PhaserAxesRenderer } from '../objects/PhaserAxesRenderer'
 import { PhaserDebugLayer } from '../debug/PhaserDebugLayer'
@@ -47,7 +50,7 @@ export class PhaserSimulationRenderer implements SimulationRenderer {
   private staticObstacleRenderer?: PhaserStaticObstacleRenderer
   private dynamicActorRenderer?: PhaserDynamicActorRenderer
   private pathRenderer?: PhaserPathRenderer
-  private trailRenderer?: PhaserTrailRenderer
+  private trajectoryRenderer?: PhaserTrajectoryRenderer
   private debugLayer?: PhaserDebugLayer
 
   constructor(
@@ -120,14 +123,14 @@ export class PhaserSimulationRenderer implements SimulationRenderer {
     this.recenterViewport()
     this.groundRenderer?.redraw()
     this.axesRenderer?.redraw()
-    this.trailRenderer?.reproject()
+    this.trajectoryRenderer?.reproject()
     if (this.lastState) this.syncAll(this.lastState)
   }
 
   dispose(): void {
     this.debugLayer?.dispose()
     this.pathRenderer?.dispose()
-    this.trailRenderer?.dispose()
+    this.trajectoryRenderer?.dispose()
     this.dynamicActorRenderer?.dispose()
     this.staticObstacleRenderer?.dispose()
     this.vehicleRenderer?.dispose()
@@ -148,26 +151,74 @@ export class PhaserSimulationRenderer implements SimulationRenderer {
     this.staticObstacleRenderer = undefined
     this.dynamicActorRenderer = undefined
     this.pathRenderer = undefined
-    this.trailRenderer = undefined
+    this.trajectoryRenderer = undefined
     this.debugLayer = undefined
   }
 
-  /** Wipe trails — call from `reset` / `scenarioLoaded` event handlers. */
+  /**
+   * Drops cached `Graphics` objects for trajectory lines. Does **not**
+   * touch `state.trajectories` — use `controller.clearTrajectories()`
+   * to wipe simulation data.
+   */
+  clearTrajectoryRenderCache(): void {
+    this.trajectoryRenderer?.clearRenderCache()
+    if (this.lastState) this.syncAll(this.lastState)
+  }
+
+  setTrajectoryVisualizationConfig(
+    partial: Partial<PhaserTrajectoryVisualizationConfig>,
+  ): void {
+    this.config.trajectoryVisualization = {
+      ...this.config.trajectoryVisualization,
+      ...partial,
+    }
+    this.trajectoryRenderer?.setConfig(partial)
+    if (this.lastState) this.syncAll(this.lastState)
+  }
+
+  setTrajectoryVisualizationEnabled(enabled: boolean): void {
+    this.setTrajectoryVisualizationConfig({ enabled })
+  }
+
+  getTrajectoryVisualizationConfig(): PhaserTrajectoryVisualizationConfig {
+    return (
+      this.trajectoryRenderer?.getConfig() ?? this.config.trajectoryVisualization
+    )
+  }
+
+  /**
+   * Returns a temporary debug snapshot of the trajectory renderer's
+   * internal state for visibility/material/positioning diagnosis.
+   * Mirrors the Three.js adapter's debug surface.
+   */
+  getTrajectoryRendererDebugSummary():
+    | PhaserTrajectoryRendererDebugSummary
+    | undefined {
+    return this.trajectoryRenderer?.getDebugSummary()
+  }
+
+  /** @deprecated Use {@link clearTrajectoryRenderCache}. Kept so the
+   *  React layer's existing reset/scenarioLoaded handlers compile during
+   *  the migration. */
   clearTrails(): void {
-    this.trailRenderer?.clear()
+    this.clearTrajectoryRenderCache()
   }
 
-  setTrailConfig(partial: Partial<PhaserTrailConfig>): void {
-    this.config.trail = { ...this.config.trail, ...partial }
-    this.trailRenderer?.setConfig(partial)
+  /** @deprecated Use {@link setTrajectoryVisualizationConfig}. */
+  setTrailConfig(
+    partial: Partial<PhaserTrajectoryVisualizationConfig>,
+  ): void {
+    this.setTrajectoryVisualizationConfig(partial)
   }
 
+  /** @deprecated Use {@link setTrajectoryVisualizationEnabled}. */
   setTrailEnabled(enabled: boolean): void {
-    this.setTrailConfig({ enabled })
+    this.setTrajectoryVisualizationEnabled(enabled)
   }
 
-  getTrailConfig(): PhaserTrailConfig {
-    return this.trailRenderer?.getConfig() ?? this.config.trail
+  /** @deprecated Use {@link getTrajectoryVisualizationConfig}. */
+  getTrailConfig(): PhaserTrajectoryVisualizationConfig {
+    return this.getTrajectoryVisualizationConfig()
   }
 
   /** Internal: invoked by the Phaser scene's `create()` once the
@@ -206,8 +257,11 @@ export class PhaserSimulationRenderer implements SimulationRenderer {
     this.dynamicActorRenderer = new PhaserDynamicActorRenderer(this.context)
     this.vehicleRenderer = new PhaserVehicleRenderer(this.context)
 
-    if (this.config.showTrails) {
-      this.trailRenderer = new PhaserTrailRenderer(this.context, this.config.trail)
+    if (this.config.showTrajectories) {
+      this.trajectoryRenderer = new PhaserTrajectoryRenderer(
+        this.context,
+        this.config.trajectoryVisualization,
+      )
     }
     if (this.config.showDebug) {
       this.debugLayer = new PhaserDebugLayer(this.context)
@@ -221,7 +275,7 @@ export class PhaserSimulationRenderer implements SimulationRenderer {
       this.recenterViewport()
       this.groundRenderer?.redraw()
       this.axesRenderer?.redraw()
-      this.trailRenderer?.reproject()
+      this.trajectoryRenderer?.reproject()
       if (this.lastState) this.syncAll(this.lastState)
     })
 
@@ -234,7 +288,7 @@ export class PhaserSimulationRenderer implements SimulationRenderer {
     this.staticObstacleRenderer?.sync(state)
     this.dynamicActorRenderer?.sync(state)
     this.vehicleRenderer?.sync(state)
-    this.trailRenderer?.sync(state)
+    this.trajectoryRenderer?.sync(state)
     this.debugLayer?.sync(state)
   }
 

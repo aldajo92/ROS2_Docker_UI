@@ -1,27 +1,35 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import { useSimulation } from '../../app/useSimulation'
 import { PhaserSimulationRenderer } from '../renderers/phaser/core/PhaserSimulationRenderer'
-import type { PhaserTrailConfig } from '../renderers/phaser/config/PhaserRendererConfig'
+import type { PhaserTrajectoryVisualizationConfig } from '../renderers/phaser/config/PhaserRendererConfig'
+import type { PhaserTrajectoryRendererDebugSummary } from '../renderers/phaser/objects/PhaserTrajectoryRenderer'
 
 /**
  * Imperative surface exposed to the parent for renderer-only side
- * effects (e.g. wiping trail history). Mirrors
- * `ThreeSimulationViewportHandle` so a parent that already drives the
- * Three viewport can drive this one with no changes beyond the
- * conditional mount.
+ * effects (e.g. wiping the GPU/Graphics line cache, capturing a debug
+ * snapshot). Mirrors `ThreeSimulationViewportHandle`.
  */
 export interface PhaserSimulationViewportHandle {
+  /** Drops cached `Graphics` objects only. Does NOT clear `state.trajectories`. */
+  clearTrajectoryRenderCache(): void
+  /** @deprecated Use {@link clearTrajectoryRenderCache}. */
   clearTrails(): void
+  /**
+   * Temporary debug helper: returns an in-memory snapshot of the
+   * Phaser trajectory renderer state. Returns `undefined` if the
+   * scene/renderer haven't initialized yet.
+   */
+  getTrajectoryRendererDebugSummary():
+    | PhaserTrajectoryRendererDebugSummary
+    | undefined
 }
 
 export interface PhaserSimulationViewportProps {
   /**
-   * Trail visualization config. Owned by the parent (e.g. `App.tsx`)
-   * so the Inspector can edit it in React state. Changes are pushed
-   * into the renderer via `useEffect`; the renderer instance itself
-   * is NOT recreated on config change.
+   * Trajectory **drawing** style for Phaser. Sampling lives in the
+   * simulation (`TrajectoryTrackingSystem`).
    */
-  trailConfig?: PhaserTrailConfig
+  trajectoryVisualization?: PhaserTrajectoryVisualizationConfig
 }
 
 /**
@@ -33,15 +41,9 @@ export interface PhaserSimulationViewportProps {
  *   - Forward sim events (`tick`, `reset`, `scenarioLoaded`,
  *     `entityAdded`, `entityRemoved`, `collision`) to the renderer.
  *   - Forward window / container resize.
- *   - Apply renderer-config props (`trailConfig`) without recreating
- *     the renderer.
+ *   - Apply renderer-config props (`trajectoryVisualization`) without
+ *     recreating the renderer.
  *   - Tear everything down on unmount.
- *
- * Explicitly NOT here:
- *   - Anything Phaser-specific (`Phaser.*` lives in
- *     `renderers/phaser/...`).
- *   - Vehicle / physics / scenario logic.
- *   - Calls to `entity.update(...)`. The engine owns the tick.
  *
  * Switching between this and `ThreeSimulationViewport` is handled at
  * the App level — both components subscribe to the same engine, so
@@ -51,7 +53,7 @@ export interface PhaserSimulationViewportProps {
 export const PhaserSimulationViewport = forwardRef<
   PhaserSimulationViewportHandle,
   PhaserSimulationViewportProps
->(function PhaserSimulationViewport({ trailConfig }, ref) {
+>(function PhaserSimulationViewport({ trajectoryVisualization }, ref) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const rendererRef = useRef<PhaserSimulationRenderer | null>(null)
   const { engine } = useSimulation()
@@ -59,9 +61,14 @@ export const PhaserSimulationViewport = forwardRef<
   useImperativeHandle(
     ref,
     () => ({
-      clearTrails: () => {
-        rendererRef.current?.clearTrails()
+      clearTrajectoryRenderCache: () => {
+        rendererRef.current?.clearTrajectoryRenderCache()
       },
+      clearTrails: () => {
+        rendererRef.current?.clearTrajectoryRenderCache()
+      },
+      getTrajectoryRendererDebugSummary: () =>
+        rendererRef.current?.getTrajectoryRendererDebugSummary(),
     }),
     [],
   )
@@ -72,24 +79,35 @@ export const PhaserSimulationViewport = forwardRef<
 
     const renderer = new PhaserSimulationRenderer(
       container,
-      trailConfig ? { trail: trailConfig } : {},
+      trajectoryVisualization
+        ? { trajectoryVisualization }
+        : {},
     )
     rendererRef.current = renderer
     renderer.init(engine.state)
+
+    if (typeof globalThis !== 'undefined') {
+      ;(
+        globalThis as unknown as {
+          __phaserTrajectoryDebug?: () =>
+            | PhaserTrajectoryRendererDebugSummary
+            | undefined
+        }
+      ).__phaserTrajectoryDebug = () =>
+        rendererRef.current?.getTrajectoryRendererDebugSummary()
+    }
 
     const renderCurrent = () => {
       renderer.render(engine.state)
     }
 
-    const renderAndClearTrails = () => {
-      renderer.clearTrails()
-      renderer.render(engine.state)
-    }
-
     const unsubs = [
       engine.events.on('tick', renderCurrent),
-      engine.events.on('reset', renderAndClearTrails),
-      engine.events.on('scenarioLoaded', renderAndClearTrails),
+      // After reset / scenarioLoaded the simulation wipes
+      // state.trajectories itself, so the next sync removes stale
+      // lines automatically. We only need to repaint.
+      engine.events.on('reset', renderCurrent),
+      engine.events.on('scenarioLoaded', renderCurrent),
       engine.events.on('entityAdded', renderCurrent),
       engine.events.on('entityRemoved', renderCurrent),
       engine.events.on('collision', renderCurrent),
@@ -110,21 +128,24 @@ export const PhaserSimulationViewport = forwardRef<
       resizeObserver?.disconnect()
       renderer.dispose()
       rendererRef.current = null
+      if (typeof globalThis !== 'undefined') {
+        delete (
+          globalThis as unknown as { __phaserTrajectoryDebug?: unknown }
+        ).__phaserTrajectoryDebug
+      }
     }
     // The renderer is rebuilt only when the engine identity changes
     // (effectively never — `SimulationProvider` keeps a single engine
-    // across StrictMode passes). `trailConfig` updates are applied via
-    // a separate effect to avoid recreating the renderer on every
-    // Inspector slider tick.
+    // across StrictMode passes). `trajectoryVisualization` updates are
+    // applied via a separate effect to avoid recreating the renderer
+    // on every Inspector slider tick.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine])
 
-  // Push trail-config changes into the live renderer without
-  // recreating it.
   useEffect(() => {
-    if (!trailConfig) return
-    rendererRef.current?.setTrailConfig(trailConfig)
-  }, [trailConfig])
+    if (!trajectoryVisualization) return
+    rendererRef.current?.setTrajectoryVisualizationConfig(trajectoryVisualization)
+  }, [trajectoryVisualization])
 
   return (
     <section className="panel viewport">

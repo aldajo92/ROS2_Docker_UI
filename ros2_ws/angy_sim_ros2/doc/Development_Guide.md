@@ -109,11 +109,14 @@ schedule simulation ticks
 
 Three.js, Phaser, Pixi, Canvas, or WebGPU are visualization adapters only.
 
-Renderer-only state (e.g. `ThreeTrailConfig`, debug-layer toggles)
-lives in React state at the App / Inspector level and is pushed into
-the renderer through dedicated setters (`setTrailConfig`,
-`setTrailEnabled`, `clearTrails`, `setCameraMode`, `setProjection`).
-Never store it in `SimulationState`, on entities, or in scenario JSON.
+Renderer-only state (e.g. `ThreeTrajectoryVisualizationConfig` for
+line color/height, debug-layer toggles) lives in React state and is
+pushed into the Three.js renderer. **Trajectory history** lives in
+`SimulationState.trajectories` and is configured via
+`TrajectoryTrackingSystem` / `controller.setTrajectoryTrackingConfig` —
+not in the renderer. Never store actual trajectory samples in renderer
+code or on entities. Never store visualization-only fields in
+`SimulationState` or scenario JSON.
 
 ---
 
@@ -277,6 +280,7 @@ Default order:
 ScenarioSystem
 VehicleCommandSystem
 VehicleDynamicsSystem
+TrajectoryTrackingSystem
 CollisionSystem
 MetricsSystem
 CommunicationSystem optional
@@ -286,6 +290,7 @@ Rules:
 
 ```text
 VehicleCommandSystem must run before VehicleDynamicsSystem.
+TrajectoryTrackingSystem must run after VehicleDynamicsSystem (samples integrated poses).
 CollisionSystem must run after VehicleDynamicsSystem.
 CommunicationSystem should run after dynamics, collisions, and metrics.
 ```
@@ -403,44 +408,34 @@ engine 'tick'      -> useKeyboardVehicleControl
 
 ---
 
-### Bad: trail config in `SimulationState` or `VehicleEntity`
+### Bad: storing actual trajectory **samples** in the renderer
 
 ```ts
-// in SimulationState
-this.trailLength = 500
-// in VehicleEntity
-this.trailColor = '#ff5050'
+// in ThreeTrajectoryRenderer.sync — WRONG
+state.trajectories.append(...)
 ```
 
-Trail visualization is renderer-only state. Tucking it onto the
-simulation core would (a) leak through scenario JSON, (b) couple the
-core to a specific renderer, and (c) force every alternative
-renderer to reproduce the same fields.
+Actual trajectory history belongs in `SimulationState.trajectories`,
+written only by `TrajectoryTrackingSystem`. Renderers read and draw.
 
-Correct path:
+Correct paths:
 
 ```text
-React state (App.tsx)  ──ThreeTrailConfig──▶  ThreeSimulationViewport
-                                            (useEffect)
-                                                │
-                                                ▼
-                                ThreeSimulationRenderer.setTrailConfig(...)
-                                                │
-                                                ▼
-                                       ThreeTrailRenderer.setConfig(...)
+Trajectory sampling:
+  TrajectoryTrackingSystem  ──▶  state.trajectories
+
+Three.js visualization (style only):
+  React state (App.tsx)  ──ThreeTrajectoryVisualizationConfig──▶
+  ThreeSimulationViewport → ThreeSimulationRenderer.setTrajectoryVisualizationConfig(...)
+       └──▶ ThreeTrajectoryRenderer.sync(state)   // read-only
 ```
 
-The Inspector edits a `ThreeTrailConfig` in React state and passes
-it down. The viewport applies updates to the renderer in a separate
-`useEffect` so slider edits don't recreate the renderer instance.
+Inspector splits **tracking** (`TrajectoryTrackingConfig` →
+`controller.setTrajectoryTrackingConfig`) from **visualization**
+(height, color, opacity, line width → renderer).
 
-`ThreeTrailConfig.samplingMode` selects between two strategies:
-`pointCount` keeps the last `maxPoints` appended samples (the
-historical default — a stationary vehicle still grows the trail);
-`timeWindow` prunes by sim time (`state.clock.time()`), throttles
-appends with `minSampleDtSec`, and uses `maxPoints` only as a
-safety cap. Both modes use sim time, never wall-clock — a paused
-engine produces a paused trail.
+Clearing **data**: `controller.clearTrajectories()`. Clearing **GPU
+lines only**: `clearTrajectoryRenderCache()` on the Three renderer.
 
 ---
 

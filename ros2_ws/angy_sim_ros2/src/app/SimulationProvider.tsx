@@ -13,6 +13,7 @@ import { SimpleCircleCollisionBackend2D } from '../simulation/collision/SimpleCi
 import { NoopCollisionBackend2D } from '../simulation/collision/NoopCollisionBackend2D'
 import { MetricsSystem } from '../simulation/systems/MetricsSystem'
 import { ScenarioSystem } from '../simulation/systems/ScenarioSystem'
+import { TrajectoryTrackingSystem } from '../simulation/systems/TrajectoryTrackingSystem'
 import { VehicleCommandQueue } from '../simulation/commands/VehicleCommandQueue'
 import { VehicleCommandSystem } from '../simulation/commands/VehicleCommandSystem'
 import { SimulationContext } from './SimulationContext'
@@ -66,14 +67,16 @@ function buildContext(collisionConfig: CollisionConfig): SimulationContextValue 
   const commandQueue = new VehicleCommandQueue()
 
   // Registration order is the tick order. Keep it explicit:
-  //   1. ScenarioSystem        — may emit commands or spawn entities
-  //   2. VehicleCommandSystem  — drains the queue onto vehicles
-  //   3. VehicleDynamicsSystem — integrates pose using the new commands
-  //   4. CollisionSystem       — checks collisions on the integrated state
-  //   5. MetricsSystem         — last so it observes the final state
+  //   1. ScenarioSystem             — may emit commands or spawn entities
+  //   2. VehicleCommandSystem       — drains the queue onto vehicles
+  //   3. VehicleDynamicsSystem     — integrates pose
+  //   4. TrajectoryTrackingSystem   — appends to state.trajectories
+  //   5. CollisionSystem            — checks collisions
+  //   6. MetricsSystem              — observes final state
   engine.systems.add(new ScenarioSystem())
   engine.systems.add(new VehicleCommandSystem(commandQueue))
   engine.systems.add(new VehicleDynamicsSystem())
+  engine.systems.add(new TrajectoryTrackingSystem())
   engine.systems.add(new CollisionSystem(buildCollisionBackend(collisionConfig)))
   engine.systems.add(new MetricsSystem())
 

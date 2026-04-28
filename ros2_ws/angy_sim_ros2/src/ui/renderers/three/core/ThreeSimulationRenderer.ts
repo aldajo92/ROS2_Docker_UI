@@ -7,14 +7,17 @@ import { ThreeAxesRenderer } from '../objects/ThreeAxesRenderer'
 import { ThreeVehicleRenderer } from '../objects/ThreeVehicleRenderer'
 import { ThreeStaticObstacleRenderer } from '../objects/ThreeStaticObstacleRenderer'
 import { ThreeDynamicActorRenderer } from '../objects/ThreeDynamicActorRenderer'
-import { ThreeTrailRenderer } from '../objects/ThreeTrailRenderer'
+import {
+  ThreeTrajectoryRenderer,
+  type ThreeTrajectoryRendererDebugSummary,
+} from '../objects/ThreeTrajectoryRenderer'
 import { ThreePathRenderer } from '../objects/ThreePathRenderer'
 import { ThreeDebugLayer } from '../debug/ThreeDebugLayer'
 import { CameraControllerManager } from '../cameras/CameraControllerManager'
 import {
   DEFAULT_THREE_RENDERER_CONFIG,
   type ThreeRendererConfig,
-  type ThreeTrailConfig,
+  type ThreeTrajectoryVisualizationConfig,
 } from '../config/ThreeRendererConfig'
 import type { CameraMode } from '../cameras/CameraMode'
 import type { Projection } from '../cameras/Projection'
@@ -34,7 +37,7 @@ import type { Projection } from '../cameras/Projection'
  */
 export class ThreeSimulationRenderer implements SimulationRenderer {
   private readonly container: HTMLElement
-  private readonly config: ThreeRendererConfig
+  private config: ThreeRendererConfig
 
   private context?: ThreeSceneContext
   /** Last state passed to `render()`. Used to re-paint on demand
@@ -46,7 +49,7 @@ export class ThreeSimulationRenderer implements SimulationRenderer {
   private vehicleRenderer?: ThreeVehicleRenderer
   private staticObstacleRenderer?: ThreeStaticObstacleRenderer
   private dynamicActorRenderer?: ThreeDynamicActorRenderer
-  private trailRenderer?: ThreeTrailRenderer
+  private trajectoryRenderer?: ThreeTrajectoryRenderer
   private pathRenderer?: ThreePathRenderer
   private debugLayer?: ThreeDebugLayer
   private cameraControllerManager?: CameraControllerManager
@@ -95,11 +98,14 @@ export class ThreeSimulationRenderer implements SimulationRenderer {
       this.axesRenderer.init()
     }
 
+    this.pathRenderer = new ThreePathRenderer(this.context)
+    this.trajectoryRenderer = new ThreeTrajectoryRenderer(
+      this.context,
+      this.config.trajectoryVisualization,
+    )
     this.vehicleRenderer = new ThreeVehicleRenderer(this.context)
     this.staticObstacleRenderer = new ThreeStaticObstacleRenderer(this.context)
     this.dynamicActorRenderer = new ThreeDynamicActorRenderer(this.context)
-    this.trailRenderer = new ThreeTrailRenderer(this.context, this.config.trail)
-    this.pathRenderer = new ThreePathRenderer(this.context)
 
     if (this.config.showDebug) {
       this.debugLayer = new ThreeDebugLayer(this.context)
@@ -110,7 +116,6 @@ export class ThreeSimulationRenderer implements SimulationRenderer {
       this.config.cameraMode,
     )
 
-    // Initial frame so the user sees the static scene before pressing Start.
     this.render(state)
   }
 
@@ -119,10 +124,10 @@ export class ThreeSimulationRenderer implements SimulationRenderer {
     this.lastState = state
 
     this.pathRenderer?.sync(state)
+    this.trajectoryRenderer?.sync(state)
     this.vehicleRenderer?.sync(state)
     this.staticObstacleRenderer?.sync(state)
     this.dynamicActorRenderer?.sync(state)
-    this.trailRenderer?.sync(state)
     this.debugLayer?.sync(state)
 
     this.cameraControllerManager?.update(state)
@@ -141,9 +146,6 @@ export class ThreeSimulationRenderer implements SimulationRenderer {
       camera.aspect = width / height
       camera.updateProjectionMatrix()
     } else if (camera instanceof THREE.OrthographicCamera) {
-      // Recompute the orthographic frustum so the scene neither
-      // squashes nor crops on aspect changes. Vertical extent is
-      // fixed (`orthoFrustumHeight`); horizontal extent follows aspect.
       const frustumH = this.config.orthoFrustumHeight
       const aspect = width / height
       camera.left = (-frustumH * aspect) / 2
@@ -160,7 +162,7 @@ export class ThreeSimulationRenderer implements SimulationRenderer {
     this.cameraControllerManager?.dispose()
     this.debugLayer?.dispose()
     this.pathRenderer?.dispose()
-    this.trailRenderer?.dispose()
+    this.trajectoryRenderer?.dispose()
     this.dynamicActorRenderer?.dispose()
     this.staticObstacleRenderer?.dispose()
     this.vehicleRenderer?.dispose()
@@ -182,36 +184,79 @@ export class ThreeSimulationRenderer implements SimulationRenderer {
     this.vehicleRenderer = undefined
     this.staticObstacleRenderer = undefined
     this.dynamicActorRenderer = undefined
-    this.trailRenderer = undefined
+    this.trajectoryRenderer = undefined
     this.pathRenderer = undefined
     this.debugLayer = undefined
     this.cameraControllerManager = undefined
   }
 
-  /** Wipe trails — call from `reset` / `scenarioLoaded` event handlers. */
-  clearTrails(): void {
-    this.trailRenderer?.clear()
+  /**
+   * Clears GPU line objects only. Does not modify `state.trajectories`.
+   * Use `SimulationController.clearTrajectories()` to wipe simulation data.
+   */
+  clearTrajectoryRenderCache(): void {
+    this.trajectoryRenderer?.clearRenderCache()
     if (this.lastState) this.render(this.lastState)
+  }
+
+  setTrajectoryVisualizationConfig(
+    partial: Partial<ThreeTrajectoryVisualizationConfig>,
+  ): void {
+    const wasEnabled = this.config.trajectoryVisualization.enabled
+    this.config.trajectoryVisualization = {
+      ...this.config.trajectoryVisualization,
+      ...partial,
+    }
+    this.trajectoryRenderer?.setConfig(partial)
+    const toggledOn =
+      partial.enabled === true && wasEnabled !== this.config.trajectoryVisualization.enabled
+    if (toggledOn) {
+      // Defensive rebuild: if UI toggles visibility back on after a cache-only
+      // hide path, force a clean line reconstruction from state.trajectories.
+      this.trajectoryRenderer?.clearRenderCache()
+    }
+    if (this.lastState) this.render(this.lastState)
+  }
+
+  setTrajectoryVisualizationEnabled(enabled: boolean): void {
+    this.setTrajectoryVisualizationConfig({ enabled })
+  }
+
+  getTrajectoryVisualizationConfig(): ThreeTrajectoryVisualizationConfig {
+    return (
+      this.trajectoryRenderer?.getConfig() ?? this.config.trajectoryVisualization
+    )
+  }
+
+  /** @deprecated Use {@link clearTrajectoryRenderCache} — does not clear sim state. */
+  clearTrails(): void {
+    this.clearTrajectoryRenderCache()
+  }
+
+  /** @deprecated Use {@link setTrajectoryVisualizationConfig} */
+  setTrailConfig(partial: Partial<ThreeTrajectoryVisualizationConfig>): void {
+    this.setTrajectoryVisualizationConfig(partial)
+  }
+
+  /** @deprecated Use {@link setTrajectoryVisualizationEnabled} */
+  setTrailEnabled(enabled: boolean): void {
+    this.setTrajectoryVisualizationEnabled(enabled)
+  }
+
+  /** @deprecated Use {@link getTrajectoryVisualizationConfig} */
+  getTrailConfig(): ThreeTrajectoryVisualizationConfig {
+    return this.getTrajectoryVisualizationConfig()
   }
 
   /**
-   * Apply a partial trail-config update. The trail renderer takes
-   * effect immediately (color / opacity / height / max-points / etc.
-   * are reflected on the next paint), and we trigger a render so the
-   * change is visible even if the simulation is paused.
+   * Returns a temporary debug snapshot of the trajectory renderer's
+   * internal state for visibility/material/positioning diagnosis.
+   * Not part of the long-term API.
    */
-  setTrailConfig(config: Partial<ThreeTrailConfig>): void {
-    this.config.trail = { ...this.config.trail, ...config }
-    this.trailRenderer?.setConfig(config)
-    if (this.lastState) this.render(this.lastState)
-  }
-
-  setTrailEnabled(enabled: boolean): void {
-    this.setTrailConfig({ enabled })
-  }
-
-  getTrailConfig(): ThreeTrailConfig {
-    return this.trailRenderer?.getConfig() ?? this.config.trail
+  getTrajectoryRendererDebugSummary():
+    | ThreeTrajectoryRendererDebugSummary
+    | undefined {
+    return this.trajectoryRenderer?.getDebugSummary()
   }
 
   setCameraMode(mode: CameraMode): void {
@@ -222,12 +267,6 @@ export class ThreeSimulationRenderer implements SimulationRenderer {
     return this.cameraControllerManager?.getMode()
   }
 
-  /**
-   * Swap the underlying camera between perspective and orthographic.
-   * The active controller (e.g. OrbitControls) is rebound against
-   * the new camera object via `cameraControllerManager.reattachActive()`.
-   * Idempotent: same projection is a no-op.
-   */
   setProjection(projection: Projection): void {
     if (!this.context) return
     if (projection === this.projection) return

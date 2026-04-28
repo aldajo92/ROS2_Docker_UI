@@ -4,6 +4,8 @@ import type { SimulationEvents } from '../events/SimulationEvents'
 import type { Entity } from '../entities/Entity'
 import type { SimulationSystem } from '../systems/SimulationSystem'
 import type { ScenarioSpec } from '../scenarios/Scenario'
+import type { TrajectoryTrackingConfig } from '../trajectories/TrajectoryTrackingConfig'
+import type { TrajectoryDebugRecord } from '../trajectories/TrajectoryDebugRecord'
 import { ScenarioLoader } from '../scenarios/ScenarioLoader'
 
 import { EntityManager } from './EntityManager'
@@ -78,6 +80,7 @@ export class SimulationEngine {
     this.entities.clear()
     this.state.resetMetrics()
     this.state.paths.clear()
+    this.state.trajectories.clear()
     this.state.scenarioName = null
     this.systems.reset()
     this.events.emit('reset', undefined)
@@ -102,7 +105,32 @@ export class SimulationEngine {
       })
     }
     this.state.scenarioName = spec.name
-    this.events.emit('scenarioLoaded', { name: spec.name })
+    this.applyTrajectoryTrackingFromScenario(spec)
+    this.events.emit('scenarioLoaded', {
+      name: spec.name,
+      trajectoryTracking: spec.trajectoryTracking,
+    })
+  }
+
+  /** Clear simulation-owned trajectory buffers (optional per-entity). */
+  clearTrajectories(entityId?: string): void {
+    this.state.trajectories.clear(entityId)
+  }
+
+  setTrajectoryDebugEnabled(enabled: boolean): void {
+    this.state.trajectoryDebug.setEnabled(enabled)
+  }
+
+  isTrajectoryDebugEnabled(): boolean {
+    return this.state.trajectoryDebug.isEnabled()
+  }
+
+  clearTrajectoryDebugRecords(): void {
+    this.state.trajectoryDebug.clear()
+  }
+
+  getTrajectoryDebugRecords(): TrajectoryDebugRecord[] {
+    return this.state.trajectoryDebug.getRecords()
   }
 
   /* -- entity helpers -------------------------------------------------- */
@@ -138,6 +166,17 @@ export class SimulationEngine {
 
   setSpeedFactor(factor: number): void {
     this.loop.setSpeedFactor(factor)
+  }
+
+  /**
+   * Pushes scenario trajectory settings onto `TrajectoryTrackingSystem`
+   * when that system is registered under the name `trajectoryTracking`.
+   */
+  private applyTrajectoryTrackingFromScenario(spec: ScenarioSpec): void {
+    const sys = this.systems.get('trajectoryTracking') as
+      | { setConfig?: (c?: TrajectoryTrackingConfig) => void }
+      | undefined
+    sys?.setConfig?.(spec.trajectoryTracking)
   }
 
   /* -- internals ------------------------------------------------------- */

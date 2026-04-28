@@ -407,6 +407,98 @@ describe('ScenarioLoader.parse — interaction.keyboardControl', () => {
   })
 })
 
+describe('ScenarioLoader.parse — trajectoryTracking', () => {
+  it('accepts missing trajectoryTracking', () => {
+    const spec = ScenarioLoader.parse({ name: 's', entities: [] })
+    expect(spec.trajectoryTracking).toBeUndefined()
+  })
+
+  it('accepts and preserves trajectoryTracking config', () => {
+    const spec = ScenarioLoader.parse({
+      name: 'tracking-scenario',
+      entities: [],
+      trajectoryTracking: {
+        enabled: true,
+        trackAllSupportedEntities: false,
+        defaultSamplingMode: 'pointCount',
+        defaultMaxSamples: 500,
+        defaultMinDistance: 0,
+        entities: [
+          {
+            entityId: 'ego',
+            enabled: true,
+            samplingMode: 'pointCount',
+            maxSamples: 500,
+          },
+          {
+            entityId: 'actor_1',
+            enabled: true,
+            samplingMode: 'timeWindow',
+            timeWindowSec: 10,
+            maxSamples: 500,
+            minSampleDtSec: 0.05,
+            minDistance: 0.01,
+          },
+        ],
+      },
+    })
+    expect(spec.trajectoryTracking?.enabled).toBe(true)
+    expect(spec.trajectoryTracking?.entities).toHaveLength(2)
+    expect(spec.trajectoryTracking?.entities?.[1].entityId).toBe('actor_1')
+    expect(spec.trajectoryTracking?.entities?.[1].minSampleDtSec).toBe(0.05)
+  })
+
+  it('rejects invalid sampling mode', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        trajectoryTracking: { defaultSamplingMode: 'radial' as never },
+      }),
+    ).toThrow(/pointCount/)
+  })
+
+  it('rejects non-integer defaultMaxSamples', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        trajectoryTracking: { defaultMaxSamples: 2.5 },
+      }),
+    ).toThrow(/integer/)
+  })
+
+  it('rejects defaultMaxSamples < 2', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        trajectoryTracking: { defaultMaxSamples: 1 },
+      }),
+    ).toThrow(/integer/)
+  })
+
+  it('rejects non-positive defaultTimeWindowSec', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        trajectoryTracking: { defaultTimeWindowSec: 0 },
+      }),
+    ).toThrow(/> 0/)
+  })
+
+  it('rejects negative defaultMinSampleDtSec', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        trajectoryTracking: { defaultMinSampleDtSec: -1 },
+      }),
+    ).toThrow(/>= 0/)
+  })
+})
+
 describe('ScenarioLoader.loadFromUrl', () => {
   it('fetches and parses a scenario via an injected fetch', async () => {
     const fakeFetch = (async () =>

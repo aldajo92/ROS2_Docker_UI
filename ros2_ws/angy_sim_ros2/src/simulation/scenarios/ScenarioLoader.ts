@@ -13,6 +13,11 @@ import type {
   ScenarioInteractionConfig,
   ScenarioSpec,
 } from './Scenario'
+import type {
+  EntityTrajectoryTrackingConfig,
+  TrajectorySamplingMode,
+  TrajectoryTrackingConfig,
+} from '../trajectories/TrajectoryTrackingConfig'
 
 export class ScenarioParseError extends Error {
   constructor(message: string) {
@@ -41,12 +46,17 @@ export class ScenarioLoader {
       input.paths !== undefined ? parsePaths(input.paths) : undefined
     const interaction =
       input.interaction !== undefined ? parseInteraction(input.interaction) : undefined
+    const trajectoryTracking =
+      input.trajectoryTracking !== undefined
+        ? parseTrajectoryTracking(input.trajectoryTracking)
+        : undefined
     return {
       name: input.name,
       description,
       entities: input.entities.map((e: unknown, i: number) => parseEntity(e, i)),
       paths,
       interaction,
+      trajectoryTracking,
     }
   }
 
@@ -235,6 +245,176 @@ function optionalNonNegative(v: unknown, path: string): number | undefined {
     throw new ScenarioParseError(`${path} must be a finite non-negative number`)
   }
   return v
+}
+
+function requireBoolean(v: unknown, path: string): boolean {
+  if (typeof v !== 'boolean') {
+    throw new ScenarioParseError(`${path} must be a boolean`)
+  }
+  return v
+}
+
+function requireIntegerAtLeast2(v: unknown, path: string): number {
+  if (
+    typeof v !== 'number' ||
+    !Number.isFinite(v) ||
+    !Number.isInteger(v) ||
+    v < 2
+  ) {
+    throw new ScenarioParseError(`${path} must be a finite integer >= 2`)
+  }
+  return v
+}
+
+function requirePositiveFinite(v: unknown, path: string): number {
+  if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0) {
+    throw new ScenarioParseError(`${path} must be a finite number > 0`)
+  }
+  return v
+}
+
+function requireNonNegativeFinite(v: unknown, path: string): number {
+  if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) {
+    throw new ScenarioParseError(`${path} must be a finite number >= 0`)
+  }
+  return v
+}
+
+function parseSamplingMode(
+  v: unknown,
+  path: string,
+): TrajectorySamplingMode {
+  if (v === 'pointCount' || v === 'timeWindow') return v
+  throw new ScenarioParseError(
+    `${path} must be "pointCount" or "timeWindow"`,
+  )
+}
+
+function parseTrajectoryTracking(input: unknown): TrajectoryTrackingConfig {
+  const path = 'scenario.trajectoryTracking'
+  if (!isObj(input)) {
+    throw new ScenarioParseError(`${path} must be an object`)
+  }
+
+  const enabled =
+    input.enabled !== undefined
+      ? requireBoolean(input.enabled, `${path}.enabled`)
+      : undefined
+  const trackAllSupportedEntities =
+    input.trackAllSupportedEntities !== undefined
+      ? requireBoolean(
+          input.trackAllSupportedEntities,
+          `${path}.trackAllSupportedEntities`,
+        )
+      : undefined
+  const defaultSamplingMode =
+    input.defaultSamplingMode !== undefined
+      ? parseSamplingMode(input.defaultSamplingMode, `${path}.defaultSamplingMode`)
+      : undefined
+  const defaultMaxSamples =
+    input.defaultMaxSamples !== undefined
+      ? requireIntegerAtLeast2(
+          input.defaultMaxSamples,
+          `${path}.defaultMaxSamples`,
+        )
+      : undefined
+  const defaultTimeWindowSec =
+    input.defaultTimeWindowSec !== undefined
+      ? requirePositiveFinite(
+          input.defaultTimeWindowSec,
+          `${path}.defaultTimeWindowSec`,
+        )
+      : undefined
+  const defaultMinSampleDtSec =
+    input.defaultMinSampleDtSec !== undefined
+      ? requireNonNegativeFinite(
+          input.defaultMinSampleDtSec,
+          `${path}.defaultMinSampleDtSec`,
+        )
+      : undefined
+  const defaultMinDistance =
+    input.defaultMinDistance !== undefined
+      ? requireNonNegativeFinite(
+          input.defaultMinDistance,
+          `${path}.defaultMinDistance`,
+        )
+      : undefined
+  const entities =
+    input.entities !== undefined
+      ? parseTrajectoryEntities(input.entities, `${path}.entities`)
+      : undefined
+
+  return {
+    ...(enabled !== undefined && { enabled }),
+    ...(trackAllSupportedEntities !== undefined && {
+      trackAllSupportedEntities,
+    }),
+    ...(defaultSamplingMode !== undefined && { defaultSamplingMode }),
+    ...(defaultMaxSamples !== undefined && { defaultMaxSamples }),
+    ...(defaultTimeWindowSec !== undefined && { defaultTimeWindowSec }),
+    ...(defaultMinSampleDtSec !== undefined && { defaultMinSampleDtSec }),
+    ...(defaultMinDistance !== undefined && { defaultMinDistance }),
+    ...(entities !== undefined && { entities }),
+  }
+}
+
+function parseTrajectoryEntities(
+  input: unknown,
+  path: string,
+): EntityTrajectoryTrackingConfig[] {
+  if (!Array.isArray(input)) {
+    throw new ScenarioParseError(`${path} must be an array`)
+  }
+  return input.map((e: unknown, i: number) =>
+    parseTrajectoryEntityConfig(e, i, path),
+  )
+}
+
+function parseTrajectoryEntityConfig(
+  input: unknown,
+  index: number,
+  basePath: string,
+): EntityTrajectoryTrackingConfig {
+  const path = `${basePath}[${index}]`
+  if (!isObj(input)) throw new ScenarioParseError(`${path} must be an object`)
+  if (typeof input.entityId !== 'string' || input.entityId.length === 0) {
+    throw new ScenarioParseError(`${path}.entityId must be a non-empty string`)
+  }
+
+  const enabled =
+    input.enabled !== undefined
+      ? requireBoolean(input.enabled, `${path}.enabled`)
+      : undefined
+  const samplingMode =
+    input.samplingMode !== undefined
+      ? parseSamplingMode(input.samplingMode, `${path}.samplingMode`)
+      : undefined
+  const maxSamples =
+    input.maxSamples !== undefined
+      ? requireIntegerAtLeast2(input.maxSamples, `${path}.maxSamples`)
+      : undefined
+  const timeWindowSec =
+    input.timeWindowSec !== undefined
+      ? requirePositiveFinite(input.timeWindowSec, `${path}.timeWindowSec`)
+      : undefined
+  const minSampleDtSec =
+    input.minSampleDtSec !== undefined
+      ? requireNonNegativeFinite(input.minSampleDtSec, `${path}.minSampleDtSec`)
+      : undefined
+  const minDistance =
+    input.minDistance !== undefined
+      ? requireNonNegativeFinite(input.minDistance, `${path}.minDistance`)
+      : undefined
+
+  return {
+    entityId: input.entityId,
+    ...(enabled !== undefined && { enabled }),
+    ...(samplingMode !== undefined && { samplingMode }),
+    ...(maxSamples !== undefined && { maxSamples }),
+    ...(timeWindowSec !== undefined && { timeWindowSec }),
+    ...(minSampleDtSec !== undefined && { minSampleDtSec }),
+    ...(minDistance !== undefined && { minDistance }),
+  }
 }
 
 function parseEntity(input: unknown, index: number): EntitySpec {

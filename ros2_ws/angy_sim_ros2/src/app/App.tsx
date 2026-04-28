@@ -22,13 +22,17 @@ import {
   type KeyboardControlUiState,
 } from '../ui/input/KeyboardControlState'
 import {
-  DEFAULT_THREE_TRAIL_CONFIG,
-  type ThreeTrailConfig,
+  DEFAULT_THREE_TRAJECTORY_VISUALIZATION_CONFIG,
+  type ThreeTrajectoryVisualizationConfig,
 } from '../ui/renderers/three/config/ThreeRendererConfig'
 import {
-  DEFAULT_PHASER_TRAIL_CONFIG,
-  type PhaserTrailConfig,
+  DEFAULT_PHASER_TRAJECTORY_VISUALIZATION_CONFIG,
+  type PhaserTrajectoryVisualizationConfig,
 } from '../ui/renderers/phaser/config/PhaserRendererConfig'
+import {
+  DEFAULT_TRAJECTORY_TRACKING_CONFIG,
+  type TrajectoryTrackingConfig,
+} from '../simulation/trajectories/TrajectoryTrackingConfig'
 import type {
   ScenarioInteractionConfig,
   ScenarioSpec,
@@ -42,55 +46,117 @@ export default function App() {
   )
 }
 
-/**
- * Lives inside `SimulationProvider` so it can call `useSimulation()`
- * for engine event subscriptions (notably `reset`, which we use to
- * reapply the most recent scenario's keyboard-control defaults).
- */
 function AppShell() {
-  const { engine } = useSimulation()
+  const { engine, controller } = useSimulation()
 
-  // Trail visualization is renderer-only state. Owning it here (not
-  // in `SimulationProvider` / `SimulationState`) is what keeps the
-  // simulation core renderer-agnostic — the engine never sees these
-  // values.
-  const [trailConfig, setTrailConfig] = useState<ThreeTrailConfig>(
-    DEFAULT_THREE_TRAIL_CONFIG,
-  )
-  // Phaser keeps its own trail-config slice. The Inspector currently
-  // edits the Three.js settings; we mirror the relevant fields onto
-  // the Phaser side so the two adapters stay visually aligned. If/when
-  // the Inspector grows separate Phaser controls, this can split.
-  const phaserTrailConfig = useMemo<PhaserTrailConfig>(
+  const [trajectoryVisualization, setTrajectoryVisualization] =
+    useState<ThreeTrajectoryVisualizationConfig>(
+      DEFAULT_THREE_TRAJECTORY_VISUALIZATION_CONFIG,
+    )
+
+  const [trajectoryTrackingConfig, setTrajectoryTrackingConfig] =
+    useState<TrajectoryTrackingConfig>(() => ({
+      ...DEFAULT_TRAJECTORY_TRACKING_CONFIG,
+    }))
+  const [trajectoryDebugEnabled, setTrajectoryDebugEnabled] = useState(false)
+
+  const phaserTrajectoryVisualization = useMemo<PhaserTrajectoryVisualizationConfig>(
     () => ({
-      ...DEFAULT_PHASER_TRAIL_CONFIG,
-      enabled: trailConfig.enabled,
-      maxPoints: trailConfig.maxPoints,
-      minDistance: trailConfig.minDistance,
-      color: trailConfig.color,
-      opacity: trailConfig.opacity,
-      lineWidth: trailConfig.lineWidth,
+      ...DEFAULT_PHASER_TRAJECTORY_VISUALIZATION_CONFIG,
+      enabled: trajectoryVisualization.enabled,
+      color: trajectoryVisualization.color,
+      opacity: trajectoryVisualization.opacity,
+      lineWidth: trajectoryVisualization.lineWidth,
     }),
-    [trailConfig],
+    [trajectoryVisualization],
   )
 
-  // Active renderer adapter. UI-only state — the engine doesn't see
-  // it, and switching adapters does NOT reset the simulation.
   const [rendererType, setRendererType] = useState<RendererType>(
     DEFAULT_RENDERER_TYPE,
   )
 
-  const viewportRef = useRef<SimulationViewportSwitcherHandle | null>(null)
+  const applyTrajectoryTracking = useCallback(
+    (next: TrajectoryTrackingConfig) => {
+      setTrajectoryTrackingConfig(next)
+      controller.setTrajectoryTrackingConfig(next)
+    },
+    [controller],
+  )
 
-  const handleClearTrails = useCallback(() => {
-    viewportRef.current?.clearTrails()
+  const handleClearTrajectories = useCallback(() => {
+    controller.clearTrajectories()
+  }, [controller])
+
+  const handleTrajectoryDebugEnabledChange = useCallback(
+    (enabled: boolean) => {
+      setTrajectoryDebugEnabled(enabled)
+      controller.setTrajectoryDebugEnabled(enabled)
+    },
+    [controller],
+  )
+
+  const handleExportTrajectoryDebug = useCallback(() => {
+    const records = controller.getTrajectoryDebugRecords()
+    const blob = new Blob([JSON.stringify(records, null, 2)], {
+      type: 'application/json',
+    })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `trajectory-debug-${Date.now()}.json`
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    URL.revokeObjectURL(url)
+  }, [controller])
+
+  const handleClearTrajectoryDebug = useCallback(() => {
+    controller.clearTrajectoryDebugRecords()
+  }, [controller])
+
+  const viewportSwitcherRef = useRef<SimulationViewportSwitcherHandle | null>(
+    null,
+  )
+
+  const handleExportRendererDebug = useCallback(() => {
+    const tagged =
+      viewportSwitcherRef.current?.getActiveTrajectoryRendererDebugSummary()
+    if (!tagged) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[trajectory-debug] Renderer debug summary unavailable. The viewport may not have initialized yet.',
+      )
+      return
+    }
+    // eslint-disable-next-line no-console
+    console.log(
+      `[trajectory-debug] ${tagged.renderer} renderer summary:`,
+      tagged.summary,
+    )
+    const blob = new Blob([JSON.stringify(tagged.summary, null, 2)], {
+      type: 'application/json',
+    })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `${tagged.renderer}-trajectory-renderer-debug-${Date.now()}.json`
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    URL.revokeObjectURL(url)
   }, [])
 
-  // Keyboard-control state is also UI-only. Initial values come from
-  // `scenario.interaction.keyboardControl`; the Inspector overrides
-  // them at runtime. We stash the most recent scenario interaction
-  // config in a ref so the engine `reset` event can reapply it
-  // without holding the full spec.
+  useEffect(() => {
+    setTrajectoryTrackingConfig(controller.getTrajectoryTrackingConfig())
+    setTrajectoryDebugEnabled(controller.isTrajectoryDebugEnabled())
+  }, [controller])
+
+  useEffect(() => {
+    return engine.events.on('scenarioLoaded', () => {
+      setTrajectoryTrackingConfig(controller.getTrajectoryTrackingConfig())
+    })
+  }, [engine, controller])
+
   const [keyboardControlState, setKeyboardControlState] =
     useState<KeyboardControlUiState>(DEFAULT_KEYBOARD_CONTROL_UI_STATE)
   const lastInteractionRef = useRef<ScenarioInteractionConfig | undefined>(
@@ -102,11 +168,6 @@ function AppShell() {
     setKeyboardControlState(deriveKeyboardControlState(spec.interaction))
   }, [])
 
-  // Reapply the last scenario's keyboard defaults whenever the engine
-  // resets — covers both manual Reset and the implicit reset that
-  // happens inside `loadScenario(...)`. The scenarioLoaded callback
-  // updates the ref *before* `controller.loadScenarioFromJson` runs,
-  // so the new defaults are already in place when this fires.
   useEffect(() => {
     return engine.events.on('reset', () => {
       setKeyboardControlState(
@@ -128,10 +189,10 @@ function AppShell() {
         <div className="layout">
           <div className="layout-left">
             <SimulationViewportSwitcher
-              ref={viewportRef}
+              ref={viewportSwitcherRef}
               rendererType={rendererType}
-              threeTrailConfig={trailConfig}
-              phaserTrailConfig={phaserTrailConfig}
+              threeTrajectoryVisualization={trajectoryVisualization}
+              phaserTrajectoryVisualization={phaserTrajectoryVisualization}
             />
           </div>
           <aside className="layout-right" aria-label="Inspector">
@@ -148,9 +209,17 @@ function AppShell() {
               onChange={setKeyboardControlState}
             />
             <RendererSettingsPanel
-              trailConfig={trailConfig}
-              onTrailConfigChange={setTrailConfig}
-              onClearTrails={handleClearTrails}
+              trajectoryTrackingConfig={trajectoryTrackingConfig}
+              onTrajectoryTrackingChange={applyTrajectoryTracking}
+              trajectoryVisualization={trajectoryVisualization}
+              onTrajectoryVisualizationChange={setTrajectoryVisualization}
+              onClearTrajectories={handleClearTrajectories}
+              trajectoryDebugEnabled={trajectoryDebugEnabled}
+              onTrajectoryDebugEnabledChange={handleTrajectoryDebugEnabledChange}
+              onExportTrajectoryDebug={handleExportTrajectoryDebug}
+              onClearTrajectoryDebug={handleClearTrajectoryDebug}
+              activeRendererType={rendererType}
+              onExportActiveRendererDebug={handleExportRendererDebug}
             />
             <EntityListPanel />
           </aside>

@@ -9,7 +9,8 @@ import { useSimulation } from '../../app/useSimulation'
 import { ThreeSimulationRenderer } from '../renderers/three/core/ThreeSimulationRenderer'
 import type { CameraMode } from '../renderers/three/cameras/CameraMode'
 import type { Projection } from '../renderers/three/cameras/Projection'
-import type { ThreeTrailConfig } from '../renderers/three/config/ThreeRendererConfig'
+import type { ThreeTrajectoryVisualizationConfig } from '../renderers/three/config/ThreeRendererConfig'
+import type { ThreeTrajectoryRendererDebugSummary } from '../renderers/three/objects/ThreeTrajectoryRenderer'
 
 /** Cycle order used by the `c` key. Matches the manager's mode set. */
 const CAMERA_MODE_CYCLE: readonly CameraMode[] = [
@@ -25,66 +26,57 @@ const MODE_LABEL: Record<CameraMode, string> = {
 }
 
 /**
- * Imperative surface exposed to the parent for renderer-only side
- * effects (e.g. wiping trail history) that React state can't model
- * without forcing a re-render. Keep this surface tiny — anything
- * that's well-modeled as state should stay in props.
+ * Imperative surface: GPU cache clear only (does not clear simulation
+ * `state.trajectories`). Prefer `controller.clearTrajectories()` for data.
  */
 export interface ThreeSimulationViewportHandle {
+  /** Clears Three.js line geometry cache only. */
+  clearTrajectoryRenderCache(): void
+  /** @deprecated Use {@link clearTrajectoryRenderCache} */
   clearTrails(): void
+  /**
+   * Temporary debug helper: returns an in-memory snapshot of the
+   * Three.js trajectory renderer state for visibility/material/positioning
+   * diagnosis. Returns `undefined` if the renderer is not initialized.
+   */
+  getTrajectoryRendererDebugSummary():
+    | ThreeTrajectoryRendererDebugSummary
+    | undefined
 }
 
 export interface ThreeSimulationViewportProps {
   /**
-   * Trail visualization config. Owned by the parent (e.g. `App.tsx`)
-   * so the Inspector can edit it in React state. Changes are pushed
-   * into the renderer via `useEffect`; the renderer instance itself
-   * is NOT recreated on config change.
+   * Trajectory **drawing** style for Three.js. Sampling lives in the
+   * simulation (`TrajectoryTrackingSystem`).
    */
-  trailConfig?: ThreeTrailConfig
+  trajectoryVisualization?: ThreeTrajectoryVisualizationConfig
 }
 
 /**
  * React-side mount point for the Three.js renderer.
- *
- * Responsibilities (and only these):
- *   - Mount a `<div>` and instantiate `ThreeSimulationRenderer` against it.
- *   - Forward sim events (`tick`, `reset`, `scenarioLoaded`,
- *     `entityAdded`, `entityRemoved`, `collision`) to the renderer.
- *   - Forward window / container resize.
- *   - Translate keyboard input into renderer commands:
- *       `c` → cycle camera mode (orbit → follow → top-down → orbit)
- *       `p` → toggle perspective ↔ orthographic projection
- *     This mirrors the ergonomics of `angelos_sim_ros2`.
- *   - Apply renderer-config props (`trailConfig`) without recreating
- *     the renderer.
- *   - Tear everything down on unmount.
- *
- * Explicitly NOT here:
- *   - Anything Three.js (`THREE.*` lives in `renderers/three/...`).
- *   - Vehicle / physics / scenario logic.
- *   - Calls to `entity.update(...)`. The engine owns the tick.
  */
 export const ThreeSimulationViewport = forwardRef<
   ThreeSimulationViewportHandle,
   ThreeSimulationViewportProps
->(function ThreeSimulationViewport({ trailConfig }, ref) {
+>(function ThreeSimulationViewport({ trajectoryVisualization }, ref) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const rendererRef = useRef<ThreeSimulationRenderer | null>(null)
   const { engine } = useSimulation()
 
-  // UI-local mirror of renderer state for the header indicator. We keep
-  // it in React state (rather than reading the renderer on every paint)
-  // so the indicator only re-renders when something actually changed.
   const [cameraMode, setCameraMode] = useState<CameraMode>('orbit')
   const [projection, setProjection] = useState<Projection>('perspective')
 
   useImperativeHandle(
     ref,
     () => ({
-      clearTrails: () => {
-        rendererRef.current?.clearTrails()
+      clearTrajectoryRenderCache: () => {
+        rendererRef.current?.clearTrajectoryRenderCache()
       },
+      clearTrails: () => {
+        rendererRef.current?.clearTrajectoryRenderCache()
+      },
+      getTrajectoryRendererDebugSummary: () =>
+        rendererRef.current?.getTrajectoryRendererDebugSummary(),
     }),
     [],
   )
@@ -95,10 +87,23 @@ export const ThreeSimulationViewport = forwardRef<
 
     const renderer = new ThreeSimulationRenderer(
       container,
-      trailConfig ? { trail: trailConfig } : {},
+      trajectoryVisualization
+        ? { trajectoryVisualization }
+        : {},
     )
     rendererRef.current = renderer
     renderer.init(engine.state)
+
+    if (typeof globalThis !== 'undefined') {
+      ;(
+        globalThis as unknown as {
+          __threeTrajectoryDebug?: () =>
+            | ThreeTrajectoryRendererDebugSummary
+            | undefined
+        }
+      ).__threeTrajectoryDebug = () =>
+        rendererRef.current?.getTrajectoryRendererDebugSummary()
+    }
 
     setCameraMode(renderer.getCameraMode() ?? 'orbit')
     setProjection(renderer.getProjection())
@@ -107,15 +112,10 @@ export const ThreeSimulationViewport = forwardRef<
       renderer.render(engine.state)
     }
 
-    const renderAndClearTrails = () => {
-      renderer.clearTrails()
-      renderer.render(engine.state)
-    }
-
     const unsubs = [
       engine.events.on('tick', renderCurrent),
-      engine.events.on('reset', renderAndClearTrails),
-      engine.events.on('scenarioLoaded', renderAndClearTrails),
+      engine.events.on('reset', renderCurrent),
+      engine.events.on('scenarioLoaded', renderCurrent),
       engine.events.on('entityAdded', renderCurrent),
       engine.events.on('entityRemoved', renderCurrent),
       engine.events.on('collision', renderCurrent),
@@ -142,27 +142,20 @@ export const ThreeSimulationViewport = forwardRef<
       resizeObserver?.disconnect()
       renderer.dispose()
       rendererRef.current = null
+      if (typeof globalThis !== 'undefined') {
+        delete (
+          globalThis as unknown as { __threeTrajectoryDebug?: unknown }
+        ).__threeTrajectoryDebug
+      }
     }
-    // The renderer is rebuilt only when the engine identity changes
-    // (effectively never — `SimulationProvider` keeps a single engine
-    // across StrictMode passes). `trailConfig` updates are applied via
-    // a separate effect to avoid recreating the renderer on every
-    // Inspector slider tick.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine])
 
-  // Push trail-config changes into the live renderer without
-  // recreating it. The renderer triggers its own repaint internally,
-  // so we don't have to call `renderer.render(...)` from here.
   useEffect(() => {
-    if (!trailConfig) return
-    rendererRef.current?.setTrailConfig(trailConfig)
-  }, [trailConfig])
+    if (!trajectoryVisualization) return
+    rendererRef.current?.setTrajectoryVisualizationConfig(trajectoryVisualization)
+  }, [trajectoryVisualization])
 
-  // Keyboard controls (c = cycle camera mode, p = toggle projection).
-  // Listening on `window` matches the angelos sim's ergonomics, where
-  // the keys work no matter which child element has focus. We still
-  // bail out if the user is editing a text field.
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.repeat) return

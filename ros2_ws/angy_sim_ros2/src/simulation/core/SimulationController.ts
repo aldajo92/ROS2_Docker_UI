@@ -1,5 +1,10 @@
 import type { SimulationEngine } from './SimulationEngine'
 import { ScenarioLoader } from '../scenarios/ScenarioLoader'
+import {
+  DEFAULT_TRAJECTORY_TRACKING_CONFIG,
+  type TrajectoryTrackingConfig,
+} from '../trajectories/TrajectoryTrackingConfig'
+import type { TrajectoryDebugRecord } from '../trajectories/TrajectoryDebugRecord'
 
 /**
  * Thin facade over SimulationEngine for UI / external callers. Keeps
@@ -45,5 +50,41 @@ export class SimulationController {
 
   getEngine(): SimulationEngine {
     return this.engine
+  }
+
+  clearTrajectories(entityId?: string): void {
+    this.engine.clearTrajectories(entityId)
+  }
+
+  setTrajectoryDebugEnabled(enabled: boolean): void {
+    this.engine.setTrajectoryDebugEnabled(enabled)
+  }
+
+  isTrajectoryDebugEnabled(): boolean {
+    return this.engine.isTrajectoryDebugEnabled()
+  }
+
+  clearTrajectoryDebugRecords(): void {
+    this.engine.clearTrajectoryDebugRecords()
+  }
+
+  getTrajectoryDebugRecords(): TrajectoryDebugRecord[] {
+    return this.engine.getTrajectoryDebugRecords()
+  }
+
+  /** Updates the registered `TrajectoryTrackingSystem` when present. */
+  setTrajectoryTrackingConfig(config: TrajectoryTrackingConfig): void {
+    const sys = this.engine.systems.get('trajectoryTracking') as
+      | { setConfig?: (c?: TrajectoryTrackingConfig) => void }
+      | undefined
+    sys?.setConfig?.(config)
+  }
+
+  /** Snapshot for Inspector UI; defaults when the system is absent. */
+  getTrajectoryTrackingConfig(): TrajectoryTrackingConfig {
+    const sys = this.engine.systems.get('trajectoryTracking') as
+      | { getConfig?: () => TrajectoryTrackingConfig }
+      | undefined
+    return sys?.getConfig?.() ?? { ...DEFAULT_TRAJECTORY_TRACKING_CONFIG }
   }
 }

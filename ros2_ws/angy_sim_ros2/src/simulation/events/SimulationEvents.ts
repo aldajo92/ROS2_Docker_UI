@@ -1,3 +1,5 @@
+import type { TrajectoryTrackingConfig } from '../trajectories/TrajectoryTrackingConfig'
+
 /**
  * Type-safe event map for the simulation engine. Anyone subscribing
  * via `engine.events.on(...)` gets compile-time payload typing.
@@ -7,7 +9,7 @@ export interface SimulationEvents extends Record<string, unknown> {
   started: undefined
   paused: undefined
   reset: undefined
-  scenarioLoaded: { name: string }
+  scenarioLoaded: { name: string; trajectoryTracking?: TrajectoryTrackingConfig }
   /** Leading-edge contact between two entities. `normal` (unit, A→B,
    *  in simulation X/Y) and `penetrationDepth` (meters) are populated
    *  when the active collision backend can compute them; consumers

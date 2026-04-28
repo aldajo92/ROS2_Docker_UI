@@ -1,50 +1,73 @@
 import { forwardRef, useImperativeHandle, useRef } from 'react'
 import {
-  ThreeSimulationViewport,
-  type ThreeSimulationViewportHandle,
-} from './ThreeSimulationViewport'
-import {
   PhaserSimulationViewport,
   type PhaserSimulationViewportHandle,
 } from './PhaserSimulationViewport'
-import type { ThreeTrailConfig } from '../renderers/three/config/ThreeRendererConfig'
-import type { PhaserTrailConfig } from '../renderers/phaser/config/PhaserRendererConfig'
+import {
+  ThreeSimulationViewport,
+  type ThreeSimulationViewportHandle,
+} from './ThreeSimulationViewport'
 import type { RendererType } from './RendererType'
+import type { ThreeTrajectoryVisualizationConfig } from '../renderers/three/config/ThreeRendererConfig'
+import type { PhaserTrajectoryVisualizationConfig } from '../renderers/phaser/config/PhaserRendererConfig'
+import type { ThreeTrajectoryRendererDebugSummary } from '../renderers/three/objects/ThreeTrajectoryRenderer'
+import type { PhaserTrajectoryRendererDebugSummary } from '../renderers/phaser/objects/PhaserTrajectoryRenderer'
 
 /**
- * Imperative surface the App uses to drive renderer-only side effects
- * (e.g. wiping trails) regardless of which adapter is mounted.
+ * Tagged union returned by the active-renderer debug accessor. The
+ * structures differ between adapters (Three has 3D positions and a
+ * bounding box; Phaser has 2D screen points), so we keep them
+ * separate at the type level rather than collapsing into a lossy
+ * common shape.
+ */
+export type ActiveTrajectoryRendererDebugSummary =
+  | { renderer: 'three'; summary: ThreeTrajectoryRendererDebugSummary }
+  | { renderer: 'phaser'; summary: PhaserTrajectoryRendererDebugSummary }
+
+/**
+ * Clears Three.js GPU trajectory lines when Three is active; Phaser
+ * `Graphics` cache when Phaser is active. Does **not** clear simulation
+ * `state.trajectories` — use `controller.clearTrajectories()`.
  */
 export interface SimulationViewportSwitcherHandle {
+  clearTrajectoryRenderCache(): void
+  /** @deprecated Use {@link clearTrajectoryRenderCache} */
   clearTrails(): void
+  /**
+   * Temporary debug helper: returns a renderer-specific snapshot for
+   * the currently mounted viewport. Returns `undefined` before the
+   * renderer has initialized.
+   */
+  getActiveTrajectoryRendererDebugSummary():
+    | ActiveTrajectoryRendererDebugSummary
+    | undefined
+  /** @deprecated Use {@link getActiveTrajectoryRendererDebugSummary}. */
+  getThreeTrajectoryRendererDebugSummary():
+    | ThreeTrajectoryRendererDebugSummary
+    | undefined
 }
 
 export interface SimulationViewportSwitcherProps {
   rendererType: RendererType
-  /** Trail config for the Three.js adapter. Ignored when Phaser is
-   *  mounted; both renderers receive only their own config slice. */
-  threeTrailConfig?: ThreeTrailConfig
-  /** Trail config for the Phaser adapter. */
-  phaserTrailConfig?: PhaserTrailConfig
+  /** Three.js trajectory line style (read-only drawing of sim data). */
+  threeTrajectoryVisualization?: ThreeTrajectoryVisualizationConfig
+  /** Phaser trajectory line style (read-only drawing of sim data). */
+  phaserTrajectoryVisualization?: PhaserTrajectoryVisualizationConfig
 }
 
 /**
- * Conditionally mounts one of the renderer adapters. Switching the
- * `rendererType` prop unmounts the previous viewport (which disposes
- * its renderer cleanly) and mounts the new one (which initializes
- * from the current `engine.state`). The simulation engine is owned
- * by `SimulationProvider` higher up the tree, so a renderer switch
- * does NOT reset the simulation.
- *
- * The switcher exposes a unified imperative handle so renderer-
- * agnostic Inspector controls (e.g. "Clear trails") work without
- * branching on `rendererType`.
+ * Mounts exactly one renderer viewport. Exposes a tiny imperative API
+ * so Inspector actions can clear GPU caches without touching sim state.
  */
 export const SimulationViewportSwitcher = forwardRef<
   SimulationViewportSwitcherHandle,
   SimulationViewportSwitcherProps
 >(function SimulationViewportSwitcher(
-  { rendererType, threeTrailConfig, phaserTrailConfig },
+  {
+    rendererType,
+    threeTrajectoryVisualization,
+    phaserTrajectoryVisualization,
+  },
   ref,
 ) {
   const threeRef = useRef<ThreeSimulationViewportHandle | null>(null)
@@ -53,20 +76,42 @@ export const SimulationViewportSwitcher = forwardRef<
   useImperativeHandle(
     ref,
     () => ({
-      clearTrails: () => {
-        threeRef.current?.clearTrails()
-        phaserRef.current?.clearTrails()
+      clearTrajectoryRenderCache: () => {
+        threeRef.current?.clearTrajectoryRenderCache()
+        phaserRef.current?.clearTrajectoryRenderCache()
       },
+      clearTrails: () => {
+        threeRef.current?.clearTrajectoryRenderCache()
+        phaserRef.current?.clearTrajectoryRenderCache()
+      },
+      getActiveTrajectoryRendererDebugSummary: () => {
+        const threeSummary =
+          threeRef.current?.getTrajectoryRendererDebugSummary()
+        if (threeSummary) return { renderer: 'three', summary: threeSummary }
+        const phaserSummary =
+          phaserRef.current?.getTrajectoryRendererDebugSummary()
+        if (phaserSummary) return { renderer: 'phaser', summary: phaserSummary }
+        return undefined
+      },
+      getThreeTrajectoryRendererDebugSummary: () =>
+        threeRef.current?.getTrajectoryRendererDebugSummary(),
     }),
     [],
   )
 
   if (rendererType === 'phaser') {
     return (
-      <PhaserSimulationViewport ref={phaserRef} trailConfig={phaserTrailConfig} />
+      <PhaserSimulationViewport
+        ref={phaserRef}
+        trajectoryVisualization={phaserTrajectoryVisualization}
+      />
     )
   }
+
   return (
-    <ThreeSimulationViewport ref={threeRef} trailConfig={threeTrailConfig} />
+    <ThreeSimulationViewport
+      ref={threeRef}
+      trajectoryVisualization={threeTrajectoryVisualization}
+    />
   )
 })

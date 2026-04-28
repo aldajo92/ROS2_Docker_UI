@@ -1,3 +1,5 @@
+import type { TrajectoryTrackingConfig } from '../trajectories/TrajectoryTrackingConfig'
+
 /**
  * Scenario data shapes. A "scenario" is a serializable description of
  * an initial world: a name plus a list of entity specs. The runtime
@@ -91,4 +93,6 @@ export interface ScenarioSpec {
    *  by the React shell, not the simulation core — see
    *  `KeyboardControlScenarioConfig`. */
   interaction?: ScenarioInteractionConfig
+  /** Simulation-owned trajectory sampling configuration (optional). */
+  trajectoryTracking?: TrajectoryTrackingConfig
 }

@@ -35,7 +35,7 @@ src/
       three/          Three.js renderer adapter
         core/           Coordinator, scene context, registry, disposal
         mapping/        sim ↔ three coordinate / yaw conversion
-        objects/        Per-entity sub-renderers (vehicle, obstacle, …)
+        objects/        Per-entity sub-renderers + trajectory lines from state
         cameras/        CameraController interface + modes + manager
         debug/          Bounding circles, heading arrows, etc.
         config/         ThreeRendererConfig + defaults
@@ -55,6 +55,7 @@ src/
     systems/          SimulationSystem interface + concrete systems
     commands/         Addressed VehicleCommand + queue + system
     scenarios/        Scenario type + JSON loader
+    trajectories/     Trajectory samples + registry types (sim-owned)
     events/           Typed event bus + SimulationEvents map
     logging/          Pluggable level-filtered logger
     render/           SimulationRenderer interface (no impl)
@@ -171,6 +172,7 @@ Default tick order registered by `SimulationProvider`:
 ScenarioSystem
   ▶ VehicleCommandSystem      ← drains queued commands
     VehicleDynamicsSystem     ← integrates pose with the new controls
+    TrajectoryTrackingSystem  ← samples trajectories into state.trajectories
     CollisionSystem           ← detects contacts on the integrated state
     MetricsSystem             ← observes the final state
     [CommunicationSystem]     ← optional, when wired
@@ -303,16 +305,24 @@ Planned and reference paths are **simulation data**, not renderer data.
 - Renderers must not mutate `state.paths` or any `Path2D`.
 - `ThreePathRenderer.sync(state)` visualises paths as `THREE.Line` objects and removes stale lines when paths disappear.
 
-**Path vs Trail distinction:**
+**Path vs trajectory distinction:**
 
-| | Path | Trail |
+| | Path | Trajectory (actual motion history) |
 |---|---|---|
-| What | Planned or reference route | Actual vehicle history |
-| Owner | `SimulationState.paths` | `ThreeTrailRenderer` (renderer-only) |
-| Source | Scenario, planner, bridge | Vehicle pose each tick (timestamped with `state.clock.time()`) |
-| Sampling | N/A | `pointCount` (last-N samples) or `timeWindow` (last-N sim seconds) |
-| Reset | Cleared by `SimulationEngine.reset()` | Cleared by `ThreeTrailRenderer.clear()` |
-| On entity | No | No |
+| What | Planned or reference route | Historical pose samples for supported entities |
+| Owner | `SimulationState.paths` | `SimulationState.trajectories` (`TrajectoryRegistry`) |
+| Source | Scenario, planner, bridge | `TrajectoryTrackingSystem` samples each tick from entity poses (`state.clock.time()`) |
+| Sampling | N/A | Configured via scenario `trajectoryTracking` or Inspector → `TrajectoryTrackingSystem.setConfig` |
+| Reset | Cleared by `SimulationEngine.reset()` | Cleared by `SimulationEngine.reset()` / `loadScenario`; UI uses `controller.clearTrajectories()` |
+| Visualization | `ThreePathRenderer` reads paths | `ThreeTrajectoryRenderer` reads trajectories (GPU lines only; no sampling in renderer) |
+
+## Layer 5c — trajectories (`src/simulation/trajectories/`)
+
+Runtime **actual** trajectories (distinct from planned `Path2D`) are simulation-owned:
+
+- **`TrajectorySample2D`**, **`EntityTrajectory2D`**, **`TrajectoryRegistry`** — JSON-friendly samples keyed by `entityId`.
+- **`TrajectoryTrackingSystem`** — after dynamics, appends samples according to `TrajectoryTrackingConfig` (scenario + Inspector).
+- Renderers **read** `state.trajectories.toArray()` and draw; they **never** append samples or mutate the registry.
 
 ## Layer 6 — render / events / logging
 
@@ -336,7 +346,8 @@ Planned and reference paths are **simulation data**, not renderer data.
 - **`SimulationProvider.tsx`** — builds the engine **once**, creates
   the shared `VehicleCommandQueue`, registers the default system
   pipeline (`ScenarioSystem` → `VehicleCommandSystem` →
-  `VehicleDynamicsSystem` → `CollisionSystem` → `MetricsSystem`,
+  `VehicleDynamicsSystem` → `TrajectoryTrackingSystem` →
+  `CollisionSystem` → `MetricsSystem`,
   with `CommunicationSystem` optional), wraps the engine with
   `SimulationController`, and exposes `engine`, `controller`, and
   `commandQueue` through context. Pauses the engine on unmount.
@@ -563,19 +574,18 @@ live as siblings under `src/ui/renderers/`.
   `window.resize` / `ResizeObserver` to the renderer, and disposes on
   unmount. Does not import Three.js directly — it only imports the
   renderer adapter class — and contains zero simulation logic. Accepts
-  a `trailConfig: ThreeTrailConfig` prop and pushes changes into the
-  live renderer through a separate `useEffect` so Inspector slider
-  updates do **not** recreate the renderer. Exposes a tiny imperative
-  handle (`forwardRef` + `useImperativeHandle`) with `clearTrails()`
-  for parents that need a renderer-only side effect that React state
-  can't model.
+  a `trajectoryVisualization` prop (visual style only) and pushes
+  changes through a separate `useEffect`. Exposes
+  `clearTrajectoryRenderCache()` (GPU line cache only; use
+  `controller.clearTrajectories()` to clear simulation data).
 - **`renderers/three/core/ThreeSimulationRenderer.ts`** — top-level
   Three.js coordinator. Implements `SimulationRenderer`. Creates the
   `THREE.Scene`, camera, `WebGLRenderer`, lights, and every
   sub-renderer; orchestrates them in `init` / `render` / `dispose`.
-  Exposes `resize()`, `clearTrails()`, `setTrailConfig(...)`,
-  `setTrailEnabled(...)`, `getTrailConfig()`, `setCameraMode(mode)`,
-  `setProjection(...)`. Each setter triggers a repaint (using the
+  Exposes `resize()`, `clearTrajectoryRenderCache()` (GPU only),
+  `setTrajectoryVisualizationConfig(...)`, `setCameraMode(mode)`,
+  `setProjection(...)`, and legacy aliases `clearTrails` / `setTrailConfig`
+  for compatibility. Each setter triggers a repaint (using the
   last rendered state) so config edits are visible while paused.
 - **`renderers/three/core/ThreeSceneContext.ts`** — small
   pass-by-reference struct (`scene`, `camera`, `renderer`,
@@ -661,29 +671,13 @@ beyond the public read API.
   via `simPoint2DToThree`; rotates via `simYawToThreeRotationY`.
 - **`ThreeStaticObstacleRenderer`** — cylinders for static obstacles.
 - **`ThreeDynamicActorRenderer`** — spheres for dynamic actors.
-- **`ThreeTrailRenderer`** — visual breadcrumb trail per vehicle.
-  Trail points live **only** here (never on the entity); a per-id
-  buffer of timestamped sim-frame samples (`{ timeSec, point }`) is
-  written into a pre-allocated `Float32BufferAttribute` and the
-  visible portion is conveyed through `BufferGeometry.drawRange`.
-  Two sampling modes selected by `ThreeTrailConfig.samplingMode`:
-  - **`pointCount`** (default) — append every sync (subject to
-    `minDistance`), keep the last `maxPoints` samples. A stationary
-    vehicle still grows the trail up to the cap.
-  - **`timeWindow`** — append at most every `minSampleDtSec` sim
-    seconds; prune samples older than `currentSimTime - timeWindowSec`;
-    `maxPoints` acts as a hard safety cap so the buffer can't run
-    away.
-
-  Both modes read sim time from `state.clock.time()` — never wall
-  clock — so a paused engine produces a paused trail. Configurable
-  via `ThreeTrailConfig` (enabled, samplingMode, maxPoints,
-  timeWindowSec, minSampleDtSec, minDistance, height, color, opacity,
-  lineWidth — see Layer 9). The Inspector edits this config in React
-  state and pushes updates through
-  `ThreeSimulationRenderer.setTrailConfig(...)`. `clear()` is invoked
-  from the viewport on `reset` / `scenarioLoaded` and from the
-  Inspector "Clear trails" button.
+- **`ThreeTrajectoryRenderer`** — draws **actual** trajectories from
+  `state.trajectories` as `THREE.Line` objects (one per `entityId`).
+  Sampling is performed only by `TrajectoryTrackingSystem`; this
+  sub-renderer maps sample coordinates with `simPoint2DToThree` and
+  applies **visual** settings (`ThreeTrajectoryVisualizationConfig`:
+  enabled, height, color, opacity, lineWidth). It never mutates
+  `SimulationState` or appends samples.
 - **`ThreePathRenderer`** — renders planned/reference paths from
   `state.paths`. One `THREE.Line` per `Path2D.id`; stale lines are
   removed when paths disappear. Uses `simPoint2DToThree` from the
@@ -777,26 +771,11 @@ beyond the public read API.
 ### Config (`renderers/three/config/`)
 
 - **`ThreeRendererConfig`** with `showGrid`, `showAxes`, `showDebug`,
-  `trail` (`ThreeTrailConfig`), `cameraMode`, `projection`,
-  `orthoFrustumHeight`. The renderer reads it once on construction;
-  flags can be flipped later via dedicated setters
-  (`setTrailConfig`, `setTrailEnabled`, `clearTrails`,
-  `setCameraMode`, `setProjection`). Single-renderer flags belong on
-  the renderer itself, not in this shared struct — add to it only
-  when ≥ 2 sub-renderers care. `orthoFrustumHeight` is the
-  world-space vertical extent of the orthographic frustum (m);
-  horizontal extent follows the canvas aspect on every `resize()`.
-- **`ThreeTrailConfig`** — renderer-only knobs for vehicle
-  breadcrumb trails: `enabled`, `samplingMode` (`pointCount` |
-  `timeWindow`), `maxPoints`, `timeWindowSec` (only used by
-  `timeWindow` mode), `minSampleDtSec` (sim-time throttle for
-  `timeWindow` mode), `minDistance` (sim meters between samples),
-  `height` (m above ground), `color` (hex string), `opacity`,
-  `lineWidth` (best-effort — most desktop WebGL impls ignore line
-  widths > 1 unless using `Line2`/fat-line shaders). The Inspector
-  edits this in React state and pushes it
-  into the live renderer via `ThreeSimulationViewport`'s `trailConfig`
-  prop. The simulation core never sees these values.
+  `trajectoryVisualization` (`ThreeTrajectoryVisualizationConfig`),
+  `cameraMode`, `projection`, `orthoFrustumHeight`. Trajectory
+  **sampling** is not here — it lives in `TrajectoryTrackingConfig`
+  (simulation). Visualization fields are `enabled`, `height`, `color`,
+  `opacity`, `lineWidth` only.
 
 ### What renderers must never do
 
@@ -1284,19 +1263,9 @@ deterministic, replayable, and renderer/transport-agnostic.
 - `src/ui/renderers/three/core/threeDisposal.test.ts` — geometry +
   single material + multi-material + nested children + texture-map
   disposal (5 tests)
-- `src/ui/renderers/three/objects/ThreeTrailRenderer.test.ts` —
-  buffer state machine: first-sync append, `minDistance` gating,
-  `maxPoints` trim (sliding window), `enabled = false` hides + stops
-  sampling, `clear()` empties draw range without disposing the line,
-  stale lines removed when their vehicle disappears, `setConfig`
-  updates color / opacity / transparent / line width, defensive
-  clamping of out-of-range values (incl. `timeWindowSec` /
-  `minSampleDtSec`), runtime `maxPoints` resize trims immediately,
-  runtime `height` change re-projects existing buffer without a new
-  tick. `pointCount` mode appends every sync even with a stationary
-  vehicle. `timeWindow` mode prunes by sim time, throttles via
-  `minSampleDtSec`, still enforces `maxPoints` as a safety cap, and
-  preserves the buffer when switching modes (15 tests)
+- `src/ui/renderers/three/objects/ThreeTrajectoryRenderer.test.ts` —
+  reads `state.trajectories`, one line per entity, stale line removal,
+  `simPoint2DToThree`, no registry mutation, disposal (7 tests)
 
 WebGL-bound renderer code (lights, `WebGLRenderer`, full `init`) is
 intentionally not unit-tested under vitest's `node` environment —

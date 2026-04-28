@@ -42,6 +42,10 @@ const SCENARIO_OPTIONS: readonly ScenarioOption[] = [
   { label: 'Simple scenario (auto-drive)', url: '/scenarios/simple-scenario.json' },
   { label: 'Keyboard drive (empty plaza)', url: '/scenarios/keyboard-drive.json' },
   { label: 'Reference path (S-curve)', url: '/scenarios/reference-path-scenario.json' },
+  {
+    label: 'Trajectory tracking enabled',
+    url: '/scenarios/trajectory-tracking-enabled.json',
+  },
 ]
 
 export function ControlPanel({
