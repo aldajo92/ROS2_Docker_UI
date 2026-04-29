@@ -32,36 +32,44 @@ export class PhaserGroundRenderer {
     this.redraw()
   }
 
-  /** Recompute and redraw the grid. Call on resize or pixelsPerMeter
-   *  change. Cheap: a few dozen `lineBetween` calls. */
+  /** Recompute and redraw the grid. Call on resize, pixelsPerMeter
+   *  change, or camera pan/zoom. Cheap: a few dozen `lineBetween` calls.
+   *
+   *  We size the lines to the camera's *visible world rect* — not the
+   *  canvas — so that pan/zoom always fills the viewport with grid.
+   *  At zoom < 1 this means more lines (the visible world is bigger
+   *  than the canvas); at zoom > 1, fewer. */
   redraw(): void {
     const g = this.graphics
     if (!g) return
     g.clear()
 
     const ppm = this.context.viewport.pixelsPerMeter
-    const w = this.context.scene.scale.width
-    const h = this.context.scene.scale.height
     const ox = this.context.viewport.originX
     const oy = this.context.viewport.originY
+    const view = this.context.scene.cameras.main.worldView
+    const left = view.x
+    const right = view.x + view.width
+    const top = view.y
+    const bottom = view.y + view.height
 
-    // Walk integer sim-X lines that fall on screen.
-    const minSimX = Math.floor((-ox) / ppm) - 1
-    const maxSimX = Math.ceil((w - ox) / ppm) + 1
-    const minSimY = Math.floor((oy - h) / ppm) - 1
-    const maxSimY = Math.ceil(oy / ppm) + 1
+    // Convert world-space view bounds to integer sim-meter ranges.
+    const minSimX = Math.floor((left - ox) / ppm) - 1
+    const maxSimX = Math.ceil((right - ox) / ppm) + 1
+    const minSimY = Math.floor((oy - bottom) / ppm) - 1
+    const maxSimY = Math.ceil((oy - top) / ppm) + 1
 
     for (let x = minSimX; x <= maxSimX; x++) {
       const px = ox + x * ppm
       const major = x % 5 === 0
       g.lineStyle(GRID_STROKE_PX, major ? GRID_COLOR_MAJOR : GRID_COLOR_MINOR, 1)
-      g.lineBetween(px, 0, px, h)
+      g.lineBetween(px, top, px, bottom)
     }
     for (let y = minSimY; y <= maxSimY; y++) {
       const py = oy - y * ppm
       const major = y % 5 === 0
       g.lineStyle(GRID_STROKE_PX, major ? GRID_COLOR_MAJOR : GRID_COLOR_MINOR, 1)
-      g.lineBetween(0, py, w, py)
+      g.lineBetween(left, py, right, py)
     }
   }
 

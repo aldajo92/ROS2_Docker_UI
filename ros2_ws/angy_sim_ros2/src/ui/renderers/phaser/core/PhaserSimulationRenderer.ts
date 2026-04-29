@@ -19,6 +19,7 @@ import {
 import { PhaserGroundRenderer } from '../objects/PhaserGroundRenderer'
 import { PhaserAxesRenderer } from '../objects/PhaserAxesRenderer'
 import { PhaserDebugLayer } from '../debug/PhaserDebugLayer'
+import { PhaserCameraController } from './PhaserCameraController'
 
 /**
  * Top-level Phaser renderer. Owns the `Phaser.Game`, the single
@@ -52,6 +53,7 @@ export class PhaserSimulationRenderer implements SimulationRenderer {
   private pathRenderer?: PhaserPathRenderer
   private trajectoryRenderer?: PhaserTrajectoryRenderer
   private debugLayer?: PhaserDebugLayer
+  private cameraController?: PhaserCameraController
 
   constructor(
     container: HTMLElement,
@@ -128,6 +130,7 @@ export class PhaserSimulationRenderer implements SimulationRenderer {
   }
 
   dispose(): void {
+    this.cameraController?.detach()
     this.debugLayer?.dispose()
     this.pathRenderer?.dispose()
     this.trajectoryRenderer?.dispose()
@@ -153,6 +156,7 @@ export class PhaserSimulationRenderer implements SimulationRenderer {
     this.pathRenderer = undefined
     this.trajectoryRenderer = undefined
     this.debugLayer = undefined
+    this.cameraController = undefined
   }
 
   /**
@@ -266,6 +270,17 @@ export class PhaserSimulationRenderer implements SimulationRenderer {
     if (this.config.showDebug) {
       this.debugLayer = new PhaserDebugLayer(this.context)
     }
+
+    // Mouse pan + zoom. The controller drives the scene's main camera
+    // (scrollX/Y, zoom); world-space geometry stays untouched. We only
+    // need to refresh the metric grid on every viewport change because
+    // it's the one overlay that's sized to the visible world rect.
+    this.cameraController = new PhaserCameraController(this.context, {
+      onViewportChange: () => {
+        this.groundRenderer?.redraw()
+      },
+    })
+    this.cameraController.attach()
 
     // Phaser `Scale.RESIZE` fires its own resize event when the canvas
     // changes size; tie our redraw + reproject in there so external

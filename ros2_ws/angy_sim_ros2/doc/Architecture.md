@@ -810,6 +810,16 @@ ignored. Phaser-specific notes:
 - **`renderers/phaser/core/PhaserRenderObjectRegistry.ts`** —
   generic `Map<string, T extends Phaser.GameObjects.GameObject>`.
   Same lifecycle pattern as the Three.js registry.
+- **`renderers/phaser/core/PhaserCameraController.ts`** — mouse pan
+  + zoom for the 2D viewport. Drives Phaser's main camera
+  (`scrollX/Y`, `zoom`) only — never mutates `SimulationState` or
+  any sub-renderer's geometry. Wheel zooms anchored at the cursor
+  (the world point under the pointer stays put across the zoom
+  step), left-button drag pans (screen-pixel delta is divided by
+  `camera.zoom` so the pinned world point stays under the cursor at
+  any zoom). On every viewport change the controller fires
+  `onViewportChange()` so the metric grid — the one overlay sized
+  to the visible world rect — can redraw.
 - **`renderers/phaser/mapping/simToPhaser.ts`** — single source of
   truth for sim → screen conversion. Sim +X maps to canvas +X,
   sim +Y maps to canvas −Y (so simulation +Y appears upward), sim
@@ -828,6 +838,9 @@ ignored. Phaser-specific notes:
   `PhaserTrailRenderer`) plus the static scene
   (`PhaserGroundRenderer`, `PhaserAxesRenderer`). Each owns a
   registry and disposes its `Phaser.GameObject`s on `dispose()`.
+  `PhaserGroundRenderer` sizes its line range to the active
+  camera's `worldView` rect — not the canvas — so panning and
+  zooming always keep the grid covering the visible viewport.
 - **`renderers/phaser/debug/PhaserDebugLayer.ts`** — composes
   `PhaserBoundingCircleRenderer` and `PhaserHeadingArrowRenderer`,
   toggled together via `setOptions`.
