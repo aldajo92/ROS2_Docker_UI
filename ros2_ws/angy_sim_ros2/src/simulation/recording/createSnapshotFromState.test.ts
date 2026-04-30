@@ -128,4 +128,76 @@ describe('createSnapshotFromState', () => {
     expect(ego.pose.yaw).toBe(beforePose.yaw)
     expect(state.metrics.ticks).toBe(beforeTicks)
   })
+
+  it('omits the trajectories field when the registry is empty', () => {
+    const state = createState()
+    state.entities.add(
+      new VehicleEntity({ id: 'ego', pose: Pose2D.of(0, 0, 0) }),
+    )
+    const snap = createSnapshotFromState(state)
+    expect(snap.trajectories).toBeUndefined()
+    expect('trajectories' in snap).toBe(false)
+  })
+
+  it('serializes trajectories for multiple entities, preserving sample order', () => {
+    const state = createState()
+    state.entities.add(
+      new VehicleEntity({ id: 'ego', pose: Pose2D.of(0, 0, 0) }),
+    )
+    state.trajectories.append('ego', { timeSec: 0.1, x: 0, y: 0 }, 100)
+    state.trajectories.append(
+      'ego',
+      { timeSec: 0.2, x: 0.5, y: 0, yaw: 0.05, speed: 5 },
+      100,
+    )
+    state.trajectories.append('actor_1', { timeSec: 0.1, x: 5, y: 5 }, 100)
+    const snap = createSnapshotFromState(state)
+    expect(snap.trajectories).toHaveLength(2)
+    const ego = snap.trajectories?.find((t) => t.entityId === 'ego')
+    expect(ego?.samples).toHaveLength(2)
+    expect(ego?.samples[0]).toEqual({ timeSec: 0.1, x: 0, y: 0 })
+    expect(ego?.samples[1]).toEqual({
+      timeSec: 0.2,
+      x: 0.5,
+      y: 0,
+      yaw: 0.05,
+      speed: 5,
+    })
+    const actor = snap.trajectories?.find((t) => t.entityId === 'actor_1')
+    expect(actor?.samples).toEqual([{ timeSec: 0.1, x: 5, y: 5 }])
+  })
+
+  it('snapshot with trajectories is JSON-safe', () => {
+    const state = createState()
+    state.entities.add(
+      new VehicleEntity({ id: 'ego', pose: Pose2D.of(0, 0, 0) }),
+    )
+    state.trajectories.append(
+      'ego',
+      { timeSec: 0.1, x: 0, y: 0, yaw: 0, speed: 1 },
+      100,
+    )
+    state.trajectories.append('ego', { timeSec: 0.2, x: 1, y: 0 }, 100)
+    const snap = createSnapshotFromState(state)
+    const reparsed = JSON.parse(
+      JSON.stringify(snap),
+    ) as typeof snap
+    expect(reparsed).toEqual(snap)
+    expect(reparsed.trajectories?.[0].samples).toHaveLength(2)
+  })
+
+  it('trajectory snapshots are decoupled from the live registry', () => {
+    const state = createState()
+    state.trajectories.append('ego', { timeSec: 0.1, x: 0, y: 0 }, 100)
+    const snap = createSnapshotFromState(state)
+    // Mutating the live registry after snapshotting must not affect
+    // what was captured.
+    state.trajectories.append('ego', { timeSec: 0.2, x: 1, y: 1 }, 100)
+    expect(snap.trajectories?.[0].samples).toHaveLength(1)
+    expect(snap.trajectories?.[0].samples[0]).toEqual({
+      timeSec: 0.1,
+      x: 0,
+      y: 0,
+    })
+  })
 })

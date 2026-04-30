@@ -1,3 +1,5 @@
+import type { EntityTrajectory2D } from '../trajectories/EntityTrajectory2D'
+
 /**
  * Per-tick simulation snapshot. JSON-friendly by construction so a
  * `SimulationFrameSnapshot[]` can round-trip through
@@ -70,6 +72,20 @@ export interface SimulationFrameSnapshot {
   /** Simulation time in seconds at the end of this tick. */
   timeSec: number
   entities: EntitySnapshot[]
+  /**
+   * Per-entity historical samples captured by `TrajectoryTrackingSystem`.
+   * Optional and absent for both:
+   *   1. older replay files written before trajectories were persisted, and
+   *   2. simulations with trajectory tracking disabled.
+   *
+   * The shape mirrors `EntityTrajectory2D` from
+   * `src/simulation/trajectories/`. It is structurally JSON-safe — only
+   * primitives, arrays, and a `metadata?: Record<string, unknown>` —
+   * so it round-trips through `JSON.stringify` / `JSON.parse`. Renderers
+   * never read this field directly; replay loading writes it back into
+   * `state.trajectories` so the live and replay paths look identical.
+   */
+  trajectories?: EntityTrajectory2D[]
   events?: ReplayEventSnapshot[]
   metrics?: {
     totalDistance?: number

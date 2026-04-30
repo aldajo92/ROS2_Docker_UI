@@ -3,6 +3,7 @@ import type { SimulationState } from '../core/SimulationState'
 import { DynamicActorEntity } from '../entities/DynamicActorEntity'
 import { StaticObstacleEntity } from '../entities/StaticObstacleEntity'
 import { VehicleEntity } from '../entities/VehicleEntity'
+import type { EntityTrajectory2D } from '../trajectories/EntityTrajectory2D'
 import type {
   DynamicActorEntitySnapshot,
   EntitySnapshot,
@@ -44,6 +45,8 @@ export function createSnapshotFromState(
     entities.push(toEntitySnapshot(entity))
   }
 
+  const trajectories = toTrajectorySnapshots(state)
+
   const metrics = {
     totalDistance: state.metrics.totalDistance,
     peakSpeed: state.metrics.peakSpeed,
@@ -54,8 +57,34 @@ export function createSnapshotFromState(
     tick,
     timeSec,
     entities,
+    // Omit the field entirely when there are no trajectories to keep
+    // older replay files byte-equivalent (and JSON outputs smaller for
+    // scenarios that don't enable tracking).
+    ...(trajectories.length > 0 ? { trajectories } : {}),
     metrics,
   }
+}
+
+/**
+ * Materialize the contents of `state.trajectories` as a fresh,
+ * mutable, JSON-safe array. `TrajectoryRegistry.toArray()` already
+ * returns deep-cloned entries, so a shallow shape conversion is enough
+ * here — we just strip the readonly markers and copy each sample/
+ * metadata object so callers can mutate the returned array without
+ * disturbing the registry.
+ */
+function toTrajectorySnapshots(state: SimulationState): EntityTrajectory2D[] {
+  const out: EntityTrajectory2D[] = []
+  for (const trajectory of state.trajectories.toArray()) {
+    out.push({
+      entityId: trajectory.entityId,
+      samples: trajectory.samples.map((sample) => ({ ...sample })),
+      metadata: trajectory.metadata
+        ? { ...trajectory.metadata }
+        : undefined,
+    })
+  }
+  return out
 }
 
 function toEntitySnapshot(entity: Entity): EntitySnapshot {

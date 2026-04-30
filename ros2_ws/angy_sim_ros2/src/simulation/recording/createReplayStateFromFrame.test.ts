@@ -153,10 +153,78 @@ describe('createReplayStateFromFrame', () => {
     expect(state.entities.byType('static_obstacle')).toHaveLength(1)
   })
 
-  it('exposes empty path/trajectory registries (Phase 3 limitation)', () => {
+  it('exposes an empty path registry (paths are not persisted in this format)', () => {
     const state = createReplayStateFromFrame(buildFrame({}), FIXED_DT)
     expect(state.paths.toArray()).toHaveLength(0)
+  })
+
+  it('yields an empty trajectory registry for older frames without the field', () => {
+    // Backward-compat guarantee: replay files written before
+    // trajectories were persisted must keep loading without errors.
+    const state = createReplayStateFromFrame(buildFrame({}), FIXED_DT)
     expect(state.trajectories.toArray()).toHaveLength(0)
+  })
+
+  it('restores multi-entity trajectories with all samples', () => {
+    const trajectories = [
+      {
+        entityId: 'ego',
+        samples: [
+          { timeSec: 0.1, x: 0, y: 0, yaw: 0, speed: 0 },
+          { timeSec: 0.2, x: 0.5, y: 0, yaw: 0.05, speed: 5 },
+          { timeSec: 0.3, x: 1, y: 0, yaw: 0.1, speed: 5 },
+        ],
+        metadata: { source: 'live' },
+      },
+      {
+        entityId: 'actor_1',
+        samples: [
+          { timeSec: 0.1, x: 5, y: 5 },
+          { timeSec: 0.2, x: 5.1, y: 5.05 },
+        ],
+      },
+    ]
+    const state = createReplayStateFromFrame(
+      buildFrame({ trajectories }),
+      FIXED_DT,
+    )
+    const restored = state.trajectories.toArray()
+    expect(restored).toHaveLength(2)
+    const egoTraj = restored.find((t) => t.entityId === 'ego')
+    expect(egoTraj?.samples).toHaveLength(3)
+    expect(egoTraj?.samples[2]).toEqual({
+      timeSec: 0.3,
+      x: 1,
+      y: 0,
+      yaw: 0.1,
+      speed: 5,
+    })
+    expect(egoTraj?.metadata).toEqual({ source: 'live' })
+    const actorTraj = restored.find((t) => t.entityId === 'actor_1')
+    expect(actorTraj?.samples).toHaveLength(2)
+    expect(actorTraj?.metadata).toBeUndefined()
+  })
+
+  it('deep-clones trajectories so mutating the restored view does not corrupt the frame', () => {
+    const frame = buildFrame({
+      trajectories: [
+        {
+          entityId: 'ego',
+          samples: [{ timeSec: 0, x: 0, y: 0 }],
+        },
+      ],
+    })
+    const state = createReplayStateFromFrame(frame, FIXED_DT)
+    state.trajectories.append(
+      'ego',
+      { timeSec: 1, x: 1, y: 1 },
+      100,
+    )
+    // The snapshot we passed in must remain pristine so successive
+    // seeks produce the same result every time.
+    expect(frame.trajectories?.[0].samples).toEqual([
+      { timeSec: 0, x: 0, y: 0 },
+    ])
   })
 
   it('falls back to dynamic actor position when pose is missing', () => {

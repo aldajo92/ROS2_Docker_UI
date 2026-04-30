@@ -28,19 +28,16 @@ import type {
  *
  *   - `state.clock.time()` / `state.clock.dt()`
  *   - `state.entities.byType(...)` / `.all()` / `.toArray()`
- *   - `state.paths` (empty `PathRegistry`, see limitation)
- *   - `state.trajectories` (empty `TrajectoryRegistry`, see limitation)
+ *   - `state.paths` (empty `PathRegistry`; planned-route persistence
+ *     is intentionally out of scope for this version of the format)
+ *   - `state.trajectories` (populated from `frame.trajectories` when
+ *     present; older replay files without the field yield an empty
+ *     registry, preserving backward compatibility)
  *
  * Caller contract:
  * - The returned object MUST NOT be mutated.
  * - Do not retain references across `seek*` calls — each successful
  *   seek invalidates the previously returned view.
- *
- * Phase 3 limitation: `state.trajectories` is intentionally empty;
- * the recorded format does not yet store historical samples. Long
- * trails during replay will be addressed in a follow-up by either
- * accumulating frames on the fly or persisting trajectories alongside
- * the snapshot.
  */
 export function createReplayStateFromFrame(
   frame: SimulationFrameSnapshot,
@@ -68,6 +65,17 @@ export function createReplayStateFromFrame(
   state.metrics.totalDistance = frame.metrics?.totalDistance ?? 0
   state.metrics.peakSpeed = frame.metrics?.peakSpeed ?? 0
   state.metrics.ticks = Number.isFinite(frame.tick) ? frame.tick : 0
+
+  // Restore historical samples so the trajectory renderer paints the
+  // recorded trail. `TrajectoryRegistry.add` already deep-clones each
+  // entry, so renderers can't reach back through the snapshot to
+  // mutate the on-disk frame.
+  if (frame.trajectories) {
+    for (const trajectory of frame.trajectories) {
+      state.trajectories.add(trajectory)
+    }
+  }
+
   return state
 }
 
