@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useRef, useState, type ChangeEvent } from 'react'
 import { useSimulation } from '../app/useSimulation'
 import { ScenarioLoader } from '../simulation/scenarios/ScenarioLoader'
 import type { ScenarioSpec } from '../simulation/scenarios/Scenario'
+import { readScenarioFromFile } from './scenario/ScenarioFileLoader'
 
 interface ScenarioOption {
   label: string
@@ -66,6 +67,12 @@ export function ControlPanel({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selectedUrl, setSelectedUrl] = useState<string>(SCENARIO_OPTIONS[0].url)
+  const uploadInputRef = useRef<HTMLInputElement | null>(null)
+
+  const applyScenario = (spec: ScenarioSpec) => {
+    onScenarioLoaded?.(spec)
+    controller.loadScenarioFromJson(spec)
+  }
 
   const handleLoadScenario = async () => {
     setLoading(true)
@@ -76,10 +83,36 @@ export function ControlPanel({
       // from the parsed spec BEFORE the engine emits `reset` and
       // `scenarioLoaded` inside `loadScenarioFromJson`.
       const spec = await ScenarioLoader.loadFromUrl(selectedUrl)
-      onScenarioLoaded?.(spec)
-      controller.loadScenarioFromJson(spec)
+      applyScenario(spec)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleUploadClick = () => {
+    if (loading) return
+    uploadInputRef.current?.click()
+  }
+
+  const handleUploadChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.target
+    const file = input.files?.[0]
+    // Always reset the input so the user can re-pick the same file
+    // after a failed parse — `<input type="file">` only fires `change`
+    // when the selection actually changes.
+    input.value = ''
+    if (!file) return
+    setLoading(true)
+    setError(null)
+    try {
+      const result = await readScenarioFromFile(file)
+      if (result.ok) {
+        applyScenario(result.spec)
+      } else {
+        setError(result.error)
+      }
     } finally {
       setLoading(false)
     }
@@ -105,6 +138,25 @@ export function ControlPanel({
           <button onClick={handleLoadScenario} disabled={loading}>
             {loading ? 'Loading…' : 'Load'}
           </button>
+        </div>
+        <div className="scenario-picker-row scenario-picker-row--upload">
+          <button
+            type="button"
+            onClick={handleUploadClick}
+            disabled={loading}
+            title="Load a scenario from a local JSON file"
+            data-testid="control-panel-upload-scenario"
+          >
+            Upload scenario JSON
+          </button>
+          <input
+            ref={uploadInputRef}
+            type="file"
+            accept="application/json,.json"
+            hidden
+            onChange={handleUploadChange}
+            data-testid="control-panel-upload-input"
+          />
         </div>
         {onRecordWhileRunningChange && (
           <label

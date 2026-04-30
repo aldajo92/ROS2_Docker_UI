@@ -341,6 +341,14 @@ body,
   flex-shrink: 0;
 }
 
+.scenario-picker-row--upload {
+  margin-top: 6px;
+}
+
+.scenario-picker-row--upload button {
+  flex: 1;
+}
+
 .scenario-picker-row--save {
   margin-top: 8px;
   flex-wrap: wrap;

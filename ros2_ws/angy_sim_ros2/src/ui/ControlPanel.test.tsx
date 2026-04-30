@@ -24,24 +24,44 @@ vi.mock('../app/useSimulation', () => ({
   useEntityListVersion: () => 0,
 }))
 
+// Shared harness. Both describe blocks mount through the same helper
+// to avoid duplicating boilerplate; each test grabs `container` from
+// the returned tuple to query the rendered DOM.
+interface Harness {
+  container: HTMLDivElement
+  root: Root
+}
+
+const mountControlPanel = (ui: React.ReactNode): Harness => {
+  const container = document.createElement('div')
+  document.body.appendChild(container)
+  const root = createRoot(container)
+  act(() => {
+    root.render(ui)
+  })
+  return { container, root }
+}
+
+const unmountControlPanel = (harness: Harness | null) => {
+  if (!harness) return
+  act(() => {
+    harness.root.unmount()
+  })
+  harness.container.remove()
+}
+
 describe('ControlPanel — recording controls (Phase 4)', () => {
+  let harness: Harness | null = null
   let container: HTMLDivElement
-  let root: Root
 
   const mount = (ui: React.ReactNode) => {
-    container = document.createElement('div')
-    document.body.appendChild(container)
-    root = createRoot(container)
-    act(() => {
-      root.render(ui)
-    })
+    harness = mountControlPanel(ui)
+    container = harness.container
   }
 
   afterEach(() => {
-    act(() => {
-      root.unmount()
-    })
-    container.remove()
+    unmountControlPanel(harness)
+    harness = null
     vi.clearAllMocks()
   })
 
@@ -165,5 +185,137 @@ describe('ControlPanel — recording controls (Phase 4)', () => {
       button.click()
     })
     expect(onSave).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('ControlPanel — scenario upload', () => {
+  let harness: Harness | null = null
+  let container: HTMLDivElement
+
+  const mount = (ui: React.ReactNode) => {
+    harness = mountControlPanel(ui)
+    container = harness.container
+  }
+
+  // Drive the hidden file input the same way a browser would: assign
+  // the `files` list and dispatch a native `change` event. React 18+
+  // listens at the root container, so the synthetic onChange fires.
+  const triggerFileSelection = async (
+    input: HTMLInputElement,
+    file: File | null,
+  ) => {
+    Object.defineProperty(input, 'files', {
+      value: file ? [file] : [],
+      configurable: true,
+    })
+    await act(async () => {
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+      // Allow the async handler to resolve `await file.text()` and the
+      // subsequent setState calls.
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+  }
+
+  afterEach(() => {
+    unmountControlPanel(harness)
+    harness = null
+    vi.clearAllMocks()
+  })
+
+  it('renders the upload button and a hidden JSON file input', () => {
+    mount(<ControlPanel />)
+    const button = container.querySelector(
+      '[data-testid="control-panel-upload-scenario"]',
+    ) as HTMLButtonElement
+    const input = container.querySelector(
+      '[data-testid="control-panel-upload-input"]',
+    ) as HTMLInputElement
+    expect(button).not.toBeNull()
+    expect(button.textContent).toBe('Upload scenario JSON')
+    expect(input).not.toBeNull()
+    expect(input.type).toBe('file')
+    expect(input.accept).toBe('application/json,.json')
+    expect(input.hidden).toBe(true)
+  })
+
+  it('loads a valid uploaded scenario through the same flow as the dropdown', async () => {
+    const onScenarioLoaded = vi.fn()
+    mount(<ControlPanel onScenarioLoaded={onScenarioLoaded} />)
+    const input = container.querySelector(
+      '[data-testid="control-panel-upload-input"]',
+    ) as HTMLInputElement
+    const scenario = {
+      name: 'uploaded',
+      entities: [
+        { kind: 'vehicle', id: 'ego', pose: { x: 0, y: 0, yaw: 0 } },
+      ],
+    }
+    const file = new File([JSON.stringify(scenario)], 'uploaded.json', {
+      type: 'application/json',
+    })
+
+    await triggerFileSelection(input, file)
+
+    expect(onScenarioLoaded).toHaveBeenCalledTimes(1)
+    expect(onScenarioLoaded.mock.calls[0][0]).toMatchObject({
+      name: 'uploaded',
+    })
+    expect(controllerMock.loadScenarioFromJson).toHaveBeenCalledTimes(1)
+    expect(container.querySelector('.error')).toBeNull()
+  })
+
+  it('rejects an invalid scenario and surfaces the error without loading', async () => {
+    const onScenarioLoaded = vi.fn()
+    mount(<ControlPanel onScenarioLoaded={onScenarioLoaded} />)
+    const input = container.querySelector(
+      '[data-testid="control-panel-upload-input"]',
+    ) as HTMLInputElement
+    const file = new File(['{ broken'], 'bad.json', {
+      type: 'application/json',
+    })
+
+    await triggerFileSelection(input, file)
+
+    expect(onScenarioLoaded).not.toHaveBeenCalled()
+    expect(controllerMock.loadScenarioFromJson).not.toHaveBeenCalled()
+    const errorNode = container.querySelector('.error')
+    expect(errorNode?.textContent).toMatch(/Invalid JSON:/)
+  })
+
+  it('rejects an uploaded replay file with the dedicated message', async () => {
+    const onScenarioLoaded = vi.fn()
+    mount(<ControlPanel onScenarioLoaded={onScenarioLoaded} />)
+    const input = container.querySelector(
+      '[data-testid="control-panel-upload-input"]',
+    ) as HTMLInputElement
+    const replay = {
+      format: 'angy_sim_replay',
+      version: 1,
+      fixedDtSec: 1 / 60,
+      frames: [{ tick: 1, timeSec: 0, entities: [] }],
+    }
+    const file = new File(
+      [JSON.stringify(replay)],
+      'pretending-to-be-a-scenario.json',
+      { type: 'application/json' },
+    )
+
+    await triggerFileSelection(input, file)
+
+    expect(onScenarioLoaded).not.toHaveBeenCalled()
+    expect(controllerMock.loadScenarioFromJson).not.toHaveBeenCalled()
+    const errorNode = container.querySelector('.error')
+    expect(errorNode?.textContent).toContain(
+      'This is a replay file, not a scenario file.',
+    )
+  })
+
+  it('keeps the existing dropdown Load button (no regression)', () => {
+    mount(<ControlPanel />)
+    const buttons = [...container.querySelectorAll('button')].map(
+      (b) => b.textContent,
+    )
+    expect(buttons).toContain('Load')
   })
 })
