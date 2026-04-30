@@ -252,13 +252,28 @@ body.layout-splitter-dragging {
 
 .renderer-picker {
   display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
 }
 
 .renderer-picker-label {
+  flex: 0 0 auto;
   font-size: 0.85rem;
   color: var(--text-muted, #aaa);
+}
+
+.renderer-picker select {
+  /* Take the remaining width so the dropdown stretches to the panel
+     edge instead of hugging the label. */
+  flex: 1 1 auto;
+  background: var(--bg-panel-2);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  cursor: pointer;
 }
 
 .panel {
@@ -410,11 +425,59 @@ body.layout-splitter-dragging {
  * Vertically-stacked card: optional empty-state hint, then either a
  * read-only `<pre>` preview or an editable `<textarea>` (mutually
  * exclusive via the "Edit scenario" toggle), then the action row.
+ *
+ * Expanded mode (`.scenario-editor-panel--expanded`):
+ * App.tsx hides the sibling Scenario card and the editor card grows
+ * to fill the remaining inspector height. The preview/textarea then
+ * stretch via `flex: 1` and lose their `max-height` cap so long JSON
+ * scrolls inside them rather than overflowing the card.
  */
 .scenario-editor-panel {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.scenario-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.scenario-editor-header h2 {
+  margin: 0;
+}
+
+.scenario-editor-expand-button {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-panel-2);
+  color: var(--fg-muted);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 120ms, color 120ms, border-color 120ms;
+}
+
+.scenario-editor-expand-button:hover:not(:disabled),
+.scenario-editor-expand-button:focus-visible {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+  outline: none;
+}
+
+.scenario-editor-expand-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .scenario-editor-empty {
@@ -433,8 +496,32 @@ body.layout-splitter-dragging {
   font-family: ui-monospace, "SFMono-Regular", monospace;
   font-size: 12px;
   line-height: 1.4;
-  max-height: 260px;
+  /* Lock both states to the same rendered height so toggling between
+     preview and textarea doesn't make the card grow / shrink. Internal
+     scrolling handles long JSON; the textarea can still be manually
+     enlarged via its `resize: vertical` handle. */
+  height: 240px;
   overflow: auto;
+}
+
+.scenario-editor-panel--expanded {
+  /* Grow to fill the remaining vertical space inside `.layout-right`,
+     which is already a `flex-direction: column` container. */
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.scenario-editor-panel--expanded .scenario-editor-preview,
+.scenario-editor-panel--expanded .scenario-editor-textarea {
+  /* In expanded mode, let the preview/textarea grow to fill the card
+     and rely on internal scrolling for long JSON. `min-height: 0` is
+     required so the flex child can shrink below its content size, and
+     `height: auto` neutralizes the fixed 240px from the collapsed rule
+     so the flex-grow can actually take effect. */
+  flex: 1 1 auto;
+  max-height: none;
+  min-height: 0;
+  height: auto;
 }
 
 .scenario-editor-preview {
@@ -452,7 +539,6 @@ body.layout-splitter-dragging {
 
 .scenario-editor-textarea {
   width: 100%;
-  min-height: 180px;
   resize: vertical;
 }
 

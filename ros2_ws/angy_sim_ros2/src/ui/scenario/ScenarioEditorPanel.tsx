@@ -20,6 +20,12 @@ export interface ScenarioEditorPanelProps {
   /** Optional error message rendered under the action row (e.g. JSON
    *  parse / validation failures from the App). */
   errorMessage?: string
+  /** Expanded layout mode. When `true`, the card grows to fill the
+   *  remaining inspector height. App owns the state because expanding
+   *  also hides the sibling Scenario card. */
+  expanded?: boolean
+  /** Notified when the user toggles the expand/collapse button. */
+  onExpandedChange?: (expanded: boolean) => void
 }
 
 /**
@@ -43,12 +49,18 @@ export function ScenarioEditorPanel({
   onDownloadScenario,
   disabledReason,
   errorMessage,
+  expanded = false,
+  onExpandedChange,
 }: Readonly<ScenarioEditorPanelProps>) {
   const [isEditing, setIsEditing] = useState(false)
   const hasScenario = scenarioText.length > 0
   const lockedByParent =
     typeof disabledReason === 'string' && disabledReason.length > 0
   const allActionsDisabled = lockedByParent || !hasScenario
+  const expandDisabled = !hasScenario
+  const expandLabel = expanded
+    ? 'Collapse scenario editor'
+    : 'Expand scenario editor'
 
   const handleTextChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
     onScenarioTextChange?.(event.target.value)
@@ -67,6 +79,11 @@ export function ScenarioEditorPanel({
   const handleDownloadClick = () => {
     if (allActionsDisabled) return
     onDownloadScenario?.(scenarioText)
+  }
+
+  const handleExpandClick = () => {
+    if (expandDisabled) return
+    onExpandedChange?.(!expanded)
   }
 
   const editButtonTitle = pickButtonTitle({
@@ -90,12 +107,30 @@ export function ScenarioEditorPanel({
     enabledTitle: 'Download the current editor contents as a .json file',
   })
 
+  const sectionClassName = expanded
+    ? 'panel scenario-editor-panel scenario-editor-panel--expanded'
+    : 'panel scenario-editor-panel'
+
   return (
     <section
-      className="panel scenario-editor-panel"
+      className={sectionClassName}
       aria-label="Scenario Editor"
     >
-      <h2>Scenario Editor</h2>
+      <div className="scenario-editor-header">
+        <h2>Scenario Editor</h2>
+        <button
+          type="button"
+          className="scenario-editor-expand-button"
+          onClick={handleExpandClick}
+          disabled={expandDisabled}
+          aria-pressed={expanded}
+          aria-label={expandLabel}
+          title={expandDisabled ? 'Load a scenario first' : expandLabel}
+          data-testid="scenario-editor-expand"
+        >
+          <span aria-hidden="true">{expanded ? '\u2921' : '\u2922'}</span>
+        </button>
+      </div>
       {hasScenario ? (
         <pre
           className="scenario-editor-preview"

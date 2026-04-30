@@ -271,3 +271,156 @@ describe('ScenarioEditorPanel — interaction safety', () => {
     ).toBeNull()
   })
 })
+
+describe('ScenarioEditorPanel — expand/collapse', () => {
+  let harness: Harness | null = null
+
+  afterEach(() => {
+    unmount(harness)
+    harness = null
+    vi.clearAllMocks()
+  })
+
+  it('renders the expand button in the header with default ARIA state', () => {
+    harness = mount(<ScenarioEditorPanel scenarioText={SAMPLE_TEXT} />)
+    const button = harness.container.querySelector(
+      '[data-testid="scenario-editor-expand"]',
+    ) as HTMLButtonElement
+    expect(button).not.toBeNull()
+    expect(button.getAttribute('aria-pressed')).toBe('false')
+    expect(button.getAttribute('aria-label')).toBe('Expand scenario editor')
+    expect(button.disabled).toBe(false)
+    // The button lives inside the header, NOT inside the actions row.
+    expect(
+      harness.container.querySelectorAll('.scenario-editor-actions button'),
+    ).toHaveLength(3)
+    expect(
+      harness.container.querySelector('.scenario-editor-header'),
+    ).not.toBeNull()
+  })
+
+  it('disables the expand button until a scenario is loaded', () => {
+    harness = mount(<ScenarioEditorPanel />)
+    const button = harness.container.querySelector(
+      '[data-testid="scenario-editor-expand"]',
+    ) as HTMLButtonElement
+    expect(button.disabled).toBe(true)
+    expect(button.title).toBe('Load a scenario first')
+  })
+
+  it('calls onExpandedChange(true) when toggled from the collapsed state', () => {
+    const onExpandedChange = vi.fn()
+    harness = mount(
+      <ScenarioEditorPanel
+        scenarioText={SAMPLE_TEXT}
+        onExpandedChange={onExpandedChange}
+      />,
+    )
+    const button = harness.container.querySelector(
+      '[data-testid="scenario-editor-expand"]',
+    ) as HTMLButtonElement
+    act(() => {
+      button.click()
+    })
+    expect(onExpandedChange).toHaveBeenCalledTimes(1)
+    expect(onExpandedChange).toHaveBeenCalledWith(true)
+  })
+
+  it('calls onExpandedChange(false) when toggled from the expanded state', () => {
+    const onExpandedChange = vi.fn()
+    harness = mount(
+      <ScenarioEditorPanel
+        scenarioText={SAMPLE_TEXT}
+        expanded
+        onExpandedChange={onExpandedChange}
+      />,
+    )
+    const button = harness.container.querySelector(
+      '[data-testid="scenario-editor-expand"]',
+    ) as HTMLButtonElement
+    act(() => {
+      button.click()
+    })
+    expect(onExpandedChange).toHaveBeenCalledWith(false)
+  })
+
+  it('reflects the expanded prop in ARIA state and class name', () => {
+    harness = mount(
+      <ScenarioEditorPanel scenarioText={SAMPLE_TEXT} expanded />,
+    )
+    const section = harness.container.querySelector(
+      'section.scenario-editor-panel',
+    ) as HTMLElement
+    expect(section.classList.contains('scenario-editor-panel--expanded')).toBe(
+      true,
+    )
+    const button = harness.container.querySelector(
+      '[data-testid="scenario-editor-expand"]',
+    ) as HTMLButtonElement
+    expect(button.getAttribute('aria-pressed')).toBe('true')
+    expect(button.getAttribute('aria-label')).toBe('Collapse scenario editor')
+  })
+
+  it('keeps Edit / Apply / Download functional while expanded', () => {
+    const onApplyScenario = vi.fn()
+    const onDownloadScenario = vi.fn()
+    harness = mount(
+      <ScenarioEditorPanel
+        scenarioText={SAMPLE_TEXT}
+        expanded
+        onApplyScenario={onApplyScenario}
+        onDownloadScenario={onDownloadScenario}
+      />,
+    )
+
+    const toggle = harness.container.querySelector(
+      '[data-testid="scenario-editor-toggle"]',
+    ) as HTMLButtonElement
+    act(() => {
+      toggle.click()
+    })
+    expect(
+      harness.container.querySelector(
+        '[data-testid="scenario-editor-textarea"]',
+      ),
+    ).not.toBeNull()
+
+    const apply = harness.container.querySelector(
+      '[data-testid="scenario-editor-apply"]',
+    ) as HTMLButtonElement
+    act(() => {
+      apply.click()
+    })
+    expect(onApplyScenario).toHaveBeenCalledWith(SAMPLE_TEXT)
+
+    const download = harness.container.querySelector(
+      '[data-testid="scenario-editor-download"]',
+    ) as HTMLButtonElement
+    act(() => {
+      download.click()
+    })
+    expect(onDownloadScenario).toHaveBeenCalledWith(SAMPLE_TEXT)
+  })
+
+  it('keeps the expand button enabled even when locked by parent', () => {
+    // Locking (e.g. replay mode) only freezes the editing actions —
+    // the user should still be able to expand the card to read the
+    // current scenario JSON without scrolling the inspector.
+    const onExpandedChange = vi.fn()
+    harness = mount(
+      <ScenarioEditorPanel
+        scenarioText={SAMPLE_TEXT}
+        disabledReason="Editing is disabled while replay is active."
+        onExpandedChange={onExpandedChange}
+      />,
+    )
+    const button = harness.container.querySelector(
+      '[data-testid="scenario-editor-expand"]',
+    ) as HTMLButtonElement
+    expect(button.disabled).toBe(false)
+    act(() => {
+      button.click()
+    })
+    expect(onExpandedChange).toHaveBeenCalledWith(true)
+  })
+})

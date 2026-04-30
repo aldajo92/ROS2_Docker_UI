@@ -505,6 +505,11 @@ function AppShell() {
   const [scenarioEditorError, setScenarioEditorError] = useState<
     string | undefined
   >(undefined)
+  // Expanding the editor swaps it into a "fullscreen-in-the-inspector"
+  // mode that hides the sibling Scenario card. App owns the flag so
+  // ControlPanel render-suppression and ScenarioEditorPanel layout
+  // stay in sync.
+  const [scenarioEditorExpanded, setScenarioEditorExpanded] = useState(false)
 
   const handleScenarioLoaded = useCallback(
     (spec: ScenarioSpec) => {
@@ -639,14 +644,16 @@ function AppShell() {
           <aside className="layout-right" aria-label="Inspector">
             <h2 className="layout-title">Inspector</h2>
             <SimulationControlPanel />
-            <ControlPanel
-              onScenarioLoaded={handleScenarioLoaded}
-              recordWhileRunning={recordWhileRunning}
-              onRecordWhileRunningChange={handleRecordWhileRunningChange}
-              onSaveRecording={handleDownloadRecording}
-              saveRecordingDisabled={saveRecordingDisabled}
-              saveRecordingDisabledReason={saveRecordingDisabledReason}
-            />
+            {!scenarioEditorExpanded && (
+              <ControlPanel
+                onScenarioLoaded={handleScenarioLoaded}
+                recordWhileRunning={recordWhileRunning}
+                onRecordWhileRunningChange={handleRecordWhileRunningChange}
+                onSaveRecording={handleDownloadRecording}
+                saveRecordingDisabled={saveRecordingDisabled}
+                saveRecordingDisabledReason={saveRecordingDisabledReason}
+              />
+            )}
             <ScenarioEditorPanel
               scenarioText={currentScenarioText}
               onScenarioTextChange={handleScenarioTextChange}
@@ -658,67 +665,85 @@ function AppShell() {
                   : undefined
               }
               errorMessage={scenarioEditorError}
+              expanded={scenarioEditorExpanded}
+              onExpandedChange={setScenarioEditorExpanded}
             />
-            <RendererPanel
-              rendererType={rendererType}
-              onRendererTypeChange={setRendererType}
-            />
-            <MetricsPanel />
-            <KeyboardControlPanel
-              state={keyboardControlState}
-              onChange={setKeyboardControlState}
-            />
-            <RendererSettingsPanel
-              trajectoryTrackingConfig={trajectoryTrackingConfig}
-              onTrajectoryTrackingChange={applyTrajectoryTracking}
-              trajectoryVisualization={trajectoryVisualization}
-              onTrajectoryVisualizationChange={setTrajectoryVisualization}
-              onClearTrajectories={handleClearTrajectories}
-              trajectoryDebugEnabled={trajectoryDebugEnabled}
-              onTrajectoryDebugEnabledChange={handleTrajectoryDebugEnabledChange}
-              onExportTrajectoryDebug={handleExportTrajectoryDebug}
-              onClearTrajectoryDebug={handleClearTrajectoryDebug}
-              activeRendererType={rendererType}
-              onExportActiveRendererDebug={handleExportRendererDebug}
-            />
-            <RecordingPanel
-              status={recordingStatus}
-              config={recordingConfig}
-              onConfigChange={handleRecordingConfigChange}
-              onStart={handleStartRecording}
-              onStop={handleStopRecording}
-              onClear={handleClearRecording}
-              onDownload={handleDownloadRecording}
-              disabledReason={
-                isReplayMode ? REPLAY_DISABLED_REASON : undefined
-              }
-            />
-            <section className="panel replay-load" aria-label="Replay">
-              <h2>Replay</h2>
-              <p className="renderer-settings-hint">
-                Load a downloaded <code>.angy-replay.json</code> file to
-                scrub the recorded simulation. Loading a replay pauses
-                the live engine; press <strong>Exit replay</strong> on
-                the timeline to return to live mode.
-              </p>
-              <div className="renderer-settings-actions">
-                <ReplayLoadButton
-                  onLoaded={handleReplayLoaded}
-                  onError={handleReplayLoadError}
+            {/*
+              In expanded mode the editor swallows the whole inspector
+              column under Simulation Time, so we hide every other
+              panel — otherwise their intrinsic heights eat all the
+              flex slack and the editor collapses to its header alone
+              (`flex: 1 1 auto; min-height: 0` shrinks it to zero when
+              the parent overflows). Collapsing the editor restores the
+              full inspector layout via React unmount/remount.
+            */}
+            {!scenarioEditorExpanded && (
+              <>
+                <RendererPanel
+                  rendererType={rendererType}
+                  onRendererTypeChange={setRendererType}
+                />
+                <MetricsPanel />
+                <KeyboardControlPanel
+                  state={keyboardControlState}
+                  onChange={setKeyboardControlState}
+                />
+                <RendererSettingsPanel
+                  trajectoryTrackingConfig={trajectoryTrackingConfig}
+                  onTrajectoryTrackingChange={applyTrajectoryTracking}
+                  trajectoryVisualization={trajectoryVisualization}
+                  onTrajectoryVisualizationChange={setTrajectoryVisualization}
+                  onClearTrajectories={handleClearTrajectories}
+                  trajectoryDebugEnabled={trajectoryDebugEnabled}
+                  onTrajectoryDebugEnabledChange={
+                    handleTrajectoryDebugEnabledChange
+                  }
+                  onExportTrajectoryDebug={handleExportTrajectoryDebug}
+                  onClearTrajectoryDebug={handleClearTrajectoryDebug}
+                  activeRendererType={rendererType}
+                  onExportActiveRendererDebug={handleExportRendererDebug}
+                />
+                <RecordingPanel
+                  status={recordingStatus}
+                  config={recordingConfig}
+                  onConfigChange={handleRecordingConfigChange}
+                  onStart={handleStartRecording}
+                  onStop={handleStopRecording}
+                  onClear={handleClearRecording}
+                  onDownload={handleDownloadRecording}
                   disabledReason={
-                    isReplayMode
-                      ? 'Already in replay mode. Exit first to load a different file.'
-                      : undefined
+                    isReplayMode ? REPLAY_DISABLED_REASON : undefined
                   }
                 />
-              </div>
-              {replayError && (
-                <p className="error" role="alert">
-                  {replayError}
-                </p>
-              )}
-            </section>
-            <EntityListPanel />
+                <section className="panel replay-load" aria-label="Replay">
+                  <h2>Replay</h2>
+                  <p className="renderer-settings-hint">
+                    Load a downloaded <code>.angy-replay.json</code> file
+                    to scrub the recorded simulation. Loading a replay
+                    pauses the live engine; press{' '}
+                    <strong>Exit replay</strong> on the timeline to
+                    return to live mode.
+                  </p>
+                  <div className="renderer-settings-actions">
+                    <ReplayLoadButton
+                      onLoaded={handleReplayLoaded}
+                      onError={handleReplayLoadError}
+                      disabledReason={
+                        isReplayMode
+                          ? 'Already in replay mode. Exit first to load a different file.'
+                          : undefined
+                      }
+                    />
+                  </div>
+                  {replayError && (
+                    <p className="error" role="alert">
+                      {replayError}
+                    </p>
+                  )}
+                </section>
+                <EntityListPanel />
+              </>
+            )}
           </aside>
         </div>
       </main>
