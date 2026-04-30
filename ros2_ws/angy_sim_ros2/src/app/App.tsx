@@ -8,7 +8,18 @@ import { EntityListPanel } from '../ui/EntityListPanel'
 import { MetricsPanel } from '../ui/MetricsPanel'
 import { RendererSettingsPanel } from '../ui/RendererSettingsPanel'
 import { RecordingPanel } from '../ui/RecordingPanel'
+import { ScenarioEditorPanel } from '../ui/scenario/ScenarioEditorPanel'
+import {
+  downloadScenarioJsonText,
+  formatScenarioJson,
+} from '../ui/scenario/ScenarioJsonUtils'
+import { parseScenarioJson } from '../ui/scenario/ScenarioFileLoader'
 import { downloadReplay } from '../ui/replay/ReplayFileDownloader'
+import { LayoutSplitter } from '../ui/layout/LayoutSplitter'
+import {
+  MIN_INSPECTOR_WIDTH_PX,
+  clampInspectorWidth,
+} from '../ui/layout/clampInspectorWidth'
 import { ReplayLoadButton } from '../ui/replay/ReplayLoadButton'
 import { ReplayTimeline } from '../ui/replay/ReplayTimeline'
 import { ReplayPlayer } from '../ui/replay/ReplayPlayer'
@@ -481,15 +492,65 @@ function AppShell() {
     undefined,
   )
 
+  // ----- scenario editor state ----------------------------------------
+  //
+  // App owns the canonical scenario JSON for the editor card. Any path
+  // that loads a scenario (bundled dropdown, file upload, editor apply)
+  // routes through `handleScenarioLoaded` and ends up writing here, so
+  // the editor preview is always consistent with what's running.
+  const [currentScenarioSpec, setCurrentScenarioSpec] = useState<
+    ScenarioSpec | undefined
+  >(undefined)
+  const [currentScenarioText, setCurrentScenarioText] = useState('')
+  const [scenarioEditorError, setScenarioEditorError] = useState<
+    string | undefined
+  >(undefined)
+
   const handleScenarioLoaded = useCallback(
     (spec: ScenarioSpec) => {
       lastInteractionRef.current = spec.interaction
       setKeyboardControlState(deriveKeyboardControlState(spec.interaction))
+      setCurrentScenarioSpec(spec)
+      setCurrentScenarioText(formatScenarioJson(spec))
+      setScenarioEditorError(undefined)
       // A new scenario invalidates any in-memory replay; bail out of
       // replay mode so the renderer stops painting stale frames.
       if (replaySessionRef.current) handleExitReplay()
     },
     [handleExitReplay],
+  )
+
+  const handleScenarioTextChange = useCallback((text: string) => {
+    setCurrentScenarioText(text)
+    setScenarioEditorError(undefined)
+  }, [])
+
+  const handleApplyScenario = useCallback(
+    (text: string) => {
+      const result = parseScenarioJson(text)
+      if (!result.ok) {
+        setScenarioEditorError(result.error)
+        return
+      }
+      // Reuse the same downstream flow as the dropdown / upload paths
+      // so keyboard bindings, replay teardown, and editor state all
+      // stay in sync via `handleScenarioLoaded`.
+      handleScenarioLoaded(result.spec)
+      controller.loadScenarioFromJson(result.spec)
+    },
+    [controller, handleScenarioLoaded],
+  )
+
+  const handleDownloadScenario = useCallback(
+    (text: string) => {
+      // Download whatever the user typed — even if it hasn't been
+      // applied yet — so they can save WIP edits without having to
+      // first commit them to the running simulation.
+      downloadScenarioJsonText(text, {
+        baseName: currentScenarioSpec?.name ?? 'scenario',
+      })
+    },
+    [currentScenarioSpec],
   )
 
   useEffect(() => {
@@ -499,6 +560,31 @@ function AppShell() {
       )
     })
   }, [engine])
+
+  // ----- inspector resizer --------------------------------------------
+  //
+  // The user can drag a vertical splitter between the viewport and the
+  // inspector to give either side more room. App.tsx owns the width as
+  // a single number; the actual clamping math lives in
+  // `clampInspectorWidth` (pure helper) so it stays unit-testable.
+  const [inspectorWidthPx, setInspectorWidthPx] = useState<number>(
+    MIN_INSPECTOR_WIDTH_PX,
+  )
+  const layoutRef = useRef<HTMLDivElement | null>(null)
+
+  // Re-clamp whenever the window shrinks: an inspector width that
+  // was legal at 1920px wide may starve the viewport at 1280px wide.
+  useEffect(() => {
+    const handleResize = () => {
+      const layoutWidth =
+        layoutRef.current?.getBoundingClientRect().width ?? 0
+      if (layoutWidth <= 0) return
+      setInspectorWidthPx((prev) => clampInspectorWidth(prev, layoutWidth))
+    }
+    handleResize()
+    globalThis.addEventListener('resize', handleResize)
+    return () => globalThis.removeEventListener('resize', handleResize)
+  }, [])
 
   return (
     <>
@@ -510,7 +596,15 @@ function AppShell() {
             Rendering-agnostic simulation core · React UI shell only
           </p>
         </header>
-        <div className="layout">
+        <div
+          className="layout"
+          ref={layoutRef}
+          style={
+            {
+              '--inspector-width': `${inspectorWidthPx}px`,
+            } as React.CSSProperties
+          }
+        >
           <div className="layout-left">
             <SimulationViewportSwitcher
               ref={viewportSwitcherRef}
@@ -537,6 +631,11 @@ function AppShell() {
               />
             )}
           </div>
+          <LayoutSplitter
+            inspectorWidthPx={inspectorWidthPx}
+            onInspectorWidthChange={setInspectorWidthPx}
+            layoutRef={layoutRef}
+          />
           <aside className="layout-right" aria-label="Inspector">
             <h2 className="layout-title">Inspector</h2>
             <SimulationControlPanel />
@@ -547,6 +646,18 @@ function AppShell() {
               onSaveRecording={handleDownloadRecording}
               saveRecordingDisabled={saveRecordingDisabled}
               saveRecordingDisabledReason={saveRecordingDisabledReason}
+            />
+            <ScenarioEditorPanel
+              scenarioText={currentScenarioText}
+              onScenarioTextChange={handleScenarioTextChange}
+              onApplyScenario={handleApplyScenario}
+              onDownloadScenario={handleDownloadScenario}
+              disabledReason={
+                isReplayMode
+                  ? 'Editing the scenario is disabled while replay mode is active.'
+                  : undefined
+              }
+              errorMessage={scenarioEditorError}
             />
             <RendererPanel
               rendererType={rendererType}

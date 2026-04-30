@@ -60,8 +60,17 @@ body,
   flex: 1 1 0;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) min(380px, 36vw);
-  gap: 16px;
+  /* 3-column layout: viewport | resizable splitter | inspector.
+     The inspector width is driven by the `--inspector-width` custom
+     property set inline by `App.tsx` based on its drag state, with
+     `380px` as the lower bound for both the soft cap and the
+     `minmax()`. The viewport has its own minimum so the inspector
+     can never starve it past `--viewport-min-width`. */
+  grid-template-columns:
+    minmax(var(--viewport-min-width, 640px), 1fr)
+    var(--splitter-width, 6px)
+    minmax(380px, var(--inspector-width, 380px));
+  gap: 12px;
   align-items: stretch;
 }
 
@@ -89,6 +98,54 @@ body,
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: var(--fg-muted);
+}
+
+/* ----- inspector splitter --------------------------------------------- *
+ *
+ * Sits between `.layout-left` and `.layout-right`. The wrapper takes
+ * the full grid-track width (`var(--splitter-width)`); the visible
+ * bar inside is narrower so the hit-area is comfortable while the
+ * visual line stays subtle.
+ */
+.layout-splitter {
+  position: relative;
+  height: 100%;
+  cursor: col-resize;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  /* Stretch the hit-area beyond the visible bar so the user can grab
+     the splitter without millimetric precision. */
+  margin: 0 -4px;
+  z-index: 2;
+  outline: none;
+  touch-action: none;
+}
+
+.layout-splitter-handle {
+  width: 2px;
+  height: 100%;
+  background: var(--border);
+  border-radius: 1px;
+  transition: background 120ms;
+}
+
+.layout-splitter:hover .layout-splitter-handle,
+.layout-splitter:focus-visible .layout-splitter-handle,
+body.layout-splitter-dragging .layout-splitter-handle {
+  background: var(--accent);
+}
+
+.layout-splitter:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+/* While dragging, suppress text selection across the whole document
+   so highlighting doesn't flash as the cursor crosses panel labels. */
+body.layout-splitter-dragging {
+  cursor: col-resize;
+  user-select: none;
 }
 
 /* Simulation viewport — full-bleed black stage that fills the left
@@ -347,6 +404,91 @@ body,
 
 .scenario-picker-row--upload button {
   flex: 1;
+}
+
+/* ----- scenario editor panel ----------------------------------------- *
+ * Vertically-stacked card: optional empty-state hint, then either a
+ * read-only `<pre>` preview or an editable `<textarea>` (mutually
+ * exclusive via the "Edit scenario" toggle), then the action row.
+ */
+.scenario-editor-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.scenario-editor-empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.scenario-editor-preview,
+.scenario-editor-textarea {
+  background: var(--bg-panel-2);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-family: ui-monospace, "SFMono-Regular", monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  max-height: 260px;
+  overflow: auto;
+}
+
+.scenario-editor-preview {
+  margin: 0;
+  /* Wrap long lines instead of forcing a horizontal scrollbar so the
+     preview always fits the inspector column width. `pre-wrap`
+     preserves the existing two-space indent and explicit newlines
+     from `formatScenarioJson`; `overflow-wrap: anywhere` is the
+     escape hatch for unbreakable tokens like long URLs or
+     `description` strings without spaces. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.scenario-editor-textarea {
+  width: 100%;
+  min-height: 180px;
+  resize: vertical;
+}
+
+.scenario-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.scenario-editor-actions button {
+  background: var(--bg-panel-2);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 120ms;
+}
+
+.scenario-editor-actions button:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+
+.scenario-editor-actions button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.scenario-editor-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--fg-muted);
+  opacity: 0.85;
 }
 
 .scenario-picker-row--save {
@@ -638,7 +780,13 @@ body,
   }
 
   .layout {
+    /* Collapse to a single stacked column on mobile and hide the
+       splitter — pointer-based resize is not useful at this width. */
     grid-template-columns: 1fr;
+  }
+
+  .layout-splitter {
+    display: none;
   }
 
   .layout-right {
