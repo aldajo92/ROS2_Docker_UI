@@ -3,7 +3,7 @@ import { SimulationProvider } from './SimulationProvider'
 import { useSimulation, useSimulationRunning } from './useSimulation'
 import { ControlPanel } from '../ui/ControlPanel'
 import { RendererPanel } from '../ui/RendererPanel'
-import { SimulationTimeDisplay } from '../ui/SimulationTimeDisplay'
+import { SimulationControlPanel } from '../ui/SimulationControlPanel'
 import { EntityListPanel } from '../ui/EntityListPanel'
 import { MetricsPanel } from '../ui/MetricsPanel'
 import { RendererSettingsPanel } from '../ui/RendererSettingsPanel'
@@ -539,6 +539,7 @@ function AppShell() {
           </div>
           <aside className="layout-right" aria-label="Inspector">
             <h2 className="layout-title">Inspector</h2>
+            <SimulationControlPanel />
             <ControlPanel
               onScenarioLoaded={handleScenarioLoaded}
               recordWhileRunning={recordWhileRunning}
@@ -551,7 +552,6 @@ function AppShell() {
               rendererType={rendererType}
               onRendererTypeChange={setRendererType}
             />
-            <SimulationTimeDisplay />
             <MetricsPanel />
             <KeyboardControlPanel
               state={keyboardControlState}

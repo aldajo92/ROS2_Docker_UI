@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useSimulation, useSimulationRunning } from '../app/useSimulation'
+import { useSimulation } from '../app/useSimulation'
 import { ScenarioLoader } from '../simulation/scenarios/ScenarioLoader'
 import type { ScenarioSpec } from '../simulation/scenarios/Scenario'
 
@@ -63,7 +63,6 @@ export function ControlPanel({
   saveRecordingDisabledReason,
 }: ControlPanelProps = {}) {
   const { controller } = useSimulation()
-  const isRunning = useSimulationRunning()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selectedUrl, setSelectedUrl] = useState<string>(SCENARIO_OPTIONS[0].url)
@@ -88,23 +87,8 @@ export function ControlPanel({
 
   return (
     <section className="panel control-panel">
-      <h2>Controls</h2>
-      <div className="control-buttons">
-        <button onClick={() => controller.start()} disabled={isRunning}>
-          Start
-        </button>
-        <button onClick={() => controller.pause()} disabled={!isRunning}>
-          Pause
-        </button>
-        <button onClick={() => controller.step()} disabled={isRunning}>
-          Step
-        </button>
-        <button onClick={() => controller.reset()}>Reset</button>
-      </div>
+      <h2>Scenario</h2>
       <div className="scenario-picker">
-        <label className="scenario-picker-label" htmlFor="scenario-select">
-          Scenario
-        </label>
         <div className="scenario-picker-row">
           <select
             id="scenario-select"

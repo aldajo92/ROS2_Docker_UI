@@ -5,18 +5,11 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { ControlPanel } from './ControlPanel'
 
-// `ControlPanel` reads `useSimulation()` for the engine controller
-// (Start/Pause/Step/Reset buttons) and `useSimulationRunning()` for
-// the running flag. These tests focus on the controlled props
-// (recording-on-load checkbox + Save recording button), so we mock
-// both hooks with the smallest possible stand-ins. `vi.mock` is
-// hoisted by Vitest's transform, so the `ControlPanel` import above
-// already sees the mocked module.
+// `ControlPanel` reads `useSimulation()` for scenario loading. These
+// tests focus on the controlled recording props, so we mock the hook
+// with the smallest possible stand-in. `vi.mock` is hoisted by Vitest's
+// transform, so the `ControlPanel` import above already sees the mock.
 const controllerMock = {
-  start: vi.fn(),
-  pause: vi.fn(),
-  step: vi.fn(),
-  reset: vi.fn(),
   loadScenarioFromJson: vi.fn(),
 }
 
@@ -57,6 +50,17 @@ describe('ControlPanel — recording controls (Phase 4)', () => {
     expect(
       container.querySelector('.scenario-picker-record-label'),
     ).toBeNull()
+  })
+
+  it('does NOT render simulation run controls', () => {
+    mount(<ControlPanel />)
+    const buttonLabels = [...container.querySelectorAll('button')].map(
+      (button) => button.textContent,
+    )
+    expect(buttonLabels).not.toContain('Start')
+    expect(buttonLabels).not.toContain('Pause')
+    expect(buttonLabels).not.toContain('Step')
+    expect(buttonLabels).not.toContain('Reset')
   })
 
   it('renders an unchecked "Record while simulation runs" checkbox by default', () => {

@@ -247,11 +247,28 @@ body,
   cursor: not-allowed;
 }
 
+.simulation-control-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.simulation-time-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-start;
+  gap: 12px;
+}
+
 .scenario-picker {
   margin-top: 12px;
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.control-panel .scenario-picker {
+  margin-top: 0;
 }
 
 .scenario-picker-label {
