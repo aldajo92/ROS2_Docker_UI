@@ -197,7 +197,6 @@ body,
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  margin-top: 0.75rem;
 }
 
 .renderer-picker-label {
@@ -304,6 +303,38 @@ body,
 .scenario-picker-row button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+.scenario-picker-record-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--fg-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.scenario-picker-record-label input[type='checkbox'] {
+  accent-color: var(--accent);
+  width: 13px;
+  height: 13px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.scenario-picker-row--save {
+  margin-top: 8px;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+
+.scenario-picker-save-hint {
+  flex-basis: 100%;
+  font-size: 11px;
+  color: var(--fg-muted);
+  opacity: 0.85;
 }
 
 .error {

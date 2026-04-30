@@ -2,10 +2,6 @@ import { useState } from 'react'
 import { useSimulation, useSimulationRunning } from '../app/useSimulation'
 import { ScenarioLoader } from '../simulation/scenarios/ScenarioLoader'
 import type { ScenarioSpec } from '../simulation/scenarios/Scenario'
-import {
-  RENDERER_LABELS,
-  type RendererType,
-} from './viewport/RendererType'
 
 interface ScenarioOption {
   label: string
@@ -18,16 +14,26 @@ export interface ControlPanelProps {
    *  control defaults) so it's already applied when the engine emits
    *  `reset` and `scenarioLoaded` synchronously inside `loadScenario`. */
   onScenarioLoaded?: (spec: ScenarioSpec) => void
-  /** Currently active renderer adapter. Owned by the App; the panel
-   *  only reads it and emits change events. */
-  rendererType?: RendererType
-  /** Notified when the user picks a different renderer. The App
-   *  swaps which viewport is mounted; the engine is untouched. */
-  onRendererTypeChange?: (next: RendererType) => void
+  /**
+   * When `true` the "Record while simulation runs" checkbox is
+   * checked. The panel is fully controlled — all recording wiring
+   * (calling `setRecordingConfig`, `startRecording`, `stopRecording`)
+   * lives in `App.tsx`. App is expected to translate the flag into
+   * "start recording on `started`, stop on `paused`".
+   */
+  recordWhileRunning?: boolean
+  /** Notified when the user toggles "Record while simulation runs". */
+  onRecordWhileRunningChange?: (enabled: boolean) => void
+  /** Click handler for the "Save recording" button. The App wires
+   *  this to `controller.exportRecording()` + `downloadReplay(...)`. */
+  onSaveRecording?: () => void
+  /** When `true` the Save button is disabled. Owned by the App so
+   *  the disabled rule (running / replay / no frames) lives in one
+   *  place. */
+  saveRecordingDisabled?: boolean
+  /** Optional tooltip explaining why Save is disabled. */
+  saveRecordingDisabledReason?: string
 }
-
-/** Order of renderer options in the dropdown. */
-const RENDERER_OPTIONS: readonly RendererType[] = ['three', 'phaser']
 
 /**
  * The full set of bundled scenarios is small and known at build time;
@@ -50,8 +56,11 @@ const SCENARIO_OPTIONS: readonly ScenarioOption[] = [
 
 export function ControlPanel({
   onScenarioLoaded,
-  rendererType,
-  onRendererTypeChange,
+  recordWhileRunning = false,
+  onRecordWhileRunningChange,
+  onSaveRecording,
+  saveRecordingDisabled = false,
+  saveRecordingDisabledReason,
 }: ControlPanelProps = {}) {
   const { controller } = useSimulation()
   const isRunning = useSimulationRunning()
@@ -113,28 +122,46 @@ export function ControlPanel({
             {loading ? 'Loading…' : 'Load'}
           </button>
         </div>
+        {onRecordWhileRunningChange && (
+          <label
+            className="scenario-picker-record-label"
+            title="Capture every simulation tick while the engine is running. Recording starts on Start and stops on Pause; press Save recording afterwards to download the replay."
+          >
+            <input
+              type="checkbox"
+              checked={recordWhileRunning}
+              onChange={(e) =>
+                onRecordWhileRunningChange(e.target.checked)
+              }
+              disabled={loading}
+            />
+            <span>Record while simulation runs</span>
+          </label>
+        )}
+        {onSaveRecording && (
+          <div className="scenario-picker-row scenario-picker-row--save">
+            <button
+              type="button"
+              onClick={onSaveRecording}
+              disabled={saveRecordingDisabled}
+              title={
+                saveRecordingDisabled
+                  ? saveRecordingDisabledReason
+                  : 'Download the recorded simulation as a replay file'
+              }
+              data-testid="control-panel-save-recording"
+            >
+              Save recording
+            </button>
+            {saveRecordingDisabled && saveRecordingDisabledReason && (
+              <span className="scenario-picker-save-hint">
+                {saveRecordingDisabledReason}
+              </span>
+            )}
+          </div>
+        )}
       </div>
       {error && <p className="error">Failed to load scenario: {error}</p>}
-      {rendererType !== undefined && onRendererTypeChange && (
-        <div className="renderer-picker">
-          <label className="renderer-picker-label" htmlFor="renderer-select">
-            Renderer
-          </label>
-          <select
-            id="renderer-select"
-            value={rendererType}
-            onChange={(event) =>
-              onRendererTypeChange(event.target.value as RendererType)
-            }
-          >
-            {RENDERER_OPTIONS.map((option) => (
-              <option key={option} value={option}>
-                {RENDERER_LABELS[option]}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
     </section>
   )
 }

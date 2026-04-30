@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { SimulationProvider } from './SimulationProvider'
-import { useSimulation } from './useSimulation'
+import { useSimulation, useSimulationRunning } from './useSimulation'
 import { ControlPanel } from '../ui/ControlPanel'
+import { RendererPanel } from '../ui/RendererPanel'
 import { SimulationTimeDisplay } from '../ui/SimulationTimeDisplay'
 import { EntityListPanel } from '../ui/EntityListPanel'
 import { MetricsPanel } from '../ui/MetricsPanel'
@@ -72,6 +73,7 @@ export default function App() {
 
 function AppShell() {
   const { engine, controller } = useSimulation()
+  const isRunning = useSimulationRunning()
 
   const [trajectoryVisualization, setTrajectoryVisualization] =
     useState<ThreeTrajectoryVisualizationConfig>(
@@ -181,6 +183,21 @@ function AppShell() {
     })
   }, [engine, controller])
 
+  // ----- "record while simulation runs" flag ---------------------------
+  //
+  // Semantics: the checkbox is the user's intent. Pressing Start (or any
+  // other path that flips the engine to running) auto-starts recording;
+  // pressing Pause auto-stops it so the user can hit "Save recording"
+  // immediately after pausing. Toggling the checkbox while the engine is
+  // already running has the same immediate effect, so the user doesn't
+  // have to stop+start to arm recording mid-session.
+
+  const [recordWhileRunning, setRecordWhileRunning] = useState(false)
+  const recordWhileRunningRef = useRef(recordWhileRunning)
+  useEffect(() => {
+    recordWhileRunningRef.current = recordWhileRunning
+  }, [recordWhileRunning])
+
   // ----- recording ------------------------------------------------------
 
   const [recordingConfig, setRecordingConfig] =
@@ -220,6 +237,58 @@ function AppShell() {
       setRecordingStatus(controller.getRecordingStatus())
     })
   }, [engine, controller, recordingStatus.recording])
+
+  // ----- "record while running" wiring ---------------------------------
+  //
+  // Translates the user's checkbox intent into recorder lifecycle calls
+  // by listening to engine `started`/`paused` events. We deliberately
+  // do NOT branch on this flag in handleScenarioLoaded — Load doesn't
+  // run the engine, so binding to the running state is the single
+  // source of truth.
+  useEffect(() => {
+    const onStarted = () => {
+      if (!recordWhileRunningRef.current) return
+      if (controller.isRecording()) return
+      controller.setRecordingConfig({
+        enabled: true,
+        sampleEveryNTicks: 1,
+      })
+      controller.startRecording()
+    }
+    const onPaused = () => {
+      if (!controller.isRecording()) return
+      controller.stopRecording()
+    }
+    const offs = [
+      engine.events.on('started', onStarted),
+      engine.events.on('paused', onPaused),
+    ]
+    return () => {
+      for (const off of offs) off()
+    }
+  }, [engine, controller])
+
+  const handleRecordWhileRunningChange = useCallback(
+    (next: boolean) => {
+      setRecordWhileRunning(next)
+      // Mirror the new intent immediately. If the engine is already
+      // running we want toggling-on to start recording right away (and
+      // toggling-off to stop), so the user doesn't have to Pause+Start
+      // just to flip the switch.
+      if (next) {
+        if (engine.isRunning() && !controller.isRecording()) {
+          controller.setRecordingConfig({
+            enabled: true,
+            sampleEveryNTicks: 1,
+          })
+          controller.startRecording()
+        }
+      } else if (controller.isRecording()) {
+        controller.stopRecording()
+      }
+    },
+    [engine, controller],
+  )
 
   const handleRecordingConfigChange = useCallback(
     (partial: Partial<SimulationRecorderConfig>) => {
@@ -393,6 +462,19 @@ function AppShell() {
 
   const isReplayMode = runMode === 'replay'
 
+  // Save button gate in `ControlPanel`. The user can save while paused
+  // or stopped; we never download a replay while the live engine is
+  // ticking (avoids the "downloaded a moving file" foot-gun).
+  const saveRecordingDisabled =
+    isRunning ||
+    isReplayMode ||
+    recordingStatus.frameCount === 0
+  const saveRecordingDisabledReason = computeSaveRecordingDisabledReason({
+    isRunning,
+    isReplayMode,
+    frameCount: recordingStatus.frameCount,
+  })
+
   const [keyboardControlState, setKeyboardControlState] =
     useState<KeyboardControlUiState>(DEFAULT_KEYBOARD_CONTROL_UI_STATE)
   const lastInteractionRef = useRef<ScenarioInteractionConfig | undefined>(
@@ -459,6 +541,13 @@ function AppShell() {
             <h2 className="layout-title">Inspector</h2>
             <ControlPanel
               onScenarioLoaded={handleScenarioLoaded}
+              recordWhileRunning={recordWhileRunning}
+              onRecordWhileRunningChange={handleRecordWhileRunningChange}
+              onSaveRecording={handleDownloadRecording}
+              saveRecordingDisabled={saveRecordingDisabled}
+              saveRecordingDisabledReason={saveRecordingDisabledReason}
+            />
+            <RendererPanel
               rendererType={rendererType}
               onRendererTypeChange={setRendererType}
             />
@@ -524,4 +613,19 @@ function AppShell() {
       </main>
     </>
   )
+}
+
+function computeSaveRecordingDisabledReason({
+  isRunning,
+  isReplayMode,
+  frameCount,
+}: {
+  isRunning: boolean
+  isReplayMode: boolean
+  frameCount: number
+}): string | undefined {
+  if (isRunning) return 'Pause the simulation before saving the recording.'
+  if (isReplayMode) return 'Exit replay mode before saving a new recording.'
+  if (frameCount === 0) return 'No recorded frames yet — start recording first.'
+  return undefined
 }
