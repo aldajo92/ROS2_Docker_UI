@@ -56,6 +56,8 @@ src/
     commands/         Addressed VehicleCommand + queue + system
     scenarios/        Scenario type + JSON loader
     trajectories/     Trajectory samples + registry types (sim-owned)
+    recording/        Replay format, snapshotter, recorder + system,
+                      ReplaySession + replay-state adapter (Phase 3)
     events/           Typed event bus + SimulationEvents map
     logging/          Pluggable level-filtered logger
     render/           SimulationRenderer interface (no impl)
@@ -118,7 +120,11 @@ The runtime spine.
   4. `events.emit('tick', { time, dt, ticks })`
 - **`SimulationController`** — thin UI-facing facade: `start / pause /
   reset / step / loadScenarioFromUrl / loadScenarioFromJson /
-  isRunning`.
+  isRunning`. Also forwards the recorder API (`setRecordingConfig`,
+  `getRecordingConfig`, `getRecordingStatus`, `isRecording`,
+  `getRecordingFrameCount`, `startRecording`, `stopRecording`,
+  `clearRecording`, `exportRecording`) so UI panels never reach into
+  the engine directly.
 
 ## Layer 3 — entities (`src/simulation/entities/`)
 
@@ -175,6 +181,7 @@ ScenarioSystem
     TrajectoryTrackingSystem  ← samples trajectories into state.trajectories
     CollisionSystem           ← detects contacts on the integrated state
     MetricsSystem             ← observes the final state
+    SimulationRecorderSystem  ← snapshots final post-tick state when recording
     [CommunicationSystem]     ← optional, when wired
 ```
 
@@ -324,6 +331,153 @@ Runtime **actual** trajectories (distinct from planned `Path2D`) are simulation-
 - **`TrajectoryTrackingSystem`** — after dynamics, appends samples according to `TrajectoryTrackingConfig` (scenario + Inspector).
 - Renderers **read** `state.trajectories.toArray()` and draw; they **never** append samples or mutate the registry.
 
+## Layer 5d — recording (`src/simulation/recording/` + `src/ui/replay/`)
+
+Replay support is a strict, simulation-owned data layer. Phase 1
+delivered the in-memory recorder; Phase 2 added the Inspector UI and
+file download. Phase 3 (replay loading + playback) layers on top of
+these contracts without changing them.
+
+- **`SimulationFrameSnapshot`** — JSON-friendly per-tick snapshot.
+  Includes `tick` (1-based, matches the `tick` event), `timeSec`, an
+  `entities` array (`vehicle` / `static_obstacle` / `dynamic_actor` /
+  generic fallback), optional `events` and `metrics`.
+- **`ReplayFileFormat`** — versioned envelope (`format: 'angy_sim_replay'`,
+  `version: 1`). Carries `scenarioName`, `fixedDtSec`, optional
+  `metadata`, and `frames: SimulationFrameSnapshot[]`. Always
+  `JSON.stringify`-safe.
+- **`createSnapshotFromState(state)`** — read-only conversion from the
+  live `SimulationState` into a `SimulationFrameSnapshot`. Uses only
+  public entity APIs; never mutates `state`.
+- **`SimulationRecorder`** — pure in-memory frame buffer. Configurable
+  with `enabled`, `maxFrames`, `sampleEveryNTicks`. `start / stop /
+  clear / append / toReplayFile` only — no DOM, FS, timers, or
+  networking. Auto-stops at `maxFrames` and exposes that via
+  `getStatus().maxFramesReached`.
+- **`SimulationRecorderSystem`** — `SimulationSystem` registered LAST in
+  the pipeline so it observes the final post-tick state. Honors the
+  recorder's `sampleEveryNTicks` cadence. On auto-stop emits
+  `recordingMaxFramesReached` and `recordingStopped` through the event
+  bus.
+- **Engine API** — `engine.recorder`, `setRecordingConfig`,
+  `getRecordingConfig`, `getRecordingStatus`, `isRecording`,
+  `getRecordingFrameCount`, `startRecording`, `stopRecording`,
+  `clearRecording`, `exportRecording`. `engine.reset()` stops + clears
+  the recorder; if previously recording it emits
+  `recordingStopped({ reason: 'reset' })` before the canonical `reset`
+  event.
+- **Events** (added to `SimulationEvents`):
+  `recordingStarted({ config })`,
+  `recordingStopped({ frameCount, reason: 'manual' | 'maxFramesReached' | 'reset' })`,
+  `recordingCleared`,
+  `recordingMaxFramesReached({ frameCount })`.
+
+### UI layer (Phase 2, `src/ui/replay/` + `src/ui/RecordingPanel.tsx`)
+
+- **`src/ui/replay/ReplayFileDownloader.ts`** — DOM-aware helpers:
+  `buildReplayFileName(replay, options?)` (pure, deterministic via
+  `options.now`), `serializeReplay(replay)` (pretty-printed JSON), and
+  `downloadReplay(replay, options?)` which composes a `Blob`, an
+  off-screen `<a download>`, dispatches a click, then revokes the
+  object URL. The only simulation-side dependency is the
+  `ReplayFileFormat` *type*.
+- **`src/ui/RecordingPanel.tsx`** — Inspector "Recording" panel.
+  **Dumb / controlled component**: all state lives in `App.tsx`; the
+  panel never imports `SimulationController`, `SimulationRecorder`,
+  or any DOM/file API. Exposes a `disabledReason` prop so Phase 3 can
+  disable recording while a replay is loaded.
+- **App-level wiring (`src/app/App.tsx`)** —
+  `controller.{getRecordingStatus,getRecordingConfig}` snapshots are
+  refreshed on every recorder lifecycle event
+  (`recordingStarted/Stopped/Cleared/MaxFramesReached`), on
+  `scenarioLoaded`, and on `reset`. While recording, a lightweight
+  `tick` subscription advances the live frame counter. The
+  **Download** button calls `controller.exportRecording()` and hands
+  the result to `downloadReplay`.
+
+### Replay playback (Phase 3, `src/simulation/recording/` + `src/ui/replay/`)
+
+Playback is *replay of recorded frames*, not resimulation. Live
+simulation systems are paused; the renderer paints a read-only
+`SimulationState`-shaped view backed by a single recorded frame.
+This phase adds the following pieces without changing any Phase 1/2
+contract:
+
+- **`ReplaySession`** (sim-side, `src/simulation/recording/ReplaySession.ts`)
+  — pure-logic playback cursor over a `ReplayFileFormat`. Public API:
+  `getFrameCount`, `getDurationSec`, `getFixedDtSec`,
+  `getCurrentIndex`, `getCurrentFrame`, `getFrame(index)`,
+  `seekToFrame`, `seekToTime`, `stepForward`, `stepBackward`,
+  `reset`, `onChange(listener)`. Emits `onChange` only when the
+  cursor actually moves (clamped no-ops stay silent).
+- **`createReplayStateFromFrame(frame, fixedDtSec)`** (sim-side,
+  `src/simulation/recording/createReplayStateFromFrame.ts`) —
+  read-only adapter producing a `SimulationState` whose public
+  surfaces (`clock.time()`, `clock.dt()`, `entities.byType(...)`,
+  `entities.all()`, `entities.toArray()`, `paths`, `trajectories`)
+  match what live renderers already consume. Vehicles, static
+  obstacles, and dynamic actors are reconstructed as real class
+  instances; generic entities are skipped (no spatial payload).
+  Phase-3 limitation: `state.trajectories` is intentionally empty
+  (the replay file does not yet store historical samples).
+- **`ReplayFileLoader`** (`src/ui/replay/ReplayFileLoader.ts`) —
+  pure JSON parser/validator (`parseReplayJson`) plus a thin DOM
+  wrapper (`readReplayFromFile(file)`) that decodes a `File` via
+  `file.text()`. Returns a discriminated `LoadReplayResult`
+  (`{ ok: true, replay }` / `{ ok: false, error }`) so callers
+  never have to write `try/catch`. Validates `format`, `version`,
+  `fixedDtSec`, and per-frame `tick` / `timeSec` / `entities`.
+- **`ReplayPlayer`** (`src/ui/replay/ReplayPlayer.ts`) — UI-side
+  timer driver. Wraps a `ReplaySession`, walks `stepForward()`
+  proportional to wall-clock elapsed × `speed`, auto-pauses on the
+  last frame, and accepts an injectable `scheduler` (`rAF` by
+  default) and `now` for tests.
+- **`ReplayTimeline`** (`src/ui/replay/ReplayTimeline.tsx`) — dumb
+  controlled component rendered below the viewport when
+  `runMode === 'replay'`. Slider, play/pause, step buttons, time/frame
+  display, optional speed selector, and an "Exit replay" button.
+- **`ReplayLoadButton`** (`src/ui/replay/ReplayLoadButton.tsx`) —
+  hidden `<input type="file" accept=".json,.angy-replay.json" />`
+  wired to `readReplayFromFile`. Reports parsed replays via
+  `onLoaded(replay)` and validation errors via `onError(message)`.
+- **App-level wiring (`src/app/App.tsx`)** — owns
+  `runMode: 'live' | 'replay'`, the `ReplaySession` / `ReplayPlayer`
+  refs, and React mirrors of `currentIndex`, `currentTimeSec`,
+  `frameCount`, `durationSec`, `isPlaying`, `speed`. On
+  `handleReplayLoaded` it pauses the engine, defensively stops any
+  in-progress recording, builds a fresh session, subscribes to
+  `session.onChange`, and flips `runMode` to `replay`. On
+  `handleExitReplay` it disposes the player/session and snaps back
+  to live mode (the live engine remains paused — the user resumes
+  via the existing **Start** control). Loading a new scenario while
+  in replay mode auto-exits replay first.
+- **Renderer wiring (`src/ui/viewport/SimulationViewportSwitcher.tsx`
+  + `ThreeSimulationViewport.tsx` + `PhaserSimulationViewport.tsx`)** —
+  both viewports accept an optional `replayState?: SimulationState`
+  prop. When set, the viewport's engine event subscriptions still
+  exist but render `replayState ?? engine.state`; a separate effect
+  keyed on `replayState` repaints whenever the cursor moves. The
+  renderer code itself is unchanged — no replay-specific branches
+  ever reach the renderer interface.
+
+Boundaries (enforced by `architecture.recording.test.ts` and
+`architecture.replay.test.ts`):
+
+- No React, Three, Phaser, Node `fs`/`path`, or `src/ui/` / `src/app/`
+  imports inside `src/simulation/recording/`. This now also covers
+  `ReplaySession.ts` and `createReplayStateFromFrame.ts`.
+- `src/ui/replay/**` may use DOM APIs but MUST NOT import
+  `SimulationRecorder` or `SimulationRecorderSystem`. Imports from
+  `src/simulation/recording/` are limited to the public surface:
+  `ReplayFormat`, `SimulationFrameSnapshot`, `ReplaySession`, and
+  `createReplayStateFromFrame`.
+- `src/simulation/recording/**` MUST NOT import `src/ui/replay/**`.
+- Sibling UI panels (`src/ui/*.tsx`) MUST NOT import
+  `ReplayFileDownloader` — only the App shell wires the side effect.
+- Renderers (`src/ui/renderers/**`) MUST remain mode-agnostic. They
+  receive a `SimulationState` and have no idea whether it came from
+  the live engine or the replay adapter.
+
 ## Layer 6 — render / events / logging
 
 - **`SimulationRenderer`** — interface only (`init(state)`,
@@ -335,7 +489,9 @@ Runtime **actual** trajectories (distinct from planned `Path2D`) are simulation-
   Handlers are stored in a `Map<keyof EventMap, Set<Handler>>`.
 - **`SimulationEvents`** — the engine's event map:
   `tick`, `started`, `paused`, `reset`, `scenarioLoaded`,
-  `collision`, `entityAdded`, `entityRemoved`.
+  `collision`, `entityAdded`, `entityRemoved`,
+  `recordingStarted`, `recordingStopped`, `recordingCleared`,
+  `recordingMaxFramesReached`.
 - **`Logger`** — level-filtered (`debug`/`info`/`warn`/`error`) with a
   pluggable `LoggerSink`. Defaults to a `ConsoleLoggerSink`.
 
@@ -347,7 +503,7 @@ Runtime **actual** trajectories (distinct from planned `Path2D`) are simulation-
   the shared `VehicleCommandQueue`, registers the default system
   pipeline (`ScenarioSystem` → `VehicleCommandSystem` →
   `VehicleDynamicsSystem` → `TrajectoryTrackingSystem` →
-  `CollisionSystem` → `MetricsSystem`,
+  `CollisionSystem` → `MetricsSystem` → `SimulationRecorderSystem`,
   with `CommunicationSystem` optional), wraps the engine with
   `SimulationController`, and exposes `engine`, `controller`, and
   `commandQueue` through context. Pauses the engine on unmount.
@@ -360,9 +516,15 @@ Runtime **actual** trajectories (distinct from planned `Path2D`) are simulation-
 - **UI components (`src/ui/`)** —
   `ControlPanel` (Start / Pause / Step / Reset / Load Scenario / pick
   Renderer), `SimulationTimeDisplay`, `MetricsPanel`,
-  `EntityListPanel`, and `viewport/SimulationViewportSwitcher` which
-  conditionally mounts either `ThreeSimulationViewport` or
-  `PhaserSimulationViewport` based on UI-only React state. See
+  `EntityListPanel`, `RecordingPanel` (Inspector "Recording" panel —
+  start/stop/clear/download with config inputs; dumb component),
+  `replay/ReplayLoadButton` + `replay/ReplayTimeline` (Phase 3
+  replay-mode controls — slider, play/pause, step, speed, exit), and
+  `viewport/SimulationViewportSwitcher` which conditionally mounts
+  either `ThreeSimulationViewport` or `PhaserSimulationViewport`
+  based on UI-only React state. The viewports accept an optional
+  `replayState` prop: when set, they render that state instead of
+  `engine.state` while still using the same renderer code path. See
   Layer 9 for the renderer adapters.
 - **Layout** — `src/app/App.tsx` + `src/app/app.css`: full-viewport
   flex shell, two-column grid (viewport left, Inspector right), no
@@ -1279,6 +1441,72 @@ deterministic, replayable, and renderer/transport-agnostic.
 - `src/ui/renderers/three/objects/ThreeTrajectoryRenderer.test.ts` —
   reads `state.trajectories`, one line per entity, stale line removal,
   `simPoint2DToThree`, no registry mutation, disposal (7 tests)
+- `src/simulation/recording/SimulationRecorder.test.ts` — start
+  requires `enabled`, stop preserves frames, clear resets cap flag,
+  `maxFrames` auto-stop, `setConfig({enabled:false})` halts recording,
+  config sanitization, `toReplayFile` envelope shape + JSON
+  round-trip (10 tests)
+- `src/simulation/recording/createSnapshotFromState.test.ts` — vehicle
+  / static obstacle / dynamic actor / generic fallback shapes,
+  `metrics.ticks + 1` tick numbering, JSON round-trip, no state
+  mutation (7 tests)
+- `src/simulation/recording/SimulationRecorderSystem.test.ts` —
+  default cadence, `sampleEveryNTicks`, ticks aligned with engine,
+  `recordingMaxFramesReached` + `recordingStopped` on auto-stop,
+  `reset` clears cadence counter, no entity mutation (7 tests)
+- `src/simulation/recording/architecture.recording.test.ts` —
+  enforces no React / Three / Phaser / Node `fs|path` / `src/ui` /
+  `src/app` imports inside `src/simulation/recording/`
+- `src/simulation/core/SimulationEngine.recording.test.ts` —
+  `engine.recorder` exposed, `startRecording` is a no-op when
+  disabled, single-fire `recordingStarted` / `recordingStopped`,
+  cadence integration with the engine tick loop, exported envelope
+  carries `fixedDtSec` and `scenarioName`, `loadScenario` clears
+  recording (12 tests)
+- `src/ui/replay/buildReplayFileName.test.ts` — base-name fallback
+  chain (option → scenarioName → "simulation"), deterministic
+  timestamp via `options.now`, `.angy-replay.json` suffix, sanitizer
+  for filesystem-unfriendly characters, length cap, JSON
+  serialization round-trip (10 tests)
+- `src/ui/replay/downloadReplay.test.ts` — DOM-side
+  (`@vitest-environment happy-dom`); creates a `Blob` of type
+  `application/json`, builds an anchor with the expected `download`
+  attribute, click + revoke flow, anchor cleanup even when the click
+  handler throws (5 tests)
+- `src/ui/replay/architecture.replay.test.ts` — UI replay layer
+  cannot import `SimulationRecorder` / `SimulationRecorderSystem`;
+  imports from `src/simulation/recording/` are limited to the public
+  surface (`ReplayFormat`, `SimulationFrameSnapshot`, `ReplaySession`,
+  `createReplayStateFromFrame`); `src/simulation/recording/**`
+  cannot import `src/ui/replay/**`; sibling UI panels do not import
+  the downloader; covers both `.ts` and `.tsx` files
+- `src/simulation/recording/ReplaySession.test.ts` — frame-count /
+  duration / fixed-dt accessors, empty-replay rejection,
+  `seekToFrame` clamping, `seekToTime` first-frame-≥-t policy,
+  `stepForward / stepBackward` clamping, `onChange` fires only on
+  real index movement, `reset` returns to index 0, unsubscribe
+  drops further notifications, `getFrame(index)` clamping without
+  cursor movement, single-frame duration is 0 (11 tests)
+- `src/simulation/recording/createReplayStateFromFrame.test.ts` —
+  `clock.time()` / `clock.dt()` reflect the recorded frame,
+  non-finite/zero `fixedDtSec` falls back gracefully, vehicle /
+  static obstacle / dynamic actor reconstruction, generic entities
+  skipped, `entities.toArray|all|byType` work, `paths` /
+  `trajectories` registries are empty (Phase 3 limitation), legacy
+  dynamic-actor `position` fallback, metrics mirror the snapshot
+  (10 tests)
+- `src/ui/replay/parseReplayJson.test.ts` — accepts a well-formed
+  envelope, descriptive error on invalid JSON, rejects non-object
+  roots, wrong format tag, unsupported version, non-positive
+  `fixedDtSec`, missing/empty/non-array `frames`, frames with
+  non-finite `tick` / `timeSec`, non-array entities, and reports
+  the offending frame index (12 tests)
+- `src/ui/replay/ReplayPlayer.test.ts` — starts paused, `play()`
+  schedules forward steps, walks to the last frame and auto-pauses,
+  `pause()` cancels the scheduled callback, toggle, speed clamping,
+  faster speed advances more frames per real-time interval, play()
+  at the last frame is a no-op, dispose is idempotent (8 tests, all
+  with an injected scheduler so no DOM is required)
 
 WebGL-bound renderer code (lights, `WebGLRenderer`, full `init`) is
 intentionally not unit-tested under vitest's `node` environment —

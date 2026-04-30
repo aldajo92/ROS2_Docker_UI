@@ -7,6 +7,12 @@ import type { ScenarioSpec } from '../scenarios/Scenario'
 import type { TrajectoryTrackingConfig } from '../trajectories/TrajectoryTrackingConfig'
 import type { TrajectoryDebugRecord } from '../trajectories/TrajectoryDebugRecord'
 import { ScenarioLoader } from '../scenarios/ScenarioLoader'
+import {
+  SimulationRecorder,
+  type SimulationRecorderConfig,
+  type SimulationRecorderStatus,
+} from '../recording/SimulationRecorder'
+import type { ReplayFileFormat } from '../recording/ReplayFormat'
 
 import { EntityManager } from './EntityManager'
 import { SystemManager } from './SystemManager'
@@ -33,6 +39,7 @@ export class SimulationEngine {
   readonly events: TypedEventBus<SimulationEvents>
   readonly logger: Logger
   readonly state: SimulationState
+  readonly recorder: SimulationRecorder
   private loop: SimulationLoop
 
   constructor(options: SimulationEngineOptions = {}) {
@@ -47,6 +54,7 @@ export class SimulationEngine {
       this.events,
       this.logger,
     )
+    this.recorder = new SimulationRecorder()
     this.loop = new SimulationLoop({ fixedDtSec: options.fixedDtSec ?? 1 / 60 })
     this.loop.setStepCallback((dt) => this.tick(dt))
   }
@@ -83,6 +91,16 @@ export class SimulationEngine {
     this.state.trajectories.clear()
     this.state.scenarioName = null
     this.systems.reset()
+    const wasRecording = this.recorder.isRecording()
+    const frameCount = this.recorder.getStatus().frameCount
+    this.recorder.stop()
+    this.recorder.clear()
+    if (wasRecording) {
+      this.events.emit('recordingStopped', {
+        frameCount,
+        reason: 'reset',
+      })
+    }
     this.events.emit('reset', undefined)
   }
 
@@ -131,6 +149,91 @@ export class SimulationEngine {
 
   getTrajectoryDebugRecords(): TrajectoryDebugRecord[] {
     return this.state.trajectoryDebug.getRecords()
+  }
+
+  /* -- recording ------------------------------------------------------- */
+
+  /**
+   * Update recorder configuration. Idempotent. Setting `enabled=false`
+   * via this method also stops an in-progress recording (the recorder
+   * enforces this internally).
+   */
+  setRecordingConfig(config: Partial<SimulationRecorderConfig>): void {
+    this.recorder.setConfig(config)
+  }
+
+  getRecordingConfig(): SimulationRecorderConfig {
+    return this.recorder.getConfig()
+  }
+
+  getRecordingStatus(): SimulationRecorderStatus {
+    return this.recorder.getStatus()
+  }
+
+  /** Convenience accessor — equivalent to `getRecordingStatus().recording`. */
+  isRecording(): boolean {
+    return this.recorder.isRecording()
+  }
+
+  /** Convenience accessor — equivalent to `getRecordingStatus().frameCount`. */
+  getRecordingFrameCount(): number {
+    return this.recorder.getStatus().frameCount
+  }
+
+  /**
+   * Begin recording subsequent ticks. No-op if the recorder is
+   * disabled by config or already at `maxFrames`. Emits
+   * `recordingStarted` only on a real off→on transition.
+   */
+  startRecording(): void {
+    const wasRecording = this.recorder.isRecording()
+    this.recorder.start()
+    if (!wasRecording && this.recorder.isRecording()) {
+      this.events.emit('recordingStarted', {
+        config: this.recorder.getConfig(),
+      })
+    }
+  }
+
+  /**
+   * Stop recording but keep the captured frames in memory (so they
+   * remain available for export). Emits `recordingStopped` only on a
+   * real on→off transition.
+   */
+  stopRecording(): void {
+    const wasRecording = this.recorder.isRecording()
+    if (!wasRecording) return
+    const frameCount = this.recorder.getStatus().frameCount
+    this.recorder.stop()
+    this.events.emit('recordingStopped', {
+      frameCount,
+      reason: 'manual',
+    })
+  }
+
+  /** Drop all buffered frames. Does not change recording state. */
+  clearRecording(): void {
+    this.recorder.clear()
+    this.events.emit('recordingCleared', undefined)
+  }
+
+  /**
+   * Build an exportable {@link ReplayFileFormat} envelope from the
+   * current frame buffer. The engine fills in `fixedDtSec` and
+   * `scenarioName`; callers may override or extend via `metadata`.
+   */
+  exportRecording(params?: {
+    metadata?: Record<string, unknown>
+    scenarioDescription?: string
+    createdAt?: string
+  }): ReplayFileFormat {
+    return this.recorder.toReplayFile({
+      scenarioName: this.state.scenarioName ?? undefined,
+      scenarioDescription: params?.scenarioDescription,
+      fixedDtSec: this.getFixedDt(),
+      metadata: params?.metadata,
+      createdAt: params?.createdAt,
+    })
   }
 
   /* -- entity helpers -------------------------------------------------- */

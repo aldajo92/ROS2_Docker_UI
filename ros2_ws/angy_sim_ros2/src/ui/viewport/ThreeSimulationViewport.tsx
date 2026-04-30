@@ -11,6 +11,7 @@ import type { CameraMode } from '../renderers/three/cameras/CameraMode'
 import type { Projection } from '../renderers/three/cameras/Projection'
 import type { ThreeTrajectoryVisualizationConfig } from '../renderers/three/config/ThreeRendererConfig'
 import type { ThreeTrajectoryRendererDebugSummary } from '../renderers/three/objects/ThreeTrajectoryRenderer'
+import type { SimulationState } from '../../simulation/core/SimulationState'
 
 /** Cycle order used by the `c` key. Matches the manager's mode set. */
 const CAMERA_MODE_CYCLE: readonly CameraMode[] = [
@@ -50,6 +51,12 @@ export interface ThreeSimulationViewportProps {
    * simulation (`TrajectoryTrackingSystem`).
    */
   trajectoryVisualization?: ThreeTrajectoryVisualizationConfig
+  /**
+   * Optional read-only state view used while the app is in replay
+   * mode. When set the viewport renders this state on every change
+   * instead of `engine.state`. See {@link SimulationViewportSwitcher}.
+   */
+  replayState?: SimulationState
 }
 
 /**
@@ -58,10 +65,19 @@ export interface ThreeSimulationViewportProps {
 export const ThreeSimulationViewport = forwardRef<
   ThreeSimulationViewportHandle,
   ThreeSimulationViewportProps
->(function ThreeSimulationViewport({ trajectoryVisualization }, ref) {
+>(function ThreeSimulationViewport(
+  { trajectoryVisualization, replayState },
+  ref,
+) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const rendererRef = useRef<ThreeSimulationRenderer | null>(null)
   const { engine } = useSimulation()
+
+  // Latest replay state, kept in a ref so the engine event subscriptions
+  // installed once per mount can pick the right source on each tick
+  // without retearing the effect every time the replay frame changes.
+  const replayStateRef = useRef<SimulationState | undefined>(replayState)
+  replayStateRef.current = replayState
 
   const [cameraMode, setCameraMode] = useState<CameraMode>('orbit')
   const [projection, setProjection] = useState<Projection>('perspective')
@@ -108,8 +124,15 @@ export const ThreeSimulationViewport = forwardRef<
     setCameraMode(renderer.getCameraMode() ?? 'orbit')
     setProjection(renderer.getProjection())
 
+    // Single source-of-truth for "what to render right now". When a
+    // replay state is loaded we paint that; otherwise the live engine
+    // state. The engine is paused in replay mode so the live event
+    // subscriptions below stay quiet, but defensive selection here
+    // means a stray event still paints the correct frame.
+    const currentState = () => replayStateRef.current ?? engine.state
+
     const renderCurrent = () => {
-      renderer.render(engine.state)
+      renderer.render(currentState())
     }
 
     const unsubs = [
@@ -123,7 +146,7 @@ export const ThreeSimulationViewport = forwardRef<
 
     const handleResize = () => {
       renderer.resize()
-      renderer.render(engine.state)
+      renderer.render(currentState())
     }
     window.addEventListener('resize', handleResize)
 
@@ -131,7 +154,7 @@ export const ThreeSimulationViewport = forwardRef<
     if (typeof ResizeObserver !== 'undefined') {
       resizeObserver = new ResizeObserver(() => {
         renderer.resize()
-        renderer.render(engine.state)
+        renderer.render(currentState())
       })
       resizeObserver.observe(container)
     }
@@ -156,6 +179,15 @@ export const ThreeSimulationViewport = forwardRef<
     rendererRef.current?.setTrajectoryVisualizationConfig(trajectoryVisualization)
   }, [trajectoryVisualization])
 
+  // Repaint whenever the replay frame changes, or when the user
+  // exits replay (state goes from defined → undefined): in the
+  // latter case we sync back to the live engine state once.
+  useEffect(() => {
+    const renderer = rendererRef.current
+    if (!renderer) return
+    renderer.render(replayState ?? engine.state)
+  }, [replayState, engine])
+
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.repeat) return
@@ -175,7 +207,7 @@ export const ThreeSimulationViewport = forwardRef<
         const next =
           CAMERA_MODE_CYCLE[(idx + 1) % CAMERA_MODE_CYCLE.length]
         renderer.setCameraMode(next)
-        renderer.render(engine.state)
+        renderer.render(replayStateRef.current ?? engine.state)
         setCameraMode(next)
       } else if (key === 'p') {
         const next: Projection =

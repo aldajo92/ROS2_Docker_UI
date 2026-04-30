@@ -14,6 +14,7 @@ import { NoopCollisionBackend2D } from '../simulation/collision/NoopCollisionBac
 import { MetricsSystem } from '../simulation/systems/MetricsSystem'
 import { ScenarioSystem } from '../simulation/systems/ScenarioSystem'
 import { TrajectoryTrackingSystem } from '../simulation/systems/TrajectoryTrackingSystem'
+import { SimulationRecorderSystem } from '../simulation/recording/SimulationRecorderSystem'
 import { VehicleCommandQueue } from '../simulation/commands/VehicleCommandQueue'
 import { VehicleCommandSystem } from '../simulation/commands/VehicleCommandSystem'
 import { SimulationContext } from './SimulationContext'
@@ -73,12 +74,14 @@ function buildContext(collisionConfig: CollisionConfig): SimulationContextValue 
   //   4. TrajectoryTrackingSystem   — appends to state.trajectories
   //   5. CollisionSystem            — checks collisions
   //   6. MetricsSystem              — observes final state
+  //   7. SimulationRecorderSystem   — snapshots the final post-tick state
   engine.systems.add(new ScenarioSystem())
   engine.systems.add(new VehicleCommandSystem(commandQueue))
   engine.systems.add(new VehicleDynamicsSystem())
   engine.systems.add(new TrajectoryTrackingSystem())
   engine.systems.add(new CollisionSystem(buildCollisionBackend(collisionConfig)))
   engine.systems.add(new MetricsSystem())
+  engine.systems.add(new SimulationRecorderSystem(engine.recorder))
 
   const controller = new SimulationController(engine)
   return { controller, engine, commandQueue }

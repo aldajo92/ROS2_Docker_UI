@@ -1,121 +1,3 @@
-Sí, es una buena idea, pero lo separaría como una feature grande llamada **recording/replay** o **simulation playback**.
-
-No usaría CSV como formato principal. CSV sirve para exportar trayectorias o telemetría simple, pero para reproducir una simulación necesitas más estructura:
-
-```text
-scenario metadata
-fixedDtSec
-ticks
-entities por tick
-commands aplicados
-events
-paths/trajectories opcionalmente
-version del formato
-```
-
-Para eso es mejor usar **JSON** o **JSONL**.
-
-Mi recomendación:
-
-```text
-Formato principal: JSONL comprimible o JSON estructurado
-Export opcional: CSV para análisis externo
-```
-
-## Por qué no CSV como formato principal
-
-CSV se queda corto cuando tienes:
-
-```text
-- múltiples entidades
-- tipos diferentes de entidad
-- eventos
-- comandos
-- cambios de estado por tick
-- metadata del scenario
-- paths
-- colisiones
-- timestamps
-```
-
-Podrías hacer un CSV largo tipo:
-
-```text
-tick,time,entityId,entityKind,x,y,yaw,v,w
-```
-
-pero en cuanto quieras guardar eventos, comandos, colisiones o diferentes entidades, se vuelve incómodo.
-
-## Mejor formato
-
-Yo usaría un formato tipo:
-
-```json
-{
-  "format": "angy_sim_replay",
-  "version": 1,
-  "scenarioName": "simple-scenario",
-  "fixedDtSec": 0.0166666667,
-  "frames": [
-    {
-      "tick": 1,
-      "timeSec": 0.016,
-      "entities": [
-        {
-          "id": "ego",
-          "kind": "vehicle",
-          "pose": { "x": 0.01, "y": 0, "yaw": 0.003 },
-          "velocity": { "v": 0.5, "w": 0.2 }
-        }
-      ],
-      "events": []
-    }
-  ]
-}
-```
-
-O JSONL para archivos más grandes:
-
-```json
-{"type":"metadata","version":1,"scenarioName":"simple-scenario","fixedDtSec":0.0166667}
-{"type":"frame","tick":1,"timeSec":0.016,"entities":[...],"events":[]}
-{"type":"frame","tick":2,"timeSec":0.033,"entities":[...],"events":[]}
-```
-
-Para tu caso, empezaría con **JSON estructurado** porque es más fácil de implementar y descargar en frontend. Más adelante puedes pasar a JSONL o compresión.
-
-## Cómo encaja en tu arquitectura
-
-No haría que cada entidad “guarde a archivo” directamente. Las entidades no deberían saber de archivos ni descargas.
-
-La forma correcta sería:
-
-```text
-SimulationRecorderSystem
-  -> observa SimulationState cada tick
-  -> guarda snapshots en memoria
-
-ReplayExporter
-  -> convierte recording a JSON Blob descargable
-
-ReplayLoader
-  -> carga JSON
-  -> crea ReplaySession
-
-ReplayPlayer
-  -> reproduce frames por tick/timeline
-
-Timeline UI
-  -> controla frame actual / play / pause / seek
-```
-
-Esto respeta tu regla de que los sistemas mutan u observan durante el tick, y que UI/renderers no deben volverse fuente de verdad del estado de simulación. También mantiene `src/simulation` libre de DOM, React y APIs de descarga, como define tu Development Guide. 
-
----
-
-# Prompt completo
-
-````text
 I want to add simulation recording and replay support to `angy_sim_ros2`.
 
 Context:
@@ -783,14 +665,10 @@ Expected result:
 
 ````
 
-## Recomendación práctica
-
-Esta feature también la separaría en fases después:
+Split in 3 phases
 
 ```text
 Phase 1: Replay format + recorder + snapshot tests
 Phase 2: UI start/stop/download recording
 Phase 3: load replay + timeline + playback mode
 ````
-
-Pero el prompt anterior ya deja claro el diseño completo para que una AI no lo mezcle con renderer, entidades o scenario.

@@ -1,4 +1,7 @@
+import type { SimulationRecorderConfig } from '../recording/SimulationRecorder'
 import type { TrajectoryTrackingConfig } from '../trajectories/TrajectoryTrackingConfig'
+
+export type RecordingStoppedReason = 'manual' | 'maxFramesReached' | 'reset'
 
 /**
  * Type-safe event map for the simulation engine. Anyone subscribing
@@ -23,4 +26,12 @@ export interface SimulationEvents extends Record<string, unknown> {
   }
   entityAdded: { id: string }
   entityRemoved: { id: string }
+
+  /** Replay recording lifecycle. Emitted by `SimulationEngine` and
+   *  `SimulationRecorderSystem`. Phase 1 is data-only — the UI in
+   *  Phase 2 subscribes to drive the recording panel. */
+  recordingStarted: { config: SimulationRecorderConfig }
+  recordingStopped: { frameCount: number; reason: RecordingStoppedReason }
+  recordingCleared: undefined
+  recordingMaxFramesReached: { frameCount: number }
 }

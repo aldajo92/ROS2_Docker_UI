@@ -12,6 +12,7 @@ import type { ThreeTrajectoryVisualizationConfig } from '../renderers/three/conf
 import type { PhaserTrajectoryVisualizationConfig } from '../renderers/phaser/config/PhaserRendererConfig'
 import type { ThreeTrajectoryRendererDebugSummary } from '../renderers/three/objects/ThreeTrajectoryRenderer'
 import type { PhaserTrajectoryRendererDebugSummary } from '../renderers/phaser/objects/PhaserTrajectoryRenderer'
+import type { SimulationState } from '../../simulation/core/SimulationState'
 
 /**
  * Tagged union returned by the active-renderer debug accessor. The
@@ -53,6 +54,14 @@ export interface SimulationViewportSwitcherProps {
   threeTrajectoryVisualization?: ThreeTrajectoryVisualizationConfig
   /** Phaser trajectory line style (read-only drawing of sim data). */
   phaserTrajectoryVisualization?: PhaserTrajectoryVisualizationConfig
+  /**
+   * Read-only `SimulationState`-shaped view backing the current
+   * replay frame. When `undefined` the viewport stays in live mode
+   * and renders `engine.state`. When defined the renderer paints
+   * this state instead and ignores live engine ticks. The reference
+   * MUST change on every seek/step so React effects can repaint.
+   */
+  replayState?: SimulationState
 }
 
 /**
@@ -67,6 +76,7 @@ export const SimulationViewportSwitcher = forwardRef<
     rendererType,
     threeTrajectoryVisualization,
     phaserTrajectoryVisualization,
+    replayState,
   },
   ref,
 ) {
@@ -104,6 +114,7 @@ export const SimulationViewportSwitcher = forwardRef<
       <PhaserSimulationViewport
         ref={phaserRef}
         trajectoryVisualization={phaserTrajectoryVisualization}
+        replayState={replayState}
       />
     )
   }
@@ -112,6 +123,7 @@ export const SimulationViewportSwitcher = forwardRef<
     <ThreeSimulationViewport
       ref={threeRef}
       trajectoryVisualization={threeTrajectoryVisualization}
+      replayState={replayState}
     />
   )
 })

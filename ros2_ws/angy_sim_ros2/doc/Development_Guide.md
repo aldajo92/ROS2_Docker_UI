@@ -283,6 +283,7 @@ VehicleDynamicsSystem
 TrajectoryTrackingSystem
 CollisionSystem
 MetricsSystem
+SimulationRecorderSystem
 CommunicationSystem optional
 ```
 
@@ -292,6 +293,7 @@ Rules:
 VehicleCommandSystem must run before VehicleDynamicsSystem.
 TrajectoryTrackingSystem must run after VehicleDynamicsSystem (samples integrated poses).
 CollisionSystem must run after VehicleDynamicsSystem.
+SimulationRecorderSystem must run last (snapshots final post-tick state).
 CommunicationSystem should run after dynamics, collisions, and metrics.
 ```
 
@@ -436,6 +438,194 @@ Inspector splits **tracking** (`TrajectoryTrackingConfig` →
 
 Clearing **data**: `controller.clearTrajectories()`. Clearing **GPU
 lines only**: `clearTrajectoryRenderCache()` on the Three renderer.
+
+---
+
+### Bad: building or reading replay frames inside a renderer
+
+```ts
+// in ThreeSimulationRenderer.render — WRONG
+const snap = createSnapshotFromState(state)
+this.recorder.append(snap)
+```
+
+Recording is **simulation-owned**. Renderers and React components are
+**read-only consumers** of `SimulationState`. The only sanctioned
+write path is `SimulationRecorderSystem`, registered last in the
+default tick pipeline.
+
+Correct paths:
+
+```text
+Recording (Phase 1, simulation-side):
+  SimulationRecorderSystem  ──▶  engine.recorder.append(snapshot)
+
+UI start/stop/download (Phase 2):
+  RecordingPanel  ──onStart/onStop/onClear/onDownload──▶  App.tsx
+       └──▶  controller.startRecording / stopRecording / clearRecording
+       └──▶  const replay = controller.exportRecording()
+              downloadReplay(replay)            // src/ui/replay/
+
+Replay loading + playback (Phase 3):
+  ReplayLoadButton                                          src/ui/replay/
+       └──▶ readReplayFromFile  ──▶  parseReplayJson         src/ui/replay/
+                                          │
+                                          ▼
+                                 ReplayFileFormat (validated)
+                                          │
+                                          ▼
+                                 App.tsx → handleReplayLoaded
+                                          │
+                                          ├── controller.pause()
+                                          ├── controller.stopRecording()
+                                          ▼
+                          new ReplaySession(replay)         src/simulation/recording/
+                                          │
+                                          ▼
+                          new ReplayPlayer(session)         src/ui/replay/
+                                          │
+                                          ▼
+                          createReplayStateFromFrame(...)   src/simulation/recording/
+                                          │
+                                          ▼
+                          <viewport replayState={...} />    renderer paints replay
+                                                              with NO replay-specific
+                                                              code in the renderer.
+```
+
+Boundaries (enforced by `architecture.recording.test.ts` and
+`architecture.replay.test.ts`):
+
+```text
+src/simulation/recording/  must NOT import:
+  react / three / phaser / node:fs / node:path
+  src/ui/* / src/app/*
+  (covers ReplaySession, createReplayStateFromFrame too)
+
+src/ui/replay/  must NOT import:
+  SimulationRecorder / SimulationRecorderSystem
+Allowed sibling imports from src/simulation/recording/:
+  ReplayFormat, SimulationFrameSnapshot, ReplaySession,
+  createReplayStateFromFrame
+
+src/ui/*.tsx (sibling panels) must NOT import ReplayFileDownloader.
+Only the App shell (src/app/App.tsx) wires the download side effect.
+
+Renderers (src/ui/renderers/**) must NOT contain replay-specific
+branches. They consume `SimulationState`; whether it came from the
+live engine or `createReplayStateFromFrame` is invisible to them.
+```
+
+### Bad: panels reading the recorder directly
+
+```ts
+// in RecordingPanel.tsx — WRONG
+import { SimulationRecorder } from '../simulation/recording/SimulationRecorder'
+
+const recorder = useSimulation().engine.recorder
+recorder.start()
+```
+
+Inspector panels are **dumb / controlled components**. They receive
+their state via props from `App.tsx` and call `on*` callbacks; the
+shell decides what those callbacks mean (which controller method to
+call, whether to download a file, etc.). This keeps panels free of
+DOM/file APIs and makes them trivially testable.
+
+Correct shape (already in `RecordingPanel.tsx`):
+
+```text
+RecordingPanel  ──props──▶  status, config, on*
+App.tsx       owns         status, config, controller
+              wires         on* → controller.* / downloadReplay
+```
+
+The recorder is pure data: no DOM, no timers, no FS, no network. The
+file download lives in `src/ui/replay/`. The replay loader lives in
+the same UI replay layer (Phase 3).
+
+---
+
+### Bad: running live simulation systems during replay
+
+```ts
+// in App.tsx — WRONG
+function handleReplayLoaded(replay) {
+  setReplayState(buildView(replay.frames[0]))
+  setRunMode('replay')
+  // …forgot to pause the engine. Tick keeps firing,
+  // VehicleCommandSystem still drives ego, and any active
+  // recording continues writing frames *while* the user is
+  // scrubbing. Resimulation, not replay.
+}
+```
+
+Replay is **playback of recorded frames**, not resimulation. The
+golden rules:
+
+```text
+1. controller.pause() before entering replay mode.
+2. controller.stopRecording() defensively (the recorder writes happen
+   in SimulationRecorderSystem, which only runs while the loop ticks,
+   but a stopped recording also makes the UI state honest).
+3. Renderers receive `replayState` instead of `engine.state`. The
+   live engine state is left untouched.
+4. On exit, dispose the player + session and snap the renderer back
+   to engine.state. Do NOT auto-resume the engine — the user presses
+   Start again via the existing ControlPanel button.
+```
+
+The shell already does this; do not introduce a parallel path that
+forgets one of the four steps.
+
+---
+
+### Bad: branching renderer code on replay vs live
+
+```ts
+// in ThreeSimulationRenderer.render — WRONG
+if (state.__replay) {
+  this.renderReplayFrame(state)
+} else {
+  this.renderLiveFrame(state)
+}
+```
+
+Renderers are **mode-agnostic**. The replay adapter
+(`createReplayStateFromFrame`) returns a `SimulationState`-shaped
+view that exposes the *same public surface* renderers already use
+(`state.clock.time()`, `state.entities.byType(...)`, etc.). If a
+renderer needs new data for replay, extend
+`SimulationFrameSnapshot` and the adapter — not the renderer.
+
+The viewport React glue is the boundary: `ThreeSimulationViewport`
+and `PhaserSimulationViewport` accept `replayState?: SimulationState`
+and decide which state to hand the renderer. Below that, everything
+is uniform.
+
+---
+
+### Bad: parsing replay files inside `src/simulation`
+
+```ts
+// in src/simulation/recording/ReplayFileLoader.ts — WRONG
+import type { ReplayFileFormat } from './ReplayFormat'
+export async function loadReplay(file: File) { /* … */ }
+```
+
+DOM File APIs (`File`, `FileReader`, `Blob`, `<input type="file">`)
+do not belong in `src/simulation`. They live in `src/ui/replay/`.
+The same boundary that keeps `src/simulation/recording/` free of
+download code (Phase 2) keeps it free of upload/parse code (Phase 3):
+
+```text
+src/ui/replay/ReplayFileLoader.ts
+  - parseReplayJson(text)        — pure validator
+  - readReplayFromFile(file)     — DOM wrapper, calls parse
+```
+
+The pure parser is unit-tested without a DOM; the DOM wrapper is
+exercised in the running app or via `happy-dom`.
 
 ---
 

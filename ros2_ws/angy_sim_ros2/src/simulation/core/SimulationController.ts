@@ -5,6 +5,11 @@ import {
   type TrajectoryTrackingConfig,
 } from '../trajectories/TrajectoryTrackingConfig'
 import type { TrajectoryDebugRecord } from '../trajectories/TrajectoryDebugRecord'
+import type {
+  SimulationRecorderConfig,
+  SimulationRecorderStatus,
+} from '../recording/SimulationRecorder'
+import type { ReplayFileFormat } from '../recording/ReplayFormat'
 
 /**
  * Thin facade over SimulationEngine for UI / external callers. Keeps
@@ -86,5 +91,47 @@ export class SimulationController {
       | { getConfig?: () => TrajectoryTrackingConfig }
       | undefined
     return sys?.getConfig?.() ?? { ...DEFAULT_TRAJECTORY_TRACKING_CONFIG }
+  }
+
+  /* -- recording ------------------------------------------------------- */
+
+  setRecordingConfig(config: Partial<SimulationRecorderConfig>): void {
+    this.engine.setRecordingConfig(config)
+  }
+
+  getRecordingConfig(): SimulationRecorderConfig {
+    return this.engine.getRecordingConfig()
+  }
+
+  getRecordingStatus(): SimulationRecorderStatus {
+    return this.engine.getRecordingStatus()
+  }
+
+  isRecording(): boolean {
+    return this.engine.isRecording()
+  }
+
+  getRecordingFrameCount(): number {
+    return this.engine.getRecordingFrameCount()
+  }
+
+  startRecording(): void {
+    this.engine.startRecording()
+  }
+
+  stopRecording(): void {
+    this.engine.stopRecording()
+  }
+
+  clearRecording(): void {
+    this.engine.clearRecording()
+  }
+
+  exportRecording(params?: {
+    metadata?: Record<string, unknown>
+    scenarioDescription?: string
+    createdAt?: string
+  }): ReplayFileFormat {
+    return this.engine.exportRecording(params)
   }
 }

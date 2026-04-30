@@ -6,6 +6,11 @@ import { SimulationTimeDisplay } from '../ui/SimulationTimeDisplay'
 import { EntityListPanel } from '../ui/EntityListPanel'
 import { MetricsPanel } from '../ui/MetricsPanel'
 import { RendererSettingsPanel } from '../ui/RendererSettingsPanel'
+import { RecordingPanel } from '../ui/RecordingPanel'
+import { downloadReplay } from '../ui/replay/ReplayFileDownloader'
+import { ReplayLoadButton } from '../ui/replay/ReplayLoadButton'
+import { ReplayTimeline } from '../ui/replay/ReplayTimeline'
+import { ReplayPlayer } from '../ui/replay/ReplayPlayer'
 import { KeyboardControlPanel } from '../ui/KeyboardControlPanel'
 import {
   SimulationViewportSwitcher,
@@ -33,10 +38,29 @@ import {
   DEFAULT_TRAJECTORY_TRACKING_CONFIG,
   type TrajectoryTrackingConfig,
 } from '../simulation/trajectories/TrajectoryTrackingConfig'
+import {
+  DEFAULT_SIMULATION_RECORDER_CONFIG,
+  type SimulationRecorderConfig,
+  type SimulationRecorderStatus,
+} from '../simulation/recording/SimulationRecorder'
+import { ReplaySession } from '../simulation/recording/ReplaySession'
+import { createReplayStateFromFrame } from '../simulation/recording/createReplayStateFromFrame'
+import type { ReplayFileFormat } from '../simulation/recording/ReplayFormat'
+import type { SimulationState } from '../simulation/core/SimulationState'
 import type {
   ScenarioInteractionConfig,
   ScenarioSpec,
 } from '../simulation/scenarios/Scenario'
+
+/**
+ * Mutually-exclusive top-level UI mode. While `'replay'`, the live
+ * engine is paused and the renderer paints frames from the loaded
+ * replay file. See `doc/PathsMigration/REPLAY-Phase3.md`.
+ */
+export type SimulationRunMode = 'live' | 'replay'
+
+const REPLAY_DISABLED_REASON =
+  'Recording is paused while a replay is loaded.'
 
 export default function App() {
   return (
@@ -157,16 +181,234 @@ function AppShell() {
     })
   }, [engine, controller])
 
+  // ----- recording ------------------------------------------------------
+
+  const [recordingConfig, setRecordingConfig] =
+    useState<SimulationRecorderConfig>(() => ({
+      ...DEFAULT_SIMULATION_RECORDER_CONFIG,
+    }))
+  const [recordingStatus, setRecordingStatus] =
+    useState<SimulationRecorderStatus>(() => controller.getRecordingStatus())
+
+  // Sync recording snapshot from the controller. Initial fetch + on
+  // every recorder lifecycle event. Frame-count growth during an
+  // active recording is updated by the per-tick subscription below.
+  useEffect(() => {
+    const refresh = () => {
+      setRecordingConfig(controller.getRecordingConfig())
+      setRecordingStatus(controller.getRecordingStatus())
+    }
+    refresh()
+    const offs = [
+      engine.events.on('recordingStarted', refresh),
+      engine.events.on('recordingStopped', refresh),
+      engine.events.on('recordingCleared', refresh),
+      engine.events.on('recordingMaxFramesReached', refresh),
+      engine.events.on('scenarioLoaded', refresh),
+      engine.events.on('reset', refresh),
+    ]
+    return () => {
+      for (const off of offs) off()
+    }
+  }, [engine, controller])
+
+  // Lightweight tick subscription: while recording, refresh the
+  // status (cheap object read) so the live frame counter advances.
+  useEffect(() => {
+    if (!recordingStatus.recording) return
+    return engine.events.on('tick', () => {
+      setRecordingStatus(controller.getRecordingStatus())
+    })
+  }, [engine, controller, recordingStatus.recording])
+
+  const handleRecordingConfigChange = useCallback(
+    (partial: Partial<SimulationRecorderConfig>) => {
+      controller.setRecordingConfig(partial)
+      setRecordingConfig(controller.getRecordingConfig())
+      setRecordingStatus(controller.getRecordingStatus())
+    },
+    [controller],
+  )
+
+  const handleStartRecording = useCallback(() => {
+    controller.startRecording()
+  }, [controller])
+
+  const handleStopRecording = useCallback(() => {
+    controller.stopRecording()
+  }, [controller])
+
+  const handleClearRecording = useCallback(() => {
+    controller.clearRecording()
+  }, [controller])
+
+  const handleDownloadRecording = useCallback(() => {
+    if (controller.getRecordingFrameCount() === 0) {
+      console.warn(
+        '[recording] Download requested with zero frames; nothing to write.',
+      )
+      return
+    }
+    const replay = controller.exportRecording()
+    downloadReplay(replay, { baseName: replay.scenarioName })
+  }, [controller])
+
+  // ----- replay --------------------------------------------------------
+
+  const [runMode, setRunMode] = useState<SimulationRunMode>('live')
+  const [replayState, setReplayState] = useState<SimulationState | undefined>(
+    undefined,
+  )
+  const [replayCurrentIndex, setReplayCurrentIndex] = useState(0)
+  const [replayCurrentTimeSec, setReplayCurrentTimeSec] = useState(0)
+  const [replayFrameCount, setReplayFrameCount] = useState(0)
+  const [replayDurationSec, setReplayDurationSec] = useState(0)
+  const [replayIsPlaying, setReplayIsPlaying] = useState(false)
+  const [replaySpeed, setReplaySpeed] = useState(1)
+  const [replayError, setReplayError] = useState<string | null>(null)
+  const replaySessionRef = useRef<ReplaySession | undefined>(undefined)
+  const replayPlayerRef = useRef<ReplayPlayer | undefined>(undefined)
+
+  const teardownReplay = useCallback(() => {
+    replayPlayerRef.current?.dispose()
+    replayPlayerRef.current = undefined
+    replaySessionRef.current = undefined
+  }, [])
+
+  const handleExitReplay = useCallback(() => {
+    teardownReplay()
+    setReplayState(undefined)
+    setRunMode('live')
+    setReplayIsPlaying(false)
+    setReplayCurrentIndex(0)
+    setReplayCurrentTimeSec(0)
+    setReplayFrameCount(0)
+    setReplayDurationSec(0)
+    setReplaySpeed(1)
+    setReplayError(null)
+  }, [teardownReplay])
+
+  const handleReplayLoaded = useCallback(
+    (replay: ReplayFileFormat) => {
+      try {
+        controller.pause()
+        if (controller.isRecording()) controller.stopRecording()
+        teardownReplay()
+
+        const session = new ReplaySession(replay)
+        const dt = session.getFixedDtSec()
+
+        const frame0 = session.getCurrentFrame()
+        setReplayState(createReplayStateFromFrame(frame0, dt))
+        setReplayCurrentIndex(session.getCurrentIndex())
+        setReplayCurrentTimeSec(frame0.timeSec)
+        setReplayFrameCount(session.getFrameCount())
+        setReplayDurationSec(session.getDurationSec())
+        setReplayError(null)
+
+        // Repaint on every cursor change. Auto-pause notification:
+        // ReplayPlayer flips its own flag when the cursor reaches the
+        // last frame; we mirror that flag into React state here so the
+        // timeline button updates without polling.
+        session.onChange(() => {
+          const current = session.getCurrentFrame()
+          setReplayState(createReplayStateFromFrame(current, dt))
+          setReplayCurrentIndex(session.getCurrentIndex())
+          setReplayCurrentTimeSec(current.timeSec)
+          const player = replayPlayerRef.current
+          if (player) setReplayIsPlaying(player.isPlaying())
+        })
+
+        const player = new ReplayPlayer(session, { speed: 1 })
+        replaySessionRef.current = session
+        replayPlayerRef.current = player
+
+        setReplaySpeed(player.getSpeed())
+        setReplayIsPlaying(false)
+        setRunMode('replay')
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : String(err)
+        setReplayError(message)
+        console.error('[replay] failed to start session:', err)
+      }
+    },
+    [controller, teardownReplay],
+  )
+
+  // Dispose any active replay session/player when the App unmounts.
+  useEffect(() => {
+    return () => teardownReplay()
+  }, [teardownReplay])
+
+  const handleReplayPlay = useCallback(() => {
+    const player = replayPlayerRef.current
+    if (!player) return
+    player.play()
+    setReplayIsPlaying(player.isPlaying())
+  }, [])
+
+  const handleReplayPause = useCallback(() => {
+    const player = replayPlayerRef.current
+    if (!player) return
+    player.pause()
+    setReplayIsPlaying(false)
+  }, [])
+
+  const handleReplayStepForward = useCallback(() => {
+    const session = replaySessionRef.current
+    if (!session) return
+    replayPlayerRef.current?.pause()
+    setReplayIsPlaying(false)
+    session.stepForward(1)
+  }, [])
+
+  const handleReplayStepBackward = useCallback(() => {
+    const session = replaySessionRef.current
+    if (!session) return
+    replayPlayerRef.current?.pause()
+    setReplayIsPlaying(false)
+    session.stepBackward(1)
+  }, [])
+
+  const handleReplaySeekFrame = useCallback((index: number) => {
+    const session = replaySessionRef.current
+    if (!session) return
+    replayPlayerRef.current?.pause()
+    setReplayIsPlaying(false)
+    session.seekToFrame(index)
+  }, [])
+
+  const handleReplaySpeedChange = useCallback((speed: number) => {
+    const player = replayPlayerRef.current
+    if (!player) return
+    player.setSpeed(speed)
+    setReplaySpeed(player.getSpeed())
+  }, [])
+
+  const handleReplayLoadError = useCallback((message: string) => {
+    setReplayError(message)
+    console.error('[replay] load failed:', message)
+  }, [])
+
+  const isReplayMode = runMode === 'replay'
+
   const [keyboardControlState, setKeyboardControlState] =
     useState<KeyboardControlUiState>(DEFAULT_KEYBOARD_CONTROL_UI_STATE)
   const lastInteractionRef = useRef<ScenarioInteractionConfig | undefined>(
     undefined,
   )
 
-  const handleScenarioLoaded = useCallback((spec: ScenarioSpec) => {
-    lastInteractionRef.current = spec.interaction
-    setKeyboardControlState(deriveKeyboardControlState(spec.interaction))
-  }, [])
+  const handleScenarioLoaded = useCallback(
+    (spec: ScenarioSpec) => {
+      lastInteractionRef.current = spec.interaction
+      setKeyboardControlState(deriveKeyboardControlState(spec.interaction))
+      // A new scenario invalidates any in-memory replay; bail out of
+      // replay mode so the renderer stops painting stale frames.
+      if (replaySessionRef.current) handleExitReplay()
+    },
+    [handleExitReplay],
+  )
 
   useEffect(() => {
     return engine.events.on('reset', () => {
@@ -193,7 +435,25 @@ function AppShell() {
               rendererType={rendererType}
               threeTrajectoryVisualization={trajectoryVisualization}
               phaserTrajectoryVisualization={phaserTrajectoryVisualization}
+              replayState={replayState}
             />
+            {isReplayMode && (
+              <ReplayTimeline
+                frameCount={replayFrameCount}
+                currentIndex={replayCurrentIndex}
+                durationSec={replayDurationSec}
+                currentTimeSec={replayCurrentTimeSec}
+                isPlaying={replayIsPlaying}
+                speed={replaySpeed}
+                onSeekFrame={handleReplaySeekFrame}
+                onPlay={handleReplayPlay}
+                onPause={handleReplayPause}
+                onStepForward={handleReplayStepForward}
+                onStepBackward={handleReplayStepBackward}
+                onSpeedChange={handleReplaySpeedChange}
+                onExit={handleExitReplay}
+              />
+            )}
           </div>
           <aside className="layout-right" aria-label="Inspector">
             <h2 className="layout-title">Inspector</h2>
@@ -221,6 +481,43 @@ function AppShell() {
               activeRendererType={rendererType}
               onExportActiveRendererDebug={handleExportRendererDebug}
             />
+            <RecordingPanel
+              status={recordingStatus}
+              config={recordingConfig}
+              onConfigChange={handleRecordingConfigChange}
+              onStart={handleStartRecording}
+              onStop={handleStopRecording}
+              onClear={handleClearRecording}
+              onDownload={handleDownloadRecording}
+              disabledReason={
+                isReplayMode ? REPLAY_DISABLED_REASON : undefined
+              }
+            />
+            <section className="panel replay-load" aria-label="Replay">
+              <h2>Replay</h2>
+              <p className="renderer-settings-hint">
+                Load a downloaded <code>.angy-replay.json</code> file to
+                scrub the recorded simulation. Loading a replay pauses
+                the live engine; press <strong>Exit replay</strong> on
+                the timeline to return to live mode.
+              </p>
+              <div className="renderer-settings-actions">
+                <ReplayLoadButton
+                  onLoaded={handleReplayLoaded}
+                  onError={handleReplayLoadError}
+                  disabledReason={
+                    isReplayMode
+                      ? 'Already in replay mode. Exit first to load a different file.'
+                      : undefined
+                  }
+                />
+              </div>
+              {replayError && (
+                <p className="error" role="alert">
+                  {replayError}
+                </p>
+              )}
+            </section>
             <EntityListPanel />
           </aside>
         </div>

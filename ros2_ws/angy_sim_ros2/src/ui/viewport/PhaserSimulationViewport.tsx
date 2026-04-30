@@ -3,6 +3,7 @@ import { useSimulation } from '../../app/useSimulation'
 import { PhaserSimulationRenderer } from '../renderers/phaser/core/PhaserSimulationRenderer'
 import type { PhaserTrajectoryVisualizationConfig } from '../renderers/phaser/config/PhaserRendererConfig'
 import type { PhaserTrajectoryRendererDebugSummary } from '../renderers/phaser/objects/PhaserTrajectoryRenderer'
+import type { SimulationState } from '../../simulation/core/SimulationState'
 
 /**
  * Imperative surface exposed to the parent for renderer-only side
@@ -30,6 +31,12 @@ export interface PhaserSimulationViewportProps {
    * simulation (`TrajectoryTrackingSystem`).
    */
   trajectoryVisualization?: PhaserTrajectoryVisualizationConfig
+  /**
+   * Optional read-only state view used while the app is in replay
+   * mode. When set the viewport renders this state on every change
+   * instead of `engine.state`. See {@link SimulationViewportSwitcher}.
+   */
+  replayState?: SimulationState
 }
 
 /**
@@ -53,10 +60,20 @@ export interface PhaserSimulationViewportProps {
 export const PhaserSimulationViewport = forwardRef<
   PhaserSimulationViewportHandle,
   PhaserSimulationViewportProps
->(function PhaserSimulationViewport({ trajectoryVisualization }, ref) {
+>(function PhaserSimulationViewport(
+  { trajectoryVisualization, replayState },
+  ref,
+) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const rendererRef = useRef<PhaserSimulationRenderer | null>(null)
   const { engine } = useSimulation()
+
+  // Same pattern as the Three viewport — see ThreeSimulationViewport
+  // for the rationale. Engine event subscriptions installed once per
+  // mount must pick the right source on each tick without retearing
+  // the effect when the replay frame changes.
+  const replayStateRef = useRef<SimulationState | undefined>(replayState)
+  replayStateRef.current = replayState
 
   useImperativeHandle(
     ref,
@@ -98,7 +115,7 @@ export const PhaserSimulationViewport = forwardRef<
     }
 
     const renderCurrent = () => {
-      renderer.render(engine.state)
+      renderer.render(replayStateRef.current ?? engine.state)
     }
 
     const unsubs = [
@@ -146,6 +163,14 @@ export const PhaserSimulationViewport = forwardRef<
     if (!trajectoryVisualization) return
     rendererRef.current?.setTrajectoryVisualizationConfig(trajectoryVisualization)
   }, [trajectoryVisualization])
+
+  // Repaint whenever the replay frame reference changes (or when
+  // exiting replay → re-sync to the live state).
+  useEffect(() => {
+    const renderer = rendererRef.current
+    if (!renderer) return
+    renderer.render(replayState ?? engine.state)
+  }, [replayState, engine])
 
   return (
     <section className="panel viewport">
