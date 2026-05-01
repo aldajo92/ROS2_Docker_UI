@@ -11,6 +11,7 @@ import type { CameraMode } from '../renderers/three/cameras/CameraMode'
 import type { Projection } from '../renderers/three/cameras/Projection'
 import type { ThreeTrajectoryVisualizationConfig } from '../renderers/three/config/ThreeRendererConfig'
 import type { ThreeTrajectoryRendererDebugSummary } from '../renderers/three/objects/ThreeTrajectoryRenderer'
+import type { DebugOverlayConfig } from '../renderers/debug/DebugOverlayConfig'
 import type { SimulationState } from '../../simulation/core/SimulationState'
 
 /** Cycle order used by the `c` key. Matches the manager's mode set. */
@@ -52,6 +53,12 @@ export interface ThreeSimulationViewportProps {
    */
   trajectoryVisualization?: ThreeTrajectoryVisualizationConfig
   /**
+   * Shape-aware debug overlay config. Applied to the renderer's debug
+   * layer via `setDebugOptions`; driven from a single Inspector
+   * control so Three.js and Phaser viewports stay in sync.
+   */
+  debugOverlay?: DebugOverlayConfig
+  /**
    * Optional read-only state view used while the app is in replay
    * mode. When set the viewport renders this state on every change
    * instead of `engine.state`. See {@link SimulationViewportSwitcher}.
@@ -66,7 +73,7 @@ export const ThreeSimulationViewport = forwardRef<
   ThreeSimulationViewportHandle,
   ThreeSimulationViewportProps
 >(function ThreeSimulationViewport(
-  { trajectoryVisualization, replayState },
+  { trajectoryVisualization, debugOverlay, replayState },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -178,6 +185,14 @@ export const ThreeSimulationViewport = forwardRef<
     if (!trajectoryVisualization) return
     rendererRef.current?.setTrajectoryVisualizationConfig(trajectoryVisualization)
   }, [trajectoryVisualization])
+
+  useEffect(() => {
+    if (!debugOverlay) return
+    rendererRef.current?.setDebugOptions({
+      showBoundingOutlines: debugOverlay.showBoundingOutlines,
+      vehicleBoundingOutlineShape: debugOverlay.vehicleBoundingOutlineShape,
+    })
+  }, [debugOverlay])
 
   // Repaint whenever the replay frame changes, or when the user
   // exits replay (state goes from defined → undefined): in the

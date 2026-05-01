@@ -287,6 +287,69 @@ body,
   opacity: 0.85;
 }
 
+/* ----- debug overlay panel (Inspector) ------------------------------- */
+/* Styling intentionally mirrors .performance-panel so the two Inspector
+   cards read as siblings. Any visual tweak there should be applied here
+   too until we extract a shared `.inspector-panel` atom. */
+.debug-overlay-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.debug-overlay-panel-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--fg);
+  cursor: pointer;
+  user-select: none;
+}
+
+.debug-overlay-panel-toggle input[type='checkbox'] {
+  accent-color: var(--accent);
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+
+.debug-overlay-panel-row {
+  display: grid;
+  grid-template-columns: 1fr 160px;
+  align-items: center;
+  gap: 10px;
+}
+
+.debug-overlay-panel-row-label {
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.debug-overlay-panel-select {
+  background: var(--bg-panel-2);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 12px;
+  font-family: ui-monospace, "SFMono-Regular", monospace;
+  cursor: pointer;
+  appearance: none;
+}
+
+.debug-overlay-panel-select:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.debug-overlay-panel-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--fg-muted);
+  opacity: 0.85;
+}
+
 .layout-right {
   display: flex;
   flex-direction: column;

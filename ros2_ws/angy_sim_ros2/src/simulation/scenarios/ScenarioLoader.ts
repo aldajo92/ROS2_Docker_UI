@@ -2,7 +2,10 @@ import { Point2D } from '../../math/geometry/Point2D'
 import { Pose2D } from '../../math/geometry/Pose2D'
 import { Vector2D } from '../../math/geometry/Vector2D'
 import { VehicleEntity } from '../entities/VehicleEntity'
-import { StaticObstacleEntity } from '../entities/StaticObstacleEntity'
+import {
+  StaticObstacleEntity,
+  type ObstacleRectangle2D,
+} from '../entities/StaticObstacleEntity'
 import { DynamicActorEntity } from '../entities/DynamicActorEntity'
 import type { Entity } from '../entities/Entity'
 import type {
@@ -10,8 +13,10 @@ import type {
   KeyboardControlScenarioConfig,
   PathPointSpec,
   PathSpec,
+  RectangleObstacleSpec,
   ScenarioInteractionConfig,
   ScenarioSpec,
+  StaticObstacleSpec,
 } from './Scenario'
 import type {
   EntityTrajectoryTrackingConfig,
@@ -89,11 +94,7 @@ export class ScenarioLoader {
           radius: spec.radius,
         })
       case 'static_obstacle':
-        return new StaticObstacleEntity({
-          id: spec.id,
-          position: new Point2D(spec.position.x, spec.position.y),
-          radius: spec.radius,
-        })
+        return buildStaticObstacleEntity(spec)
       case 'dynamic_actor':
         return new DynamicActorEntity({
           id: spec.id,
@@ -432,20 +433,8 @@ function parseEntity(input: unknown, index: number): EntitySpec {
         controls: parseControls(input.controls, `${path}.controls`),
         radius: optionalNumber(input.radius, `${path}.radius`),
       }
-    case 'static_obstacle': {
-      if (!isObj(input.position)) {
-        throw new ScenarioParseError(`${path}.position must be an object`)
-      }
-      return {
-        kind: 'static_obstacle',
-        id: input.id,
-        position: {
-          x: requireNumber(input.position.x, `${path}.position.x`),
-          y: requireNumber(input.position.y, `${path}.position.y`),
-        },
-        radius: requireNumber(input.radius, `${path}.radius`),
-      }
-    }
+    case 'static_obstacle':
+      return parseStaticObstacle(input, path)
     case 'dynamic_actor':
       return {
         kind: 'dynamic_actor',
@@ -456,5 +445,164 @@ function parseEntity(input: unknown, index: number): EntitySpec {
       }
     default:
       throw new ScenarioParseError(`${path}.kind unknown: ${String(input.kind)}`)
+  }
+}
+
+function parseStaticObstacle(
+  input: Record<string, unknown>,
+  path: string,
+): StaticObstacleSpec {
+  const shape =
+    input.shape === undefined || input.shape === 'circle'
+      ? 'circle'
+      : input.shape === 'rectangle'
+        ? 'rectangle'
+        : (() => {
+            throw new ScenarioParseError(
+              `${path}.shape must be "circle" or "rectangle"`,
+            )
+          })()
+
+  if (shape === 'circle') {
+    if (!isObj(input.position)) {
+      throw new ScenarioParseError(`${path}.position must be an object`)
+    }
+    return {
+      kind: 'static_obstacle',
+      id: input.id as string,
+      shape: 'circle',
+      position: {
+        x: requireNumber(input.position.x, `${path}.position.x`),
+        y: requireNumber(input.position.y, `${path}.position.y`),
+      },
+      radius: requireNumber(input.radius, `${path}.radius`),
+    }
+  }
+
+  return {
+    kind: 'static_obstacle',
+    id: input.id as string,
+    shape: 'rectangle',
+    rectangle: parseRectangleObstacle(input.rectangle, `${path}.rectangle`),
+  }
+}
+
+function parseRectangleObstacle(
+  input: unknown,
+  path: string,
+): RectangleObstacleSpec {
+  if (!isObj(input)) {
+    throw new ScenarioParseError(`${path} must be an object`)
+  }
+  const mode = input.mode
+  if (mode === 'center') {
+    if (!isObj(input.center)) {
+      throw new ScenarioParseError(`${path}.center must be an object`)
+    }
+    const length = requirePositiveFinite(input.length, `${path}.length`)
+    const thickness = requirePositiveFinite(input.thickness, `${path}.thickness`)
+    return {
+      mode: 'center',
+      center: {
+        x: requireNumber(input.center.x, `${path}.center.x`),
+        y: requireNumber(input.center.y, `${path}.center.y`),
+      },
+      length,
+      thickness,
+      yaw: requireNumber(input.yaw, `${path}.yaw`),
+    }
+  }
+  if (mode === 'segment') {
+    if (!isObj(input.start)) {
+      throw new ScenarioParseError(`${path}.start must be an object`)
+    }
+    if (!isObj(input.end)) {
+      throw new ScenarioParseError(`${path}.end must be an object`)
+    }
+    const thickness = requirePositiveFinite(input.thickness, `${path}.thickness`)
+    const start = {
+      x: requireNumber(input.start.x, `${path}.start.x`),
+      y: requireNumber(input.start.y, `${path}.start.y`),
+    }
+    const end = {
+      x: requireNumber(input.end.x, `${path}.end.x`),
+      y: requireNumber(input.end.y, `${path}.end.y`),
+    }
+    const segLength = Math.hypot(end.x - start.x, end.y - start.y)
+    if (!(segLength > 0)) {
+      throw new ScenarioParseError(
+        `${path}.start and ${path}.end must not be identical`,
+      )
+    }
+    return { mode: 'segment', start, end, thickness }
+  }
+  throw new ScenarioParseError(
+    `${path}.mode must be "center" or "segment"`,
+  )
+}
+
+function buildStaticObstacleEntity(spec: StaticObstacleSpec): StaticObstacleEntity {
+  // Positive discriminator first so TypeScript narrows `spec` to
+  // `RectangleStaticObstacleSpec` inside this block. The inverse
+  // "`shape === undefined || === 'circle'`" pattern confuses the
+  // optional-literal narrowing.
+  if (spec.shape === 'rectangle') {
+    const rect = normalizeRectangle(spec.rectangle)
+    return new StaticObstacleEntity({
+      id: spec.id,
+      position: new Point2D(rect.center.x, rect.center.y),
+      shape: {
+        type: 'rectangle',
+        length: rect.length,
+        thickness: rect.thickness,
+        yaw: rect.yaw,
+      },
+    })
+  }
+
+  // Legacy / circle path: a plain `position + radius` entity. Do NOT
+  // pass the `shape` option so the circle constructor path is
+  // exercised — this is what existing tests assert and what external
+  // callers rely on.
+  return new StaticObstacleEntity({
+    id: spec.id,
+    position: new Point2D(spec.position.x, spec.position.y),
+    radius: spec.radius,
+  })
+}
+
+/**
+ * Collapse both rectangle authoring modes into a single normalized
+ * `{ center, length, thickness, yaw }` record. Exposed at module scope
+ * (not on the class) because the normalization is pure data and easy
+ * to unit-test in isolation.
+ */
+export function normalizeRectangle(
+  spec: RectangleObstacleSpec,
+): {
+  center: { x: number; y: number }
+  length: number
+  thickness: number
+  yaw: number
+} & Pick<ObstacleRectangle2D, 'length' | 'thickness' | 'yaw'> {
+  if (spec.mode === 'center') {
+    return {
+      center: { x: spec.center.x, y: spec.center.y },
+      length: spec.length,
+      thickness: spec.thickness,
+      yaw: spec.yaw,
+    }
+  }
+  const dx = spec.end.x - spec.start.x
+  const dy = spec.end.y - spec.start.y
+  const length = Math.hypot(dx, dy)
+  return {
+    center: {
+      x: (spec.start.x + spec.end.x) / 2,
+      y: (spec.start.y + spec.end.y) / 2,
+    },
+    length,
+    thickness: spec.thickness,
+    yaw: Math.atan2(dy, dx),
   }
 }

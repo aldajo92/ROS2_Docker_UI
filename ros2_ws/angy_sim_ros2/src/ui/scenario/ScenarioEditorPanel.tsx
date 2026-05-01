@@ -179,7 +179,7 @@ export function ScenarioEditorPanel({
           title={downloadButtonTitle}
           data-testid="scenario-editor-download"
         >
-          Download scenario JSON
+          Download
         </button>
       </div>
       {errorMessage && (

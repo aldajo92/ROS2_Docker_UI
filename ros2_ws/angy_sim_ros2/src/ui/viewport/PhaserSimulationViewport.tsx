@@ -3,6 +3,7 @@ import { useSimulation } from '../../app/useSimulation'
 import { PhaserSimulationRenderer } from '../renderers/phaser/core/PhaserSimulationRenderer'
 import type { PhaserTrajectoryVisualizationConfig } from '../renderers/phaser/config/PhaserRendererConfig'
 import type { PhaserTrajectoryRendererDebugSummary } from '../renderers/phaser/objects/PhaserTrajectoryRenderer'
+import type { DebugOverlayConfig } from '../renderers/debug/DebugOverlayConfig'
 import type { SimulationState } from '../../simulation/core/SimulationState'
 
 /**
@@ -31,6 +32,12 @@ export interface PhaserSimulationViewportProps {
    * simulation (`TrajectoryTrackingSystem`).
    */
   trajectoryVisualization?: PhaserTrajectoryVisualizationConfig
+  /**
+   * Shape-aware debug overlay config. Applied to the renderer's debug
+   * layer via `setDebugOptions` so the Inspector's single control
+   * drives both Three.js and Phaser viewports consistently.
+   */
+  debugOverlay?: DebugOverlayConfig
   /**
    * Optional read-only state view used while the app is in replay
    * mode. When set the viewport renders this state on every change
@@ -61,7 +68,7 @@ export const PhaserSimulationViewport = forwardRef<
   PhaserSimulationViewportHandle,
   PhaserSimulationViewportProps
 >(function PhaserSimulationViewport(
-  { trajectoryVisualization, replayState },
+  { trajectoryVisualization, debugOverlay, replayState },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -163,6 +170,14 @@ export const PhaserSimulationViewport = forwardRef<
     if (!trajectoryVisualization) return
     rendererRef.current?.setTrajectoryVisualizationConfig(trajectoryVisualization)
   }, [trajectoryVisualization])
+
+  useEffect(() => {
+    if (!debugOverlay) return
+    rendererRef.current?.setDebugOptions({
+      showBoundingOutlines: debugOverlay.showBoundingOutlines,
+      vehicleBoundingOutlineShape: debugOverlay.vehicleBoundingOutlineShape,
+    })
+  }, [debugOverlay])
 
   // Repaint whenever the replay frame reference changes (or when
   // exiting replay → re-sync to the live state).

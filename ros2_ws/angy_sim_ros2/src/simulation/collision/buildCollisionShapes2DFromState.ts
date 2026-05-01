@@ -9,14 +9,16 @@ import { DynamicActorEntity } from '../entities/DynamicActorEntity'
  * simulation. Pure read of `SimulationState`: never mutates entities,
  * never imports Rapier or Three.js.
  *
- * Mapping today (everything is a circle):
+ * Mapping:
  *   - VehicleEntity        → circle at `pose.position`, radius `vehicle.radius`
- *   - StaticObstacleEntity → circle at `position`,      radius `obstacle.radius`
+ *   - StaticObstacleEntity → circle OR oriented_box depending on
+ *                            `entity.shape.type`. Rectangular obstacles
+ *                            emit `oriented_box` with
+ *                            `length = shape.length` (local forward) and
+ *                            `width = shape.thickness` (local lateral),
+ *                            matching the `OrientedBoxCollisionShape2D`
+ *                            convention.
  *   - DynamicActorEntity   → circle at `pose.position`, radius `actor.radius`
- *
- * Future shape choices (oriented box for vehicles, AABB for axis-aligned
- * obstacles, etc.) belong here — backends downstream just consume the
- * resulting `CollisionShape2D[]`.
  *
  * Iteration order follows `EntityManager.toArray()` which is insertion
  * order, so results are deterministic for a given scenario.
@@ -41,12 +43,34 @@ export function buildCollisionShapes2DFromState(
     }
 
     if (entity instanceof StaticObstacleEntity) {
-      shapes.push({
-        type: 'circle',
-        entityId: entity.id,
-        center: { x: entity.position.x, y: entity.position.y },
-        radius: entity.radius,
-      })
+      if (entity.shape.type === 'circle') {
+        shapes.push({
+          type: 'circle',
+          entityId: entity.id,
+          center: { x: entity.position.x, y: entity.position.y },
+          radius: entity.shape.radius,
+        })
+      } else {
+        // The entity stores `length` along its local +X (the "heading"
+        // direction implied by `yaw`) and `thickness` along local +Y.
+        // `OrientedBoxCollisionShape2D`, by contract, stores `width`
+        // along local +X and `length` along local +Y — the opposite.
+        // Mapping:
+        //   entity.length    (local +X) → OBB.width    (local +X)
+        //   entity.thickness (local +Y) → OBB.length   (local +Y)
+        //   entity.yaw → OBB.pose.yaw (same rotation semantics)
+        shapes.push({
+          type: 'oriented_box',
+          entityId: entity.id,
+          pose: {
+            x: entity.position.x,
+            y: entity.position.y,
+            yaw: entity.shape.yaw,
+          },
+          length: entity.shape.thickness,
+          width: entity.shape.length,
+        })
+      }
       continue
     }
 

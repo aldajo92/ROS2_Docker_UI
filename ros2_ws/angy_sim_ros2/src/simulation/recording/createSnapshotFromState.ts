@@ -117,6 +117,23 @@ function toVehicleSnapshot(entity: VehicleEntity): VehicleEntitySnapshot {
 function toStaticObstacleSnapshot(
   entity: StaticObstacleEntity,
 ): StaticObstacleEntitySnapshot {
+  if (entity.shape.type === 'rectangle') {
+    return {
+      id: entity.id,
+      kind: 'static_obstacle',
+      position: { x: entity.position.x, y: entity.position.y },
+      radius: entity.radius,
+      shape: 'rectangle',
+      rectangle: {
+        length: entity.shape.length,
+        thickness: entity.shape.thickness,
+        yaw: entity.shape.yaw,
+      },
+    }
+  }
+  // Keep the byte-for-byte legacy shape for circles: no `shape`, no
+  // `rectangle` fields. Old consumers see the exact same JSON they
+  // did before rectangles existed.
   return {
     id: entity.id,
     kind: 'static_obstacle',

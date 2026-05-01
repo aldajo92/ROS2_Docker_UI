@@ -26,7 +26,29 @@ export interface VehicleEntitySnapshot extends BaseEntitySnapshot {
 export interface StaticObstacleEntitySnapshot extends BaseEntitySnapshot {
   kind: 'static_obstacle'
   position: { x: number; y: number }
+  /**
+   * Bounding circle radius of the obstacle (circle radius for circles,
+   * enclosing circle radius for rectangles). Always present so legacy
+   * replay loaders — the ones that pre-date rectangle obstacles —
+   * continue to see a sensible value.
+   */
   radius?: number
+  /**
+   * Shape discriminator, optional for backward compatibility.
+   *   - `undefined` or `'circle'` → circle obstacle (old format).
+   *   - `'rectangle'`            → rectangle obstacle; geometry comes
+   *                                from the `rectangle` sibling below.
+   */
+  shape?: 'circle' | 'rectangle'
+  /**
+   * Normalized rectangle geometry (`center + length + thickness + yaw`).
+   * Present only when `shape === 'rectangle'`.
+   */
+  rectangle?: {
+    length: number
+    thickness: number
+    yaw: number
+  }
 }
 
 export interface DynamicActorEntitySnapshot extends BaseEntitySnapshot {

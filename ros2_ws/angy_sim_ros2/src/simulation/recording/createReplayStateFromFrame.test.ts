@@ -85,6 +85,57 @@ describe('createReplayStateFromFrame', () => {
     expect(obstacles[0].position.x).toBe(4)
     expect(obstacles[0].position.y).toBe(5)
     expect(obstacles[0].radius).toBe(1)
+    expect(obstacles[0].shape.type).toBe('circle')
+  })
+
+  it('reconstructs rectangle static obstacles from new-format frames', () => {
+    const state = createReplayStateFromFrame(
+      buildFrame({
+        entities: [
+          {
+            id: 'wall',
+            kind: 'static_obstacle',
+            position: { x: 0.5, y: -1 },
+            shape: 'rectangle',
+            rectangle: { length: 5, thickness: 0.25, yaw: 0 },
+          },
+        ],
+      }),
+      FIXED_DT,
+    )
+    const obstacles =
+      state.entities.byType<StaticObstacleEntity>('static_obstacle')
+    expect(obstacles).toHaveLength(1)
+    const wall = obstacles[0]
+    expect(wall.position.x).toBeCloseTo(0.5)
+    expect(wall.position.y).toBeCloseTo(-1)
+    if (wall.shape.type !== 'rectangle') {
+      throw new Error('expected rectangle shape')
+    }
+    expect(wall.shape.length).toBe(5)
+    expect(wall.shape.thickness).toBe(0.25)
+    expect(wall.shape.yaw).toBe(0)
+  })
+
+  it('falls back to a circle when shape is missing (legacy replay file)', () => {
+    // Legacy frames (the ones that pre-date rectangle obstacles) have
+    // no `shape` and no `rectangle` fields.
+    const state = createReplayStateFromFrame(
+      buildFrame({
+        entities: [
+          {
+            id: 'legacy',
+            kind: 'static_obstacle',
+            position: { x: 1, y: 1 },
+            radius: 0.25,
+          },
+        ],
+      }),
+      FIXED_DT,
+    )
+    const obstacles =
+      state.entities.byType<StaticObstacleEntity>('static_obstacle')
+    expect(obstacles[0].shape).toEqual({ type: 'circle', radius: 0.25 })
   })
 
   it('reconstructs dynamic actors with pose + velocity', () => {

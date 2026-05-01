@@ -136,9 +136,24 @@ function buildVehicle(snap: VehicleEntitySnapshot): VehicleEntity {
 function buildStaticObstacle(
   snap: StaticObstacleEntitySnapshot,
 ): StaticObstacleEntity {
+  const position = new Point2D(snap.position.x, snap.position.y)
+  if (snap.shape === 'rectangle' && snap.rectangle) {
+    return new StaticObstacleEntity({
+      id: snap.id,
+      position,
+      shape: {
+        type: 'rectangle',
+        length: snap.rectangle.length,
+        thickness: snap.rectangle.thickness,
+        yaw: snap.rectangle.yaw,
+      },
+    })
+  }
+  // Legacy / circle path. `radius` may be missing on very old frames;
+  // default to 0 to match the pre-existing behavior.
   return new StaticObstacleEntity({
     id: snap.id,
-    position: new Point2D(snap.position.x, snap.position.y),
+    position,
     radius: snap.radius ?? 0,
   })
 }

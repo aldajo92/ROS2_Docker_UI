@@ -12,6 +12,7 @@ import type { ThreeTrajectoryVisualizationConfig } from '../renderers/three/conf
 import type { PhaserTrajectoryVisualizationConfig } from '../renderers/phaser/config/PhaserRendererConfig'
 import type { ThreeTrajectoryRendererDebugSummary } from '../renderers/three/objects/ThreeTrajectoryRenderer'
 import type { PhaserTrajectoryRendererDebugSummary } from '../renderers/phaser/objects/PhaserTrajectoryRenderer'
+import type { DebugOverlayConfig } from '../renderers/debug/DebugOverlayConfig'
 import type { SimulationState } from '../../simulation/core/SimulationState'
 
 /**
@@ -55,6 +56,12 @@ export interface SimulationViewportSwitcherProps {
   /** Phaser trajectory line style (read-only drawing of sim data). */
   phaserTrajectoryVisualization?: PhaserTrajectoryVisualizationConfig
   /**
+   * Shape-aware debug overlay config, renderer-agnostic. Applied to
+   * whichever viewport is mounted so a single Inspector control
+   * drives both Three.js and Phaser consistently.
+   */
+  debugOverlay?: DebugOverlayConfig
+  /**
    * Read-only `SimulationState`-shaped view backing the current
    * replay frame. When `undefined` the viewport stays in live mode
    * and renders `engine.state`. When defined the renderer paints
@@ -76,6 +83,7 @@ export const SimulationViewportSwitcher = forwardRef<
     rendererType,
     threeTrajectoryVisualization,
     phaserTrajectoryVisualization,
+    debugOverlay,
     replayState,
   },
   ref,
@@ -114,6 +122,7 @@ export const SimulationViewportSwitcher = forwardRef<
       <PhaserSimulationViewport
         ref={phaserRef}
         trajectoryVisualization={phaserTrajectoryVisualization}
+        debugOverlay={debugOverlay}
         replayState={replayState}
       />
     )
@@ -123,6 +132,7 @@ export const SimulationViewportSwitcher = forwardRef<
     <ThreeSimulationViewport
       ref={threeRef}
       trajectoryVisualization={threeTrajectoryVisualization}
+      debugOverlay={debugOverlay}
       replayState={replayState}
     />
   )

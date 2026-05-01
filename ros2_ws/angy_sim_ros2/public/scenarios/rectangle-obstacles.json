@@ -1,0 +1,43 @@
+{
+  "name": "rectangle-obstacles",
+  "description": "Showcase of rectangular static obstacles: a vehicle, a wall defined by segment endpoints, and a yawed box defined by center + length + thickness + yaw.",
+  "entities": [
+    {
+      "kind": "vehicle",
+      "id": "ego",
+      "pose": { "x": 0, "y": 0, "yaw": 0 },
+      "controls": { "v": 0.4, "w": 0.0 },
+      "radius": 0.4
+    },
+    {
+      "kind": "static_obstacle",
+      "id": "pillar_1",
+      "shape": "circle",
+      "position": { "x": 2.0, "y": 1.0 },
+      "radius": 0.35
+    },
+    {
+      "kind": "static_obstacle",
+      "id": "wall_segment_1",
+      "shape": "rectangle",
+      "rectangle": {
+        "mode": "segment",
+        "start": { "x": -2.0, "y": -1.0 },
+        "end": { "x": 3.0, "y": -1.0 },
+        "thickness": 0.25
+      }
+    },
+    {
+      "kind": "static_obstacle",
+      "id": "box_center_1",
+      "shape": "rectangle",
+      "rectangle": {
+        "mode": "center",
+        "center": { "x": 4.0, "y": 2.0 },
+        "length": 2.4,
+        "thickness": 1.2,
+        "yaw": 0.7853981633974483
+      }
+    }
+  ]
+}

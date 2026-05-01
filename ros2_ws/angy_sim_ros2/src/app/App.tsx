@@ -10,7 +10,12 @@ import { RendererSettingsPanel } from '../ui/RendererSettingsPanel'
 import { RecordingPanel } from '../ui/RecordingPanel'
 import { PerformanceOverlay } from '../ui/PerformanceOverlay'
 import { PerformancePanel } from '../ui/PerformancePanel'
+import { DebugOverlayPanel } from '../ui/DebugOverlayPanel'
 import { DEFAULT_PROFILER_UPDATE_INTERVAL_MS } from './useSimulationProfiler'
+import {
+  DEFAULT_DEBUG_OVERLAY_CONFIG,
+  type DebugOverlayConfig,
+} from '../ui/renderers/debug/DebugOverlayConfig'
 import { ScenarioEditorPanel } from '../ui/scenario/ScenarioEditorPanel'
 import {
   downloadScenarioJsonText,
@@ -123,6 +128,14 @@ function AppShell() {
   const [showPerformanceOverlay, setShowPerformanceOverlay] = useState(false)
   const [performanceOverlayUpdateIntervalMs, setPerformanceOverlayUpdateIntervalMs] =
     useState<number>(DEFAULT_PROFILER_UPDATE_INTERVAL_MS)
+
+  // Shape-aware debug bounding outline. The state lives here so a
+  // single Inspector control drives both the Three.js and Phaser
+  // renderers — defaults match the previous always-on bounding-circle
+  // behavior, so existing users see no visual change on load.
+  const [debugOverlayConfig, setDebugOverlayConfig] = useState<DebugOverlayConfig>(
+    DEFAULT_DEBUG_OVERLAY_CONFIG,
+  )
 
   const applyTrajectoryTracking = useCallback(
     (next: TrajectoryTrackingConfig) => {
@@ -629,6 +642,7 @@ function AppShell() {
                 rendererType={rendererType}
                 threeTrajectoryVisualization={trajectoryVisualization}
                 phaserTrajectoryVisualization={phaserTrajectoryVisualization}
+                debugOverlay={debugOverlayConfig}
                 replayState={replayState}
               />
               {showPerformanceOverlay && (
@@ -710,6 +724,10 @@ function AppShell() {
                   onUpdateIntervalMsChange={
                     setPerformanceOverlayUpdateIntervalMs
                   }
+                />
+                <DebugOverlayPanel
+                  config={debugOverlayConfig}
+                  onChange={setDebugOverlayConfig}
                 />
                 <KeyboardControlPanel
                   state={keyboardControlState}

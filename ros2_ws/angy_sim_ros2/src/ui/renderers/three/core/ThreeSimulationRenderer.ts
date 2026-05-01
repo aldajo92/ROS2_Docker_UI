@@ -12,7 +12,7 @@ import {
   type ThreeTrajectoryRendererDebugSummary,
 } from '../objects/ThreeTrajectoryRenderer'
 import { ThreePathRenderer } from '../objects/ThreePathRenderer'
-import { ThreeDebugLayer } from '../debug/ThreeDebugLayer'
+import { ThreeDebugLayer, type ThreeDebugLayerOptions } from '../debug/ThreeDebugLayer'
 import { CameraControllerManager } from '../cameras/CameraControllerManager'
 import {
   DEFAULT_THREE_RENDERER_CONFIG,
@@ -285,6 +285,24 @@ export class ThreeSimulationRenderer implements SimulationRenderer {
 
   getProjection(): Projection {
     return this.projection
+  }
+
+  /**
+   * Update the debug overlay options (shape-aware bounding outline
+   * visibility, vehicle outline shape, heading arrow visibility, …).
+   * No-op when the debug layer was not constructed — i.e. when
+   * `config.showDebug` was `false` at init time. Options are merged
+   * into the layer's current options; only the fields present on the
+   * argument are applied.
+   */
+  setDebugOptions(options: Partial<ThreeDebugLayerOptions>): void {
+    this.debugLayer?.setOptions(options)
+    if (this.lastState) this.render(this.lastState)
+  }
+
+  /** Debug-only helper; returns `undefined` if the debug layer is off. */
+  getDebugOptions(): Readonly<ThreeDebugLayerOptions> | undefined {
+    return this.debugLayer?.getOptions()
   }
 
   private createCamera(

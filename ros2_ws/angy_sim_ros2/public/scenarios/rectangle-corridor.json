@@ -1,0 +1,80 @@
+{
+  "name": "rectangle-corridor",
+  "description": "A keyboard-drivable vehicle inside a 4 m wide corridor built from four rectangular walls (segment mode), plus a pair of circular pillars at the far end to practice steering around obstacles.",
+  "entities": [
+    {
+      "kind": "vehicle",
+      "id": "ego",
+      "pose": { "x": -4.0, "y": 0.0, "yaw": 0.0 },
+      "controls": { "v": 0.0, "w": 0.0 },
+      "radius": 0.4
+    },
+    {
+      "kind": "static_obstacle",
+      "id": "wall_south",
+      "shape": "rectangle",
+      "rectangle": {
+        "mode": "segment",
+        "start": { "x": -5.0, "y": -2.0 },
+        "end":   { "x":  8.0, "y": -2.0 },
+        "thickness": 0.2
+      }
+    },
+    {
+      "kind": "static_obstacle",
+      "id": "wall_north",
+      "shape": "rectangle",
+      "rectangle": {
+        "mode": "segment",
+        "start": { "x": -5.0, "y": 2.0 },
+        "end":   { "x":  8.0, "y": 2.0 },
+        "thickness": 0.2
+      }
+    },
+    {
+      "kind": "static_obstacle",
+      "id": "wall_east_cap",
+      "shape": "rectangle",
+      "rectangle": {
+        "mode": "segment",
+        "start": { "x": 8.0, "y": -2.0 },
+        "end":   { "x": 8.0, "y":  2.0 },
+        "thickness": 0.2
+      }
+    },
+    {
+      "kind": "static_obstacle",
+      "id": "wall_west_cap",
+      "shape": "rectangle",
+      "rectangle": {
+        "mode": "segment",
+        "start": { "x": -5.0, "y": -2.0 },
+        "end":   { "x": -5.0, "y":  2.0 },
+        "thickness": 0.2
+      }
+    },
+    {
+      "kind": "static_obstacle",
+      "id": "pillar_left",
+      "shape": "circle",
+      "position": { "x": 4.0, "y": 0.8 },
+      "radius": 0.3
+    },
+    {
+      "kind": "static_obstacle",
+      "id": "pillar_right",
+      "shape": "circle",
+      "position": { "x": 6.0, "y": -0.8 },
+      "radius": 0.3
+    }
+  ],
+  "interaction": {
+    "keyboardControl": {
+      "enabled": true,
+      "vehicleId": "ego",
+      "forwardSpeed": 1.5,
+      "reverseSpeed": 1.0,
+      "angularSpeed": 2.0
+    }
+  }
+}

@@ -113,4 +113,61 @@ describe('buildCollisionShapes2DFromState', () => {
     expect(ego.pose.yaw).toBeCloseTo(0.3)
     expect(ego.radius).toBe(0.5)
   })
+
+  it('maps a rectangle static obstacle to an oriented_box shape', () => {
+    const state = makeState()
+    state.entities.add(
+      new StaticObstacleEntity({
+        id: 'wall',
+        position: new Point2D(0.5, -1),
+        shape: {
+          type: 'rectangle',
+          length: 5,
+          thickness: 0.25,
+          yaw: 0,
+        },
+      }),
+    )
+    const shapes = buildCollisionShapes2DFromState(state)
+    expect(shapes).toEqual([
+      {
+        type: 'oriented_box',
+        entityId: 'wall',
+        pose: { x: 0.5, y: -1, yaw: 0 },
+        // Entity (length along local +X) ↔ OBB (width along local +X):
+        // the builder swaps them so that, at yaw = 0, the OBB's
+        // screen-space width aligns with sim +X.
+        length: 0.25,
+        width: 5,
+      },
+    ])
+  })
+
+  it('produces a mixed circle/oriented_box output preserving order', () => {
+    const state = makeState()
+    state.entities.add(
+      new StaticObstacleEntity({
+        id: 'pillar',
+        position: new Point2D(1, 1),
+        radius: 0.4,
+      }),
+    )
+    state.entities.add(
+      new StaticObstacleEntity({
+        id: 'wall',
+        position: new Point2D(3, 2),
+        shape: {
+          type: 'rectangle',
+          length: 2,
+          thickness: 0.5,
+          yaw: Math.PI / 6,
+        },
+      }),
+    )
+    const shapes = buildCollisionShapes2DFromState(state)
+    expect(shapes).toHaveLength(2)
+    expect(shapes[0].type).toBe('circle')
+    expect(shapes[1].type).toBe('oriented_box')
+    expect(shapes.map((s) => s.entityId)).toEqual(['pillar', 'wall'])
+  })
 })

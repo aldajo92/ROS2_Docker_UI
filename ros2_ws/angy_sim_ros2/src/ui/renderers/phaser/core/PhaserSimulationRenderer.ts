@@ -18,7 +18,10 @@ import {
 } from '../objects/PhaserTrajectoryRenderer'
 import { PhaserGroundRenderer } from '../objects/PhaserGroundRenderer'
 import { PhaserAxesRenderer } from '../objects/PhaserAxesRenderer'
-import { PhaserDebugLayer } from '../debug/PhaserDebugLayer'
+import {
+  PhaserDebugLayer,
+  type PhaserDebugLayerOptions,
+} from '../debug/PhaserDebugLayer'
 import { PhaserCameraController } from './PhaserCameraController'
 
 /**
@@ -223,6 +226,21 @@ export class PhaserSimulationRenderer implements SimulationRenderer {
   /** @deprecated Use {@link getTrajectoryVisualizationConfig}. */
   getTrailConfig(): PhaserTrajectoryVisualizationConfig {
     return this.getTrajectoryVisualizationConfig()
+  }
+
+  /**
+   * Update the debug overlay options (shape-aware bounding outline
+   * visibility, vehicle outline shape, heading arrows). No-op if the
+   * debug layer was not constructed — i.e. `config.showDebug` was
+   * `false` at init time. Mirrors `ThreeSimulationRenderer.setDebugOptions`.
+   */
+  setDebugOptions(options: Partial<PhaserDebugLayerOptions>): void {
+    this.debugLayer?.setOptions(options)
+    if (this.lastState) this.syncAll(this.lastState)
+  }
+
+  getDebugOptions(): Readonly<PhaserDebugLayerOptions> | undefined {
+    return this.debugLayer?.getOptions()
   }
 
   /** Internal: invoked by the Phaser scene's `create()` once the

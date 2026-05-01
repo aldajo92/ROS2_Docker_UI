@@ -45,7 +45,7 @@ describe('createSnapshotFromState', () => {
     expect(e.radius).toBe(0.4)
   })
 
-  it('captures static obstacle position and radius', () => {
+  it('captures static obstacle position and radius (circle)', () => {
     const state = createState()
     state.entities.add(
       new StaticObstacleEntity({
@@ -59,6 +59,33 @@ describe('createSnapshotFromState', () => {
     if (e.kind !== 'static_obstacle') throw new Error('expected obstacle')
     expect(e.position).toEqual({ x: 3, y: 4 })
     expect(e.radius).toBe(0.5)
+    // Legacy format: no `shape` or `rectangle` fields on circle snapshots.
+    expect('shape' in e).toBe(false)
+    expect('rectangle' in e).toBe(false)
+  })
+
+  it('captures rectangle static obstacle shape data', () => {
+    const state = createState()
+    state.entities.add(
+      new StaticObstacleEntity({
+        id: 'wall',
+        position: Point2D.of(0.5, -1),
+        shape: {
+          type: 'rectangle',
+          length: 5,
+          thickness: 0.25,
+          yaw: 0,
+        },
+      }),
+    )
+    const snap = createSnapshotFromState(state)
+    const e = snap.entities[0]
+    if (e.kind !== 'static_obstacle') throw new Error('expected obstacle')
+    expect(e.shape).toBe('rectangle')
+    expect(e.rectangle).toEqual({ length: 5, thickness: 0.25, yaw: 0 })
+    // `radius` is still emitted as the bounding radius for legacy
+    // consumers.
+    expect(e.radius).toBeCloseTo(Math.hypot(2.5, 0.125))
   })
 
   it('captures dynamic actor pose and velocity', () => {

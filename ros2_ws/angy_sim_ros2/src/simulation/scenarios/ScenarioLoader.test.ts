@@ -94,6 +94,310 @@ describe('ScenarioLoader.parse', () => {
   })
 })
 
+describe('ScenarioLoader.parse — static_obstacle shape discriminator', () => {
+  it('parses a legacy circular obstacle (no shape field)', () => {
+    const spec = ScenarioLoader.parse({
+      name: 's',
+      entities: [
+        {
+          kind: 'static_obstacle',
+          id: 'pillar',
+          position: { x: 2, y: 1 },
+          radius: 0.35,
+        },
+      ],
+    })
+    const obs = spec.entities[0]
+    if (obs.kind !== 'static_obstacle') throw new Error('expected obstacle')
+    expect(obs.shape).toBe('circle')
+    if (obs.shape !== 'circle') throw new Error('expected circle')
+    expect(obs.position).toEqual({ x: 2, y: 1 })
+    expect(obs.radius).toBe(0.35)
+  })
+
+  it('parses an explicit circle obstacle', () => {
+    const spec = ScenarioLoader.parse({
+      name: 's',
+      entities: [
+        {
+          kind: 'static_obstacle',
+          id: 'pillar',
+          shape: 'circle',
+          position: { x: 2, y: 1 },
+          radius: 0.35,
+        },
+      ],
+    })
+    const obs = spec.entities[0]
+    if (obs.kind !== 'static_obstacle' || obs.shape !== 'circle') {
+      throw new Error('expected circle obstacle')
+    }
+    expect(obs.radius).toBe(0.35)
+  })
+
+  it('parses a rectangle obstacle in center mode', () => {
+    const spec = ScenarioLoader.parse({
+      name: 's',
+      entities: [
+        {
+          kind: 'static_obstacle',
+          id: 'box_1',
+          shape: 'rectangle',
+          rectangle: {
+            mode: 'center',
+            center: { x: 4, y: 2 },
+            length: 2.4,
+            thickness: 1.2,
+            yaw: Math.PI / 4,
+          },
+        },
+      ],
+    })
+    const obs = spec.entities[0]
+    if (obs.kind !== 'static_obstacle' || obs.shape !== 'rectangle') {
+      throw new Error('expected rectangle obstacle')
+    }
+    if (obs.rectangle.mode !== 'center') {
+      throw new Error('expected center mode')
+    }
+    expect(obs.rectangle.center).toEqual({ x: 4, y: 2 })
+    expect(obs.rectangle.length).toBe(2.4)
+    expect(obs.rectangle.thickness).toBe(1.2)
+    expect(obs.rectangle.yaw).toBeCloseTo(Math.PI / 4)
+  })
+
+  it('parses a rectangle obstacle in segment mode', () => {
+    const spec = ScenarioLoader.parse({
+      name: 's',
+      entities: [
+        {
+          kind: 'static_obstacle',
+          id: 'wall_1',
+          shape: 'rectangle',
+          rectangle: {
+            mode: 'segment',
+            start: { x: -2, y: -1 },
+            end: { x: 3, y: -1 },
+            thickness: 0.25,
+          },
+        },
+      ],
+    })
+    const obs = spec.entities[0]
+    if (obs.kind !== 'static_obstacle' || obs.shape !== 'rectangle') {
+      throw new Error('expected rectangle obstacle')
+    }
+    if (obs.rectangle.mode !== 'segment') {
+      throw new Error('expected segment mode')
+    }
+    expect(obs.rectangle.start).toEqual({ x: -2, y: -1 })
+    expect(obs.rectangle.end).toEqual({ x: 3, y: -1 })
+    expect(obs.rectangle.thickness).toBe(0.25)
+  })
+
+  it('throws on unknown shape value', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [
+          {
+            kind: 'static_obstacle',
+            id: 'bad',
+            shape: 'pentagon',
+          },
+        ],
+      }),
+    ).toThrow(/shape must be "circle" or "rectangle"/)
+  })
+
+  it('throws on unknown rectangle.mode', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [
+          {
+            kind: 'static_obstacle',
+            id: 'bad',
+            shape: 'rectangle',
+            rectangle: { mode: 'diagonal' },
+          },
+        ],
+      }),
+    ).toThrow(/mode must be "center" or "segment"/)
+  })
+
+  it('throws on center mode missing length', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [
+          {
+            kind: 'static_obstacle',
+            id: 'bad',
+            shape: 'rectangle',
+            rectangle: {
+              mode: 'center',
+              center: { x: 0, y: 0 },
+              thickness: 1,
+              yaw: 0,
+            },
+          },
+        ],
+      }),
+    ).toThrow(/length/)
+  })
+
+  it('throws on non-positive thickness', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [
+          {
+            kind: 'static_obstacle',
+            id: 'bad',
+            shape: 'rectangle',
+            rectangle: {
+              mode: 'center',
+              center: { x: 0, y: 0 },
+              length: 1,
+              thickness: 0,
+              yaw: 0,
+            },
+          },
+        ],
+      }),
+    ).toThrow(/thickness/)
+  })
+
+  it('throws on segment mode with identical start and end', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [
+          {
+            kind: 'static_obstacle',
+            id: 'bad',
+            shape: 'rectangle',
+            rectangle: {
+              mode: 'segment',
+              start: { x: 1, y: 1 },
+              end: { x: 1, y: 1 },
+              thickness: 0.25,
+            },
+          },
+        ],
+      }),
+    ).toThrow(/identical/)
+  })
+
+  it('throws on segment mode with non-finite endpoint coordinates', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [
+          {
+            kind: 'static_obstacle',
+            id: 'bad',
+            shape: 'rectangle',
+            rectangle: {
+              mode: 'segment',
+              start: { x: NaN, y: 0 },
+              end: { x: 1, y: 0 },
+              thickness: 0.25,
+            },
+          },
+        ],
+      }),
+    ).toThrow(ScenarioParseError)
+  })
+})
+
+describe('ScenarioLoader.buildEntity — rectangle obstacles', () => {
+  it('builds a rectangle obstacle from center mode and normalizes shape', () => {
+    const e = ScenarioLoader.buildEntity({
+      kind: 'static_obstacle',
+      id: 'box_1',
+      shape: 'rectangle',
+      rectangle: {
+        mode: 'center',
+        center: { x: 4, y: 2 },
+        length: 2.4,
+        thickness: 1.2,
+        yaw: Math.PI / 4,
+      },
+    })
+    expect(e).toBeInstanceOf(StaticObstacleEntity)
+    const s = e as StaticObstacleEntity
+    expect(s.position.x).toBe(4)
+    expect(s.position.y).toBe(2)
+    expect(s.shape.type).toBe('rectangle')
+    if (s.shape.type !== 'rectangle') throw new Error('expected rectangle')
+    expect(s.shape.length).toBe(2.4)
+    expect(s.shape.thickness).toBe(1.2)
+    expect(s.shape.yaw).toBeCloseTo(Math.PI / 4)
+    // Bounding radius = hypot(length/2, thickness/2).
+    expect(s.radius).toBeCloseTo(Math.hypot(1.2, 0.6))
+  })
+
+  it('derives center, length, and yaw from segment mode', () => {
+    const e = ScenarioLoader.buildEntity({
+      kind: 'static_obstacle',
+      id: 'wall',
+      shape: 'rectangle',
+      rectangle: {
+        mode: 'segment',
+        start: { x: -2, y: -1 },
+        end: { x: 3, y: -1 },
+        thickness: 0.25,
+      },
+    }) as StaticObstacleEntity
+    expect(s_eq(e.position.x, 0.5)).toBe(true)
+    expect(e.position.y).toBe(-1)
+    if (e.shape.type !== 'rectangle') throw new Error('expected rectangle')
+    expect(e.shape.length).toBeCloseTo(5)
+    expect(e.shape.thickness).toBe(0.25)
+    expect(e.shape.yaw).toBeCloseTo(0)
+  })
+
+  it('derives yaw = π/2 from a vertical segment (start below end)', () => {
+    const e = ScenarioLoader.buildEntity({
+      kind: 'static_obstacle',
+      id: 'wall',
+      shape: 'rectangle',
+      rectangle: {
+        mode: 'segment',
+        start: { x: 1, y: -2 },
+        end: { x: 1, y: 2 },
+        thickness: 0.3,
+      },
+    }) as StaticObstacleEntity
+    if (e.shape.type !== 'rectangle') throw new Error('expected rectangle')
+    expect(e.shape.yaw).toBeCloseTo(Math.PI / 2)
+    expect(e.shape.length).toBeCloseTo(4)
+  })
+
+  it('derives yaw = π/4 from a 45° diagonal segment', () => {
+    const e = ScenarioLoader.buildEntity({
+      kind: 'static_obstacle',
+      id: 'wall',
+      shape: 'rectangle',
+      rectangle: {
+        mode: 'segment',
+        start: { x: 0, y: 0 },
+        end: { x: 1, y: 1 },
+        thickness: 0.2,
+      },
+    }) as StaticObstacleEntity
+    if (e.shape.type !== 'rectangle') throw new Error('expected rectangle')
+    expect(e.shape.yaw).toBeCloseTo(Math.PI / 4)
+    expect(e.shape.length).toBeCloseTo(Math.SQRT2)
+  })
+})
+
+function s_eq(a: number, b: number, eps = 1e-9): boolean {
+  return Math.abs(a - b) <= eps
+}
+
 describe('ScenarioLoader.buildEntity', () => {
   it('builds a VehicleEntity with given pose and controls', () => {
     const e = ScenarioLoader.buildEntity({

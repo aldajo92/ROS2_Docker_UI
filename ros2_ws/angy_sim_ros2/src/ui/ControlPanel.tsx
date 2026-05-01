@@ -53,6 +53,18 @@ const SCENARIO_OPTIONS: readonly ScenarioOption[] = [
     label: 'Trajectory tracking enabled',
     url: '/scenarios/trajectory-tracking-enabled.json',
   },
+  {
+    label: 'Rectangle obstacles (wall + yawed box)',
+    url: '/scenarios/rectangle-obstacles.json',
+  },
+  {
+    label: 'Rectangle corridor (keyboard drive)',
+    url: '/scenarios/rectangle-corridor.json',
+  },
+  {
+    label: 'Rectangle slalom (auto-drive panels)',
+    url: '/scenarios/rectangle-slalom.json',
+  },
 ]
 
 export function ControlPanel({

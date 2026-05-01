@@ -24,12 +24,69 @@ export interface VehicleSpec {
   radius?: number
 }
 
-export interface StaticObstacleSpec {
+/**
+ * Classic circular obstacle. `shape` is optional so legacy scenario JSON
+ * files (the ones that pre-date rectangle obstacles) keep parsing
+ * unchanged — they're treated as `shape: 'circle'` implicitly.
+ */
+export interface CircleStaticObstacleSpec {
   kind: 'static_obstacle'
   id: string
+  shape?: 'circle'
   position: { x: number; y: number }
   radius: number
 }
+
+/**
+ * Rectangle parameterized by its center pose. `length` is the local
+ * forward extent (along +X after applying `yaw`), `thickness` is the
+ * lateral extent.
+ */
+export interface RectangleObstacleCenterSpec {
+  mode: 'center'
+  center: { x: number; y: number }
+  length: number
+  thickness: number
+  yaw: number
+}
+
+/**
+ * Rectangle parameterized by the two endpoints of its centerline plus a
+ * perpendicular thickness. Useful for "walls" and axis-aligned barriers
+ * where computing center/length/yaw by hand is tedious. The loader
+ * derives:
+ *
+ *   center = midpoint(start, end)
+ *   length = distance(start, end)      // MUST be > 0
+ *   yaw    = atan2(end.y - start.y, end.x - start.x)
+ *   thickness = thickness               // MUST be > 0
+ */
+export interface RectangleObstacleSegmentSpec {
+  mode: 'segment'
+  start: { x: number; y: number }
+  end: { x: number; y: number }
+  thickness: number
+}
+
+export type RectangleObstacleSpec =
+  | RectangleObstacleCenterSpec
+  | RectangleObstacleSegmentSpec
+
+/**
+ * Rectangular static obstacle. The `shape: 'rectangle'` discriminator is
+ * required; the `rectangle` sub-object carries the geometry in either
+ * center or segment form.
+ */
+export interface RectangleStaticObstacleSpec {
+  kind: 'static_obstacle'
+  id: string
+  shape: 'rectangle'
+  rectangle: RectangleObstacleSpec
+}
+
+export type StaticObstacleSpec =
+  | CircleStaticObstacleSpec
+  | RectangleStaticObstacleSpec
 
 export interface DynamicActorSpec {
   kind: 'dynamic_actor'

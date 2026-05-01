@@ -138,8 +138,15 @@ The runtime spine.
   ```
   Tracks `distanceTraveled`, exposes last applied `v`/`w` for
   telemetry. `radius` is used by collision checks.
-- **`StaticObstacleEntity`** — circle at a fixed `position`;
-  inherits the no-op update.
+- **`StaticObstacleEntity`** — inert obstacle at a fixed `position`.
+  Carries a normalized `shape` discriminated union:
+  `{ type: 'circle', radius }` or
+  `{ type: 'rectangle', length, thickness, yaw }`, where `length` is the
+  local forward extent (along local +X after `yaw`), `thickness` is the
+  local lateral extent, and `yaw` is in radians (CCW from +X). The
+  legacy `{ id, position, radius }` constructor still works and maps to
+  a circle. `entity.radius` is always a number — for rectangles it is
+  the bounding-circle radius. Inherits the no-op update.
 - **`DynamicActorEntity`** — holonomic moving obstacle: world-frame
   velocity + scalar angular velocity, integrated directly. Useful for
   pedestrians or scripted traffic that doesn't follow a kinematic
@@ -243,13 +250,20 @@ entities, or any consumer of the `collision` event.
   (`min|max`) used by `CollisionSystem` to deduplicate contacts and
   to track pairs across ticks.
 - **`buildCollisionShapes2DFromState(state)`** — pure read from
-  `SimulationState`. Today every entity maps to a circle (vehicle,
-  static obstacle, dynamic actor); switching a vehicle to an
-  oriented box is a one-file change here, not a backend change.
+  `SimulationState`. Vehicles and dynamic actors map to circles;
+  static obstacles map to either `circle` or `oriented_box` shapes
+  depending on `entity.shape.type`. For rectangles the entity's
+  `length` (along local +X) and `thickness` (along local +Y) are
+  converted into the `OrientedBoxCollisionShape2D` convention
+  (`width` along local +X, `length` along local +Y) at the boundary;
+  `yaw` is forwarded unchanged.
 - **`SimpleCircleCollisionBackend2D`** — default backend. O(n²)
-  circle-vs-circle, returns penetration depth and a unit normal.
-  Silently ignores oriented boxes; if you need them, switch
-  backends.
+  narrow-phase covering three shape combinations: circle-vs-circle,
+  circle-vs-oriented-box (clamped-point distance test), and
+  oriented-box-vs-oriented-box (2D SAT over four axes). All three
+  produce penetration depth and an A→B unit normal; pair ordering is
+  deterministic. The legacy class name is kept so existing
+  `CollisionConfig.backend = 'simpleCircle2D'` keeps working.
 - **`NoopCollisionBackend2D`** — explicit "collisions off" backend.
   `detect()` always returns `[]`. Used when
   `CollisionConfig.backend === 'disabled'` so `CollisionSystem`
@@ -275,12 +289,26 @@ A heavy backend (Rapier, Matter.js, Box2D, …) goes under
 ## Layer 5 — scenarios (`src/simulation/scenarios/`)
 
 - **`Scenario.ts`** — pure JSON-friendly type definitions:
-  `PoseSpec`, `VehicleSpec`, `StaticObstacleSpec`,
-  `DynamicActorSpec`, `EntitySpec` (discriminated by `type`),
-  `PathPointSpec`, `PathSpec`,
+  `PoseSpec`, `VehicleSpec`, `StaticObstacleSpec` (a discriminated union
+  of circle and rectangle specs; see below), `RectangleObstacleSpec`
+  (union of `mode: 'center'` and `mode: 'segment'`), `DynamicActorSpec`,
+  `EntitySpec` (discriminated by `kind`), `PathPointSpec`, `PathSpec`,
   `KeyboardControlScenarioConfig` / `ScenarioInteractionConfig` (UI
-  defaults applied at scenario load — see Layer 8), and
-  `ScenarioSpec`.
+  defaults applied at scenario load — see Layer 8), and `ScenarioSpec`.
+  **Static obstacle JSON shapes** (backward compatible):
+  - Legacy circle (no `shape` field required): `{ kind, id, position,
+    radius }`.
+  - Explicit circle: `{ kind, id, shape: 'circle', position, radius }`.
+  - Rectangle (center mode): `{ kind, id, shape: 'rectangle',
+    rectangle: { mode: 'center', center, length, thickness, yaw } }` —
+    `length` = local forward extent (m), `thickness` = local lateral
+    extent (m), `yaw` = radians CCW from +X.
+  - Rectangle (segment mode): `{ kind, id, shape: 'rectangle',
+    rectangle: { mode: 'segment', start, end, thickness } }`. The
+    loader derives `center = midpoint(start, end)`,
+    `length = distance(start, end)`,
+    `yaw = atan2(end.y - start.y, end.x - start.x)`. Identical
+    endpoints and non-positive `thickness` are rejected at parse time.
 - **`ScenarioLoader`** — `parse(input)` validates raw JSON and throws
   a `ScenarioParseError` on failure; `loadFromUrl(url)` fetches +
   parses; `buildEntity(spec)` instantiates the concrete entity class.
@@ -341,7 +369,12 @@ these contracts without changing them.
 - **`SimulationFrameSnapshot`** — JSON-friendly per-tick snapshot.
   Includes `tick` (1-based, matches the `tick` event), `timeSec`, an
   `entities` array (`vehicle` / `static_obstacle` / `dynamic_actor` /
-  generic fallback), optional `events` and `metrics`.
+  generic fallback), optional `events` and `metrics`. Static obstacle
+  entries optionally carry a `shape: 'circle' | 'rectangle'`
+  discriminator and, for rectangles, a `rectangle: { length, thickness,
+  yaw }` sub-object; legacy circle frames that pre-date rectangles
+  continue to load as circles because `shape` is optional and defaults
+  to `'circle'`.
 - **`ReplayFileFormat`** — versioned envelope (`format: 'angy_sim_replay'`,
   `version: 1`). Carries `scenarioName`, `fixedDtSec`, optional
   `metadata`, and `frames: SimulationFrameSnapshot[]`. Always
@@ -866,7 +899,11 @@ beyond the public read API.
 - **`ThreeVehicleRenderer`** — one `BoxGeometry` per vehicle, mesh
   long axis along sim +X (matching the yaw convention). Repositions
   via `simPoint2DToThree`; rotates via `simYawToThreeRotationY`.
-- **`ThreeStaticObstacleRenderer`** — cylinders for static obstacles.
+- **`ThreeStaticObstacleRenderer`** — draws `StaticObstacleEntity`
+  based on `entity.shape.type`: vertical cylinders for circles, boxes
+  (`THREE.BoxGeometry`) oriented via `simYawToThreeRotationY` for
+  rectangles. Reads the normalized `length`/`thickness`/`yaw` off the
+  entity; no geometry calculation happens in the renderer.
 - **`ThreeDynamicActorRenderer`** — spheres for dynamic actors.
 - **`ThreeTrajectoryRenderer`** — draws **actual** trajectories from
   `state.trajectories` as `THREE.Line` objects (one per `entityId`).
@@ -883,10 +920,25 @@ beyond the public read API.
 ### Debug layer (`renderers/three/debug/`)
 
 - **`ThreeDebugLayer`** — fans out `sync` to per-flag debug
-  renderers; `setOptions` toggles them at runtime.
-- **`BoundingCircleRenderer`** — thin ring at each entity's
-  bounding-circle radius. Picks up any entity that exposes
-  `radius` and either `position` or `pose.position`.
+  renderers; `setOptions` toggles them at runtime. Options include
+  `showBoundingOutlines` (master toggle for the shape-aware outline)
+  and `vehicleBoundingOutlineShape` (`"circle" | "rectangle"`), both
+  driven from the Inspector's **Debug overlay** panel so Three.js and
+  Phaser viewports stay in sync. Defaults preserve the pre-rectangle
+  look (outlines on, vehicle drawn as a circle).
+- **`BoundingOutlineRenderer`** (formerly `BoundingCircleRenderer`) —
+  shape-aware thin outline. Static obstacles pick their shape from
+  `StaticObstacleEntity.shape` (`circle` → 48-segment `LineLoop`,
+  `rectangle` → 4-corner `LineLoop` rotated by `yaw`). Dynamic actors
+  are always drawn as circles. Vehicles use the
+  `vehicleBoundingOutlineShape` option: `circle` matches the old
+  behavior (`vehicle.radius`); `rectangle` uses the existing vehicle
+  body proportions (`VEHICLE_LENGTH_RATIO` / `VEHICLE_WIDTH_RATIO`
+  from `config/VisualStyle.ts`). The per-entity shape decision is
+  delegated to the pure helper
+  `src/ui/renderers/debug/resolveBoundingOutline.ts` so the Three.js
+  and Phaser adapters never diverge. This renderer is read-only;
+  nothing about collision or replay depends on the outline.
 - **`HeadingArrowRenderer`** — stylized arrow showing each
   vehicle's yaw (shaft + cone, both pre-rotated to local +X).
 - **`VelocityVectorRenderer`** — thin segment from the vehicle pose
@@ -1035,12 +1087,34 @@ ignored. Phaser-specific notes:
   `PhaserTrailRenderer`) plus the static scene
   (`PhaserGroundRenderer`, `PhaserAxesRenderer`). Each owns a
   registry and disposes its `Phaser.GameObject`s on `dispose()`.
+  `PhaserStaticObstacleRenderer` branches on
+  `obstacle.shape.type`: filled arcs for circles, filled rotated
+  rectangles for rectangles (rotation via `simYawToPhaserRotation`).
   `PhaserGroundRenderer` sizes its line range to the active
   camera's `worldView` rect — not the canvas — so panning and
   zooming always keep the grid covering the visible viewport.
-- **`renderers/phaser/debug/PhaserDebugLayer.ts`** — composes
-  `PhaserBoundingCircleRenderer` and `PhaserHeadingArrowRenderer`,
-  toggled together via `setOptions`.
+- **`renderers/phaser/debug/PhaserDebugLayer.ts`** — composes the
+  shape-aware `PhaserBoundingOutlineRenderer` and
+  `PhaserHeadingArrowRenderer`, toggled via `setOptions`. The option
+  shape (`showBoundingOutlines`, `vehicleBoundingOutlineShape`)
+  mirrors `ThreeDebugLayer` so a single Inspector control drives both
+  adapters.
+- **`renderers/phaser/debug/PhaserBoundingOutlineRenderer.ts`** —
+  shape-aware debug outline. Draws stroked `Arc`s for circles and
+  stroked `Rectangle`s for rectangles (rotated via
+  `simYawToPhaserRotation`). Delegates shape selection to the shared
+  `src/ui/renderers/debug/resolveBoundingOutline.ts` helper so the
+  Three.js and Phaser outputs stay byte-equivalent when it comes to
+  which entity gets which shape. Read-only; collision/replay remain
+  untouched.
+- **`renderers/debug/DebugOverlayConfig.ts`** and
+  **`renderers/debug/resolveBoundingOutline.ts`** — adapter-agnostic
+  shared pieces. `DebugOverlayConfig` is the single React-level state
+  the Inspector writes to; `resolveBoundingOutline` is the pure
+  function that maps an entity to its outline shape (`circle` or
+  `rectangle`). Both imported by Three and Phaser debug renderers so
+  adding a third adapter later only requires a new drawer, not a new
+  decision tree.
 - **`renderers/phaser/objects/VisualStyle.ts`** — Phaser-side color
   / size constants. Kept independent of the Three.js style file
   because Phaser uses `0xRRGGBB` ints whereas Three uses CSS

@@ -8,6 +8,11 @@ docker run -it \
     --device /dev/dri:/dev/dri \
     -e DISPLAY \
     -e TERM \
+    -e LIBGL_ALWAYS_SOFTWARE=1 \
+    -e MESA_GL_VERSION_OVERRIDE=3.3 \
+    -e MESA_GLSL_VERSION_OVERRIDE=330 \
+    -e OGRE_RTT_MODE=Copy \
+    -e QSG_RENDER_LOOP=basic \
     -e QT_X11_NO_MITSHM=1 \
     -e XAUTHORITY \
     -e XDG_RUNTIME_DIR=/tmp/runtime-root \
