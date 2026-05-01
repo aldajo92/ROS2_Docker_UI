@@ -1136,21 +1136,50 @@ body.layout-splitter-dragging {
 
   .layout {
     /* Collapse to a single stacked column on mobile and hide the
-       splitter — pointer-based resize is not useful at this width. */
-    grid-template-columns: 1fr;
+       splitter — pointer-based resize is not useful at this width.
+       Switch from the desktop grid-stretch model to a content-sized
+       flex column so `.layout-left` and `.layout-right` pack naturally
+       below one another. Without this the inherited desktop
+       `flex: 1 1 0; min-height: 0` on `.layout` stays active and its
+       single grid row collapses, because `.viewport-surface` /
+       `.viewport` (also `flex: 1 1 0`) have nothing to grow into. */
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 auto;
+    min-height: 0;
   }
 
   .layout-splitter {
     display: none;
   }
 
-  .layout-right {
-    height: auto;
-    overflow-y: visible;
+  .layout-left {
+    flex: 0 0 auto;
+  }
+
+  /* The desktop rules give `.viewport-surface` (flex: 1 1 0) and its
+     inner `.viewport` (flex: 1 1 0) a shared height to grow into.
+     On mobile the stacked layout no longer provides that height, so
+     an explicit wrapper height is the anchor the canvas-fit stage
+     and the heading arrows need. Without this, `.viewport`'s
+     flex-basis: 0 beats the legacy `.viewport { height: 60vh }` rule
+     (flex-basis wins over `height` for flex items) and the Simulation
+     View collapses to 0 px. */
+  .viewport-surface {
+    flex: 0 0 auto;
+    height: 60vh;
+    min-height: 320px;
   }
 
   .viewport {
-    height: 60vh;
-    min-height: 320px;
+    /* Fall back to filling the wrapper; the mobile height contract now
+       lives on `.viewport-surface` above. */
+    height: 100%;
+    min-height: 0;
+  }
+
+  .layout-right {
+    height: auto;
+    overflow-y: visible;
   }
 }
