@@ -10,6 +10,7 @@ import type {
   SimulationRecorderStatus,
 } from '../recording/SimulationRecorder'
 import type { ReplayFileFormat } from '../recording/ReplayFormat'
+import type { ProfilerSnapshot } from '../profiling/ProfilerTypes'
 
 /**
  * Thin facade over SimulationEngine for UI / external callers. Keeps
@@ -133,5 +134,20 @@ export class SimulationController {
     createdAt?: string
   }): ReplayFileFormat {
     return this.engine.exportRecording(params)
+  }
+
+  /* -- profiler -------------------------------------------------------- */
+
+  /** Current wall-clock timing snapshot (diagnostic-only). */
+  getProfilerSnapshot(): ProfilerSnapshot {
+    return this.engine.getProfilerSnapshot()
+  }
+
+  isProfilerEnabled(): boolean {
+    return this.engine.profiler.isEnabled()
+  }
+
+  setProfilerEnabled(enabled: boolean): void {
+    this.engine.profiler.setEnabled(enabled)
   }
 }

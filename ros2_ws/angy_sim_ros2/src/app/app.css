@@ -81,6 +81,212 @@ body,
   flex-direction: column;
 }
 
+/* Positioning boundary for the absolutely-placed `PerformanceOverlay`.
+   The wrapper owns its own flex slot so the replay timeline (painted
+   as a sibling below) is never visually overlapped by the overlay. */
+.viewport-surface {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.viewport-surface > .viewport {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+/* ----- performance overlay ------------------------------------------- *
+ *
+ * Top-left diagnostic card painted over the active viewport. Passive
+ * by default (`pointer-events: none`) so it never blocks renderer
+ * interaction; interactive sub-regions restore `pointer-events: auto`.
+ */
+.performance-overlay {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 10;
+  min-width: 220px;
+  max-width: 260px;
+  padding: 10px 12px;
+  background: rgba(15, 17, 21, 0.82);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--fg);
+  font-family: ui-monospace, "SFMono-Regular", monospace;
+  font-size: 11px;
+  line-height: 1.35;
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.performance-overlay__controls {
+  pointer-events: auto;
+}
+
+.performance-overlay__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.performance-overlay__title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg-muted);
+}
+
+.performance-overlay__fps {
+  font-size: 12px;
+  color: var(--accent);
+}
+
+.performance-overlay__summary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px 6px;
+}
+
+.performance-overlay__cell {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.performance-overlay__cell-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg-muted);
+}
+
+.performance-overlay__cell-value {
+  font-size: 12px;
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+
+.performance-overlay__sparkline {
+  width: 100%;
+  height: 30px;
+  color: var(--accent);
+  display: block;
+}
+
+.performance-overlay__systems {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.performance-overlay__systems td {
+  padding: 2px 0;
+  vertical-align: baseline;
+}
+
+.performance-overlay__sys-name {
+  color: var(--fg-muted);
+  padding-right: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+}
+
+.performance-overlay__sys-latest,
+.performance-overlay__sys-avg {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+}
+
+.performance-overlay__sys-avg {
+  color: var(--fg-muted);
+}
+
+.performance-overlay__empty {
+  color: var(--fg-muted);
+  padding: 6px 0;
+  text-align: center;
+}
+
+.performance-overlay__footnote {
+  margin: 0;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-muted);
+  opacity: 0.75;
+}
+
+/* ----- performance panel (Inspector) --------------------------------- */
+.performance-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.performance-panel-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--fg);
+  cursor: pointer;
+  user-select: none;
+}
+
+.performance-panel-toggle input[type='checkbox'] {
+  accent-color: var(--accent);
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+
+.performance-panel-row {
+  display: grid;
+  grid-template-columns: 1fr 160px;
+  align-items: center;
+  gap: 10px;
+}
+
+.performance-panel-row-label {
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.performance-panel-select {
+  background: var(--bg-panel-2);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 12px;
+  font-family: ui-monospace, "SFMono-Regular", monospace;
+  cursor: pointer;
+  appearance: none;
+}
+
+.performance-panel-select:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.performance-panel-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--fg-muted);
+  opacity: 0.85;
+}
+
 .layout-right {
   display: flex;
   flex-direction: column;

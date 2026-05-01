@@ -491,9 +491,44 @@ Boundaries (enforced by `architecture.recording.test.ts` and
   `tick`, `started`, `paused`, `reset`, `scenarioLoaded`,
   `collision`, `entityAdded`, `entityRemoved`,
   `recordingStarted`, `recordingStopped`, `recordingCleared`,
-  `recordingMaxFramesReached`.
+  `recordingMaxFramesReached`, `profileSample`.
 - **`Logger`** — level-filtered (`debug`/`info`/`warn`/`error`) with a
   pluggable `LoggerSink`. Defaults to a `ConsoleLoggerSink`.
+
+### Engine profiler (`src/simulation/profiling/`)
+
+`SimulationEngine` owns a `SimulationProfiler` that measures **wall-clock**
+duration of each tick's `SystemManager.update` call, broken down by
+system. It is a diagnostic layer with no effect on deterministic
+behavior:
+
+- Types (`ProfilerTypes.ts`): `SystemTimingSample`, `TickTimingSample`,
+  `ProfilerAggregate`, `ProfilerSnapshot`.
+- Data (`RollingProfilerBuffer.ts`): bounded ring buffer; default
+  capacity 120 (~2 s at 60 Hz). FIFO eviction.
+- Coordinator (`SimulationProfiler.ts`): takes an injectable
+  `nowMs: () => number` (default `performance.now()` with a
+  `Date.now()` fallback) and exposes a structural
+  `SystemTickInstrument` that `SystemManager.update` accepts as an
+  optional third argument. When the profiler is disabled, the
+  manager's iteration path is byte-equivalent to the pre-profiler
+  implementation.
+- Event: `profileSample` is emitted on the existing
+  `TypedEventBus<SimulationEvents>` after `tick`, carrying the
+  `TickTimingSample` for the just-finished tick.
+
+**Guarantees**: the profiler never mutates `SimulationState`,
+entities, paths, trajectories, or renderer state; it does not change
+the fixed-step `dt`; its samples are runtime-only and are NEVER
+written to `SimulationFrameSnapshot` / `ReplayFileFormat`.
+
+**UI**: `src/app/useSimulationProfiler.ts` (React hook) subscribes to
+`profileSample` via `useSyncExternalStore`. `src/ui/PerformanceOverlay.tsx`
+renders the snapshot as an absolute-positioned top-left overlay above
+the `viewport-surface` wrapper; `src/ui/PerformancePanel.tsx` is the
+Inspector checkbox that toggles it. The overlay is renderer-agnostic
+and never touches `ThreeSimulationRenderer`, `PhaserSimulationRenderer`,
+`ThreeSimulationViewport`, or `PhaserSimulationViewport`.
 
 ## Layer 7 — React shell (`src/app/`, `src/ui/`)
 

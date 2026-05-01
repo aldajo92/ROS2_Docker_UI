@@ -13,6 +13,11 @@ import {
   type SimulationRecorderStatus,
 } from '../recording/SimulationRecorder'
 import type { ReplayFileFormat } from '../recording/ReplayFormat'
+import {
+  SimulationProfiler,
+  type NowMsFn,
+} from '../profiling/SimulationProfiler'
+import type { ProfilerSnapshot } from '../profiling/ProfilerTypes'
 
 import { EntityManager } from './EntityManager'
 import { SystemManager } from './SystemManager'
@@ -23,6 +28,17 @@ import { SimulationState } from './SimulationState'
 export interface SimulationEngineOptions {
   fixedDtSec?: number
   logger?: Logger
+  /**
+   * Wall-clock source for the engine tick profiler. Injectable so
+   * tests can feed deterministic sequences and non-browser hosts can
+   * bring their own clock. Defaults to `performance.now()` when
+   * available, else `Date.now()`. Never used for simulation time.
+   */
+  nowMs?: NowMsFn
+  /** Size of the profiler's rolling sample window. */
+  profilerHistoryCapacity?: number
+  /** Start the profiler disabled (collection off). Defaults to `true`. */
+  profilerEnabled?: boolean
 }
 
 /**
@@ -40,6 +56,7 @@ export class SimulationEngine {
   readonly logger: Logger
   readonly state: SimulationState
   readonly recorder: SimulationRecorder
+  readonly profiler: SimulationProfiler
   private loop: SimulationLoop
 
   constructor(options: SimulationEngineOptions = {}) {
@@ -55,6 +72,11 @@ export class SimulationEngine {
       this.logger,
     )
     this.recorder = new SimulationRecorder()
+    this.profiler = new SimulationProfiler({
+      nowMs: options.nowMs,
+      historyCapacity: options.profilerHistoryCapacity,
+      enabled: options.profilerEnabled ?? true,
+    })
     this.loop = new SimulationLoop({ fixedDtSec: options.fixedDtSec ?? 1 / 60 })
     this.loop.setStepCallback((dt) => this.tick(dt))
   }
@@ -91,6 +113,7 @@ export class SimulationEngine {
     this.state.trajectories.clear()
     this.state.scenarioName = null
     this.systems.reset()
+    this.profiler.clear()
     const wasRecording = this.recorder.isRecording()
     const frameCount = this.recorder.getStatus().frameCount
     this.recorder.stop()
@@ -271,6 +294,13 @@ export class SimulationEngine {
     this.loop.setSpeedFactor(factor)
   }
 
+  /* -- profiler -------------------------------------------------------- */
+
+  /** Convenience accessor; equivalent to `engine.profiler.getSnapshot()`. */
+  getProfilerSnapshot(): ProfilerSnapshot {
+    return this.profiler.getSnapshot()
+  }
+
   /**
    * Pushes scenario trajectory settings onto `TrajectoryTrackingSystem`
    * when that system is registered under the name `trajectoryTracking`.
@@ -286,12 +316,27 @@ export class SimulationEngine {
 
   private tick(dt: number): void {
     this.clock.tick(dt)
-    this.systems.update(dt, this.state)
+
+    // Profiler instrumentation is diagnostic-only: it observes
+    // wall-clock durations but never mutates state, entities, or dt.
+    // When the profiler is disabled, `getSystemInstrument()` returns
+    // `undefined`, and `SystemManager.update` follows the original
+    // zero-overhead iteration path.
+    this.profiler.beginTick()
+    this.systems.update(dt, this.state, this.profiler.getSystemInstrument())
     this.state.metrics.ticks += 1
+    const sample = this.profiler.endTick({
+      tickIndex: this.state.metrics.ticks,
+      simDtSec: dt,
+    })
+
     this.events.emit('tick', {
       time: this.clock.time(),
       dt,
       ticks: this.state.metrics.ticks,
     })
+    if (sample) {
+      this.events.emit('profileSample', sample)
+    }
   }
 }

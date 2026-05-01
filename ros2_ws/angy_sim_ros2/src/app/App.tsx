@@ -8,6 +8,9 @@ import { EntityListPanel } from '../ui/EntityListPanel'
 import { MetricsPanel } from '../ui/MetricsPanel'
 import { RendererSettingsPanel } from '../ui/RendererSettingsPanel'
 import { RecordingPanel } from '../ui/RecordingPanel'
+import { PerformanceOverlay } from '../ui/PerformanceOverlay'
+import { PerformancePanel } from '../ui/PerformancePanel'
+import { DEFAULT_PROFILER_UPDATE_INTERVAL_MS } from './useSimulationProfiler'
 import { ScenarioEditorPanel } from '../ui/scenario/ScenarioEditorPanel'
 import {
   downloadScenarioJsonText,
@@ -111,6 +114,15 @@ function AppShell() {
   const [rendererType, setRendererType] = useState<RendererType>(
     DEFAULT_RENDERER_TYPE,
   )
+
+  // Performance overlay is diagnostic-only; hidden by default so the
+  // viewport starts uncluttered. The flag lives in the shell so both
+  // the Inspector toggle and the overlay read the same source. The
+  // refresh interval throttles only the UI — the profiler keeps
+  // sampling every tick so the rolling window stays accurate.
+  const [showPerformanceOverlay, setShowPerformanceOverlay] = useState(false)
+  const [performanceOverlayUpdateIntervalMs, setPerformanceOverlayUpdateIntervalMs] =
+    useState<number>(DEFAULT_PROFILER_UPDATE_INTERVAL_MS)
 
   const applyTrajectoryTracking = useCallback(
     (next: TrajectoryTrackingConfig) => {
@@ -611,13 +623,20 @@ function AppShell() {
           }
         >
           <div className="layout-left">
-            <SimulationViewportSwitcher
-              ref={viewportSwitcherRef}
-              rendererType={rendererType}
-              threeTrajectoryVisualization={trajectoryVisualization}
-              phaserTrajectoryVisualization={phaserTrajectoryVisualization}
-              replayState={replayState}
-            />
+            <div className="viewport-surface">
+              <SimulationViewportSwitcher
+                ref={viewportSwitcherRef}
+                rendererType={rendererType}
+                threeTrajectoryVisualization={trajectoryVisualization}
+                phaserTrajectoryVisualization={phaserTrajectoryVisualization}
+                replayState={replayState}
+              />
+              {showPerformanceOverlay && (
+                <PerformanceOverlay
+                  updateIntervalMs={performanceOverlayUpdateIntervalMs}
+                />
+              )}
+            </div>
             {isReplayMode && (
               <ReplayTimeline
                 frameCount={replayFrameCount}
@@ -684,6 +703,14 @@ function AppShell() {
                   onRendererTypeChange={setRendererType}
                 />
                 <MetricsPanel />
+                <PerformancePanel
+                  showPerformanceOverlay={showPerformanceOverlay}
+                  onShowPerformanceOverlayChange={setShowPerformanceOverlay}
+                  updateIntervalMs={performanceOverlayUpdateIntervalMs}
+                  onUpdateIntervalMsChange={
+                    setPerformanceOverlayUpdateIntervalMs
+                  }
+                />
                 <KeyboardControlPanel
                   state={keyboardControlState}
                   onChange={setKeyboardControlState}

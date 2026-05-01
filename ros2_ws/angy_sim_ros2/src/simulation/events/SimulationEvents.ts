@@ -1,3 +1,4 @@
+import type { TickTimingSample } from '../profiling/ProfilerTypes'
 import type { SimulationRecorderConfig } from '../recording/SimulationRecorder'
 import type { TrajectoryTrackingConfig } from '../trajectories/TrajectoryTrackingConfig'
 
@@ -34,4 +35,11 @@ export interface SimulationEvents extends Record<string, unknown> {
   recordingStopped: { frameCount: number; reason: RecordingStoppedReason }
   recordingCleared: undefined
   recordingMaxFramesReached: { frameCount: number }
+
+  /**
+   * Wall-clock timing breakdown for a single tick. Diagnostic only;
+   * not part of the deterministic simulation contract. Runtime-only,
+   * never persisted to replay files.
+   */
+  profileSample: TickTimingSample
 }
