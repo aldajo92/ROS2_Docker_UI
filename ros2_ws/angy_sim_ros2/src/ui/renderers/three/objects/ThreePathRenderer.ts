@@ -40,6 +40,7 @@ export class ThreePathRenderer {
   private readonly context: ThreeSceneContext
   private readonly lines = new Map<string, THREE.Line>()
   private readonly debugState = new Map<string, LineDebugState>()
+  private readonly lastAppliedColor = new Map<string, string>()
 
   constructor(context: ThreeSceneContext) {
     this.context = context
@@ -62,11 +63,18 @@ export class ThreePathRenderer {
       if (!line) {
         try {
           const geometry = new THREE.BufferGeometry()
-          const material = new THREE.LineBasicMaterial({ color: PATH_COLOR })
+          const initialColor = path.color
+            ? new THREE.Color(path.color)
+            : new THREE.Color(PATH_COLOR)
+          const material = new THREE.LineBasicMaterial({
+            color: initialColor,
+            linewidth: path.thickness ?? 1,
+          })
           line = new THREE.Line(geometry, material)
           line.frustumCulled = false
           line.name = `path:${path.id}`
           this.lines.set(path.id, line)
+          this.lastAppliedColor.set(path.id, path.color ?? '')
           this.debugState.set(path.id, {
             syncCount: 0,
             lastPointCount: 0,
@@ -88,6 +96,18 @@ export class ThreePathRenderer {
           )
           continue
         }
+      }
+
+      const currentColorKey = path.color ?? ''
+      if (this.lastAppliedColor.get(path.id) !== currentColorKey) {
+        const mat = line.material as THREE.LineBasicMaterial
+        mat.color = path.color
+          ? new THREE.Color(path.color)
+          : new THREE.Color(PATH_COLOR)
+        this.lastAppliedColor.set(path.id, currentColorKey)
+      }
+      if (path.thickness !== undefined) {
+        ;(line.material as THREE.LineBasicMaterial).linewidth = path.thickness
       }
 
       const debugState = this.debugState.get(path.id)
@@ -255,5 +275,6 @@ export class ThreePathRenderer {
     else line.material.dispose()
     this.lines.delete(id)
     this.debugState.delete(id)
+    this.lastAppliedColor.delete(id)
   }
 }

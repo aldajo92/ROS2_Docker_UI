@@ -25,6 +25,7 @@ import type {
 } from '../app/TopicDiscovery'
 import type { TopicEchoCapability } from '../app/TopicEcho'
 import type { RenderableTopicCapability } from '../app/RenderableTopics'
+import { DEFAULT_PATH_VISUAL_CONFIG } from '../app/RenderableTopics'
 
 /* ----------------------------- harness ----------------------------- */
 
@@ -135,8 +136,11 @@ function makeRenderable(options: {
     selectedTopics: Array.from(selected, (name) => ({
       topicName: name,
       messageType: 'nav_msgs/msg/Path',
-      kind: 'path2d',
+      kind: 'path2d' as const,
+      visualConfig: { ...DEFAULT_PATH_VISUAL_CONFIG },
     })),
+    getVisualConfig: () => ({ ...DEFAULT_PATH_VISUAL_CONFIG }),
+    setVisualConfig: () => {},
   }
 }
 

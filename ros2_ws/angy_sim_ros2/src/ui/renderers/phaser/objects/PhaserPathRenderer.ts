@@ -39,7 +39,11 @@ export class PhaserPathRenderer {
       g.clear()
       if (path.points.length < 2) continue
 
-      g.lineStyle(PATH_STROKE_PX, PATH_COLOR, 1)
+      const strokeWidth = path.thickness ?? PATH_STROKE_PX
+      const strokeColor = path.color
+        ? parseInt(path.color.replace('#', ''), 16)
+        : PATH_COLOR
+      g.lineStyle(strokeWidth, strokeColor, 1)
       const start = simPoint2DToPhaser(
         Point2D.of(path.points[0].x, path.points[0].y),
         this.context.viewport,

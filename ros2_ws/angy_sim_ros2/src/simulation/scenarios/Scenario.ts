@@ -141,6 +141,50 @@ export interface ScenarioInteractionConfig {
   keyboardControl?: KeyboardControlScenarioConfig
 }
 
+/**
+ * Per-topic visual override declared by a scenario. Mirrors the runtime
+ * `PathVisualConfig` (under `src/app/RenderableTopics.ts`) but is kept
+ * here as a plain data shape so the simulation-side scenario loader does
+ * not depend on UI/communication types. The fields are optional so a
+ * scenario may carry just a color, just a thickness, or neither.
+ */
+export interface ScenarioVisualizationTopicStyle {
+  /** CSS HEX color in `#RRGGBB` form. */
+  color?: string
+  /** Line thickness in renderer-specific units (>= 0 finite). */
+  thickness?: number
+}
+
+/**
+ * One ROS 2 topic the scenario wants the UI to auto-select for
+ * rendering, with optional style overrides applied via the
+ * `RenderableTopicCapability` at scenario-load time.
+ *
+ * Architectural note: this struct lives on the scenario side and is
+ * consumed by app-layer glue (`src/ui/scenario/ScenarioVisualizationSync.ts`
+ * + `App.tsx`). The simulation core never reads it.
+ */
+export interface ScenarioVisualizationRos2Topic {
+  /** Topic name, e.g. `/circle_path`. Non-empty. */
+  topic: string
+  /** ROS 2 message type, e.g. `nav_msgs/msg/Path`. Non-empty. */
+  messageType: string
+  /** Whether the topic is selected for rendering. Defaults to `true`. */
+  enabled?: boolean
+  /** Optional per-topic visual override. */
+  style?: ScenarioVisualizationTopicStyle
+}
+
+/**
+ * UI/communication-layer config carried by a scenario. Renderer- and
+ * transport-agnostic; today only `ros2Topics` is defined, but the shape
+ * leaves room for additional families (e.g. tf frames, markers, custom
+ * overlays) without breaking existing JSON.
+ */
+export interface ScenarioVisualizationConfig {
+  ros2Topics?: ScenarioVisualizationRos2Topic[]
+}
+
 export interface ScenarioSpec {
   name: string
   description?: string
@@ -152,4 +196,8 @@ export interface ScenarioSpec {
   interaction?: ScenarioInteractionConfig
   /** Simulation-owned trajectory sampling configuration (optional). */
   trajectoryTracking?: TrajectoryTrackingConfig
+  /** UI/communication-layer visualization defaults (optional). The
+   *  simulation core does not read this; the React shell applies it via
+   *  the `RenderableTopicCapability` at scenario-load time. */
+  visualization?: ScenarioVisualizationConfig
 }

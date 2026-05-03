@@ -825,3 +825,183 @@ describe('ScenarioLoader.loadFromUrl', () => {
     ).rejects.toThrow(ScenarioParseError)
   })
 })
+
+describe('ScenarioLoader.parse — visualization', () => {
+  it('accepts missing visualization', () => {
+    const spec = ScenarioLoader.parse({ name: 's', entities: [] })
+    expect(spec.visualization).toBeUndefined()
+  })
+
+  it('parses an empty visualization block', () => {
+    const spec = ScenarioLoader.parse({
+      name: 's',
+      entities: [],
+      visualization: {},
+    })
+    expect(spec.visualization).toEqual({})
+  })
+
+  it('parses a full visualization.ros2Topics entry', () => {
+    const spec = ScenarioLoader.parse({
+      name: 's',
+      entities: [],
+      visualization: {
+        ros2Topics: [
+          {
+            topic: '/circle_path',
+            messageType: 'nav_msgs/msg/Path',
+            enabled: true,
+            style: { color: '#ffaaff', thickness: 3 },
+          },
+        ],
+      },
+    })
+    expect(spec.visualization?.ros2Topics).toHaveLength(1)
+    expect(spec.visualization?.ros2Topics?.[0]).toEqual({
+      topic: '/circle_path',
+      messageType: 'nav_msgs/msg/Path',
+      enabled: true,
+      style: { color: '#ffaaff', thickness: 3 },
+    })
+  })
+
+  it('omits style when not provided', () => {
+    const spec = ScenarioLoader.parse({
+      name: 's',
+      entities: [],
+      visualization: {
+        ros2Topics: [
+          { topic: '/a', messageType: 'nav_msgs/msg/Path' },
+        ],
+      },
+    })
+    expect(spec.visualization?.ros2Topics?.[0]).toEqual({
+      topic: '/a',
+      messageType: 'nav_msgs/msg/Path',
+    })
+  })
+
+  it('rejects non-array ros2Topics', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        visualization: { ros2Topics: 'nope' as never },
+      }),
+    ).toThrow(/ros2Topics must be an array/)
+  })
+
+  it('rejects empty topic name', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        visualization: {
+          ros2Topics: [{ topic: '', messageType: 'nav_msgs/msg/Path' }],
+        },
+      }),
+    ).toThrow(/topic must be a non-empty string/)
+  })
+
+  it('rejects empty messageType', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        visualization: {
+          ros2Topics: [{ topic: '/a', messageType: '' }],
+        },
+      }),
+    ).toThrow(/messageType must be a non-empty string/)
+  })
+
+  it('rejects non-boolean enabled', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        visualization: {
+          ros2Topics: [
+            {
+              topic: '/a',
+              messageType: 'nav_msgs/msg/Path',
+              enabled: 'yes' as never,
+            },
+          ],
+        },
+      }),
+    ).toThrow(/enabled must be a boolean/)
+  })
+
+  it('rejects invalid color hex', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        visualization: {
+          ros2Topics: [
+            {
+              topic: '/a',
+              messageType: 'nav_msgs/msg/Path',
+              style: { color: 'red' },
+            },
+          ],
+        },
+      }),
+    ).toThrow(/#RRGGBB hex format/)
+  })
+
+  it('rejects 3-digit hex shorthand', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        visualization: {
+          ros2Topics: [
+            {
+              topic: '/a',
+              messageType: 'nav_msgs/msg/Path',
+              style: { color: '#abc' },
+            },
+          ],
+        },
+      }),
+    ).toThrow(/#RRGGBB hex format/)
+  })
+
+  it('rejects non-positive thickness', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        visualization: {
+          ros2Topics: [
+            {
+              topic: '/a',
+              messageType: 'nav_msgs/msg/Path',
+              style: { thickness: 0 },
+            },
+          ],
+        },
+      }),
+    ).toThrow(/thickness must be a finite number > 0/)
+  })
+
+  it('rejects non-finite thickness', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        visualization: {
+          ros2Topics: [
+            {
+              topic: '/a',
+              messageType: 'nav_msgs/msg/Path',
+              style: { thickness: Number.POSITIVE_INFINITY },
+            },
+          ],
+        },
+      }),
+    ).toThrow(/thickness must be a finite number > 0/)
+  })
+})

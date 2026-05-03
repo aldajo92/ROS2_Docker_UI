@@ -6,6 +6,7 @@ import { ConnectionStatusPanel } from '../ui/ConnectionStatusPanel'
 import { Ros2TopicsPanel } from '../ui/Ros2TopicsPanel'
 import { EchoCard } from '../ui/EchoCard'
 import { useTopicEcho } from './useTopicEcho'
+import { useRenderableTopics } from './useRenderableTopics'
 import { ControlPanel } from '../ui/ControlPanel'
 import { RendererPanel } from '../ui/RendererPanel'
 import { SimulationControlPanel } from '../ui/SimulationControlPanel'
@@ -34,6 +35,10 @@ import {
   formatScenarioJson,
 } from '../ui/scenario/ScenarioJsonUtils'
 import { parseScenarioJson } from '../ui/scenario/ScenarioFileLoader'
+import {
+  buildVisualizationFromRenderableSelections,
+  trySyncVisualizationIntoScenarioText,
+} from '../ui/scenario/ScenarioVisualizationSync'
 import { downloadReplay } from '../ui/replay/ReplayFileDownloader'
 import { LayoutSplitter } from '../ui/layout/LayoutSplitter'
 import {
@@ -612,19 +617,144 @@ function AppShell() {
   const echoSessions = echo?.sessions ?? []
   const isTransportConnected = echo !== undefined
 
+  // Renderable-topic capability — the source of truth for the live
+  // visualization state surfaced by `Ros2TopicsPanel`. We project its
+  // `selectedTopics` snapshot back into the scenario editor JSON so
+  // each click is reflected as a `visualization.ros2Topics` entry, and
+  // we apply scenario-declared visualization on load.
+  const renderableTopics = useRenderableTopics()
+  // Mirrors `renderableTopics` so `handleScenarioLoaded` can read the
+  // latest capability without taking it as a hook dependency (the
+  // callback would otherwise change identity each time the capability
+  // re-emits, churning the props passed to `ScenarioEditorPanel`).
+  const renderableTopicsRef = useRef(renderableTopics)
+  useEffect(() => {
+    renderableTopicsRef.current = renderableTopics
+  }, [renderableTopics])
+  // Pending scenario-declared visualization waiting for the
+  // `renderableTopics` capability to come online (e.g. user loaded a
+  // scenario before rosbridge connected). The effect below drains it
+  // exactly once per scenario load and clears the ref so further
+  // selection edits aren't overridden on reconnect.
+  const pendingScenarioVisualizationRef = useRef<
+    ScenarioSpec['visualization'] | null
+  >(null)
+
   const handleScenarioLoaded = useCallback(
     (spec: ScenarioSpec) => {
       lastInteractionRef.current = spec.interaction
       setKeyboardControlState(deriveKeyboardControlState(spec.interaction))
-      setCurrentScenarioSpec(spec)
-      setCurrentScenarioText(formatScenarioJson(spec))
       setScenarioEditorError(undefined)
+
+      // Compute the editor text. Two cases matter:
+      //
+      //   1. The loaded spec brings its own `visualization` block —
+      //      honor it as-is. Capability state is reconciled by the
+      //      pending-apply effect below; the reactive sync will
+      //      eventually re-project the merged result into the editor.
+      //
+      //   2. The spec has NO `visualization` but the capability
+      //      already has selected topics (the user clicked rows
+      //      *before* loading the scenario). Project those into the
+      //      editor JSON immediately so it stays consistent with what
+      //      is being rendered. Without this, the editor would silently
+      //      claim "no visualization" while a path was still on screen.
+      const cap = renderableTopicsRef.current
+      const baseText = formatScenarioJson(spec)
+      let editorText = baseText
+      let editorSpec: ScenarioSpec = spec
+      if (
+        !spec.visualization?.ros2Topics?.length &&
+        cap &&
+        cap.selectedTopics.length > 0
+      ) {
+        const visualization = buildVisualizationFromRenderableSelections(
+          cap.selectedTopics,
+        )
+        const synced = trySyncVisualizationIntoScenarioText(
+          baseText,
+          visualization,
+        )
+        if (synced.ok && synced.changed) {
+          editorText = synced.text
+          editorSpec = synced.spec
+        }
+      }
+      setCurrentScenarioSpec(editorSpec)
+      setCurrentScenarioText(editorText)
+
+      // Stash the scenario's declared visualization for the next-run
+      // apply effect. We don't apply directly here because the
+      // capability might not be available yet (rosbridge disconnected,
+      // mock transport, etc.).
+      pendingScenarioVisualizationRef.current = spec.visualization ?? null
       // A new scenario invalidates any in-memory replay; bail out of
       // replay mode so the renderer stops painting stale frames.
       if (replaySessionRef.current) handleExitReplay()
     },
     [handleExitReplay],
   )
+
+  // Apply scenario-declared visualization once the capability is
+  // available. Runs on every render where either the pending payload
+  // or the capability identity changes; the helper below is idempotent
+  // and resets the ref after a successful apply.
+  useEffect(() => {
+    if (!renderableTopics) return
+    const pending = pendingScenarioVisualizationRef.current
+    if (!pending) return
+    pendingScenarioVisualizationRef.current = null
+    const entries = pending.ros2Topics ?? []
+    for (const entry of entries) {
+      const topicInfo = { name: entry.topic, type: entry.messageType }
+      if (!renderableTopics.isRenderable(topicInfo)) continue
+      const enabled = entry.enabled !== false
+      if (enabled) {
+        if (!renderableTopics.isSelected(entry.topic)) {
+          renderableTopics.selectTopic(topicInfo)
+        }
+        if (entry.style) {
+          renderableTopics.setVisualConfig(entry.topic, {
+            ...(entry.style.color !== undefined && { color: entry.style.color }),
+            ...(entry.style.thickness !== undefined && {
+              thickness: entry.style.thickness,
+            }),
+          })
+        }
+      } else if (renderableTopics.isSelected(entry.topic)) {
+        renderableTopics.deselectTopic(entry.topic)
+      }
+    }
+  }, [renderableTopics])
+
+  // Reactive sync: project the live `selectedTopics` snapshot into the
+  // editor textarea. The effect intentionally does NOT depend on
+  // `currentScenarioText` — re-running on every keystroke would
+  // reformat the user's mid-edit text and fight their input. We read
+  // the latest text through a ref instead, so sync only fires when the
+  // selection itself changes (a click / color / etc.), and bail out:
+  //   - silently when the user is typing invalid JSON (helper returns
+  //     `ok: false`),
+  //   - when the projected output already matches the current text so
+  //     React state stays stable across re-renders.
+  const currentScenarioTextRef = useRef(currentScenarioText)
+  useEffect(() => {
+    currentScenarioTextRef.current = currentScenarioText
+  }, [currentScenarioText])
+  const selectedRenderableTopics = renderableTopics?.selectedTopics
+  useEffect(() => {
+    if (!selectedRenderableTopics) return
+    const text = currentScenarioTextRef.current
+    if (text.length === 0) return
+    const visualization = buildVisualizationFromRenderableSelections(
+      selectedRenderableTopics,
+    )
+    const result = trySyncVisualizationIntoScenarioText(text, visualization)
+    if (!result.ok) return
+    if (!result.changed) return
+    setCurrentScenarioSpec(result.spec)
+    setCurrentScenarioText(result.text)
+  }, [selectedRenderableTopics])
 
   const handleScenarioTextChange = useCallback((text: string) => {
     setCurrentScenarioText(text)

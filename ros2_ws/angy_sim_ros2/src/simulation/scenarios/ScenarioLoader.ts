@@ -16,6 +16,9 @@ import type {
   RectangleObstacleSpec,
   ScenarioInteractionConfig,
   ScenarioSpec,
+  ScenarioVisualizationConfig,
+  ScenarioVisualizationRos2Topic,
+  ScenarioVisualizationTopicStyle,
   StaticObstacleSpec,
 } from './Scenario'
 import type {
@@ -55,6 +58,10 @@ export class ScenarioLoader {
       input.trajectoryTracking !== undefined
         ? parseTrajectoryTracking(input.trajectoryTracking)
         : undefined
+    const visualization =
+      input.visualization !== undefined
+        ? parseVisualization(input.visualization)
+        : undefined
     return {
       name: input.name,
       description,
@@ -62,6 +69,7 @@ export class ScenarioLoader {
       paths,
       interaction,
       trajectoryTracking,
+      visualization,
     }
   }
 
@@ -415,6 +423,101 @@ function parseTrajectoryEntityConfig(
     ...(timeWindowSec !== undefined && { timeWindowSec }),
     ...(minSampleDtSec !== undefined && { minSampleDtSec }),
     ...(minDistance !== undefined && { minDistance }),
+  }
+}
+
+/* -- visualization ------------------------------------------------------ */
+
+const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/
+
+function parseVisualization(input: unknown): ScenarioVisualizationConfig {
+  const path = 'scenario.visualization'
+  if (!isObj(input)) {
+    throw new ScenarioParseError(`${path} must be an object`)
+  }
+  const ros2Topics =
+    input.ros2Topics !== undefined
+      ? parseVisualizationRos2Topics(input.ros2Topics, `${path}.ros2Topics`)
+      : undefined
+  return {
+    ...(ros2Topics !== undefined && { ros2Topics }),
+  }
+}
+
+function parseVisualizationRos2Topics(
+  input: unknown,
+  path: string,
+): ScenarioVisualizationRos2Topic[] {
+  if (!Array.isArray(input)) {
+    throw new ScenarioParseError(`${path} must be an array`)
+  }
+  return input.map((entry, i) =>
+    parseVisualizationRos2Topic(entry, `${path}[${i}]`),
+  )
+}
+
+function parseVisualizationRos2Topic(
+  input: unknown,
+  path: string,
+): ScenarioVisualizationRos2Topic {
+  if (!isObj(input)) {
+    throw new ScenarioParseError(`${path} must be an object`)
+  }
+  if (typeof input.topic !== 'string' || input.topic.length === 0) {
+    throw new ScenarioParseError(`${path}.topic must be a non-empty string`)
+  }
+  if (typeof input.messageType !== 'string' || input.messageType.length === 0) {
+    throw new ScenarioParseError(
+      `${path}.messageType must be a non-empty string`,
+    )
+  }
+  if (input.enabled !== undefined && typeof input.enabled !== 'boolean') {
+    throw new ScenarioParseError(`${path}.enabled must be a boolean`)
+  }
+  const style =
+    input.style !== undefined
+      ? parseVisualizationTopicStyle(input.style, `${path}.style`)
+      : undefined
+  return {
+    topic: input.topic,
+    messageType: input.messageType,
+    ...(typeof input.enabled === 'boolean' && { enabled: input.enabled }),
+    ...(style !== undefined && { style }),
+  }
+}
+
+function parseVisualizationTopicStyle(
+  input: unknown,
+  path: string,
+): ScenarioVisualizationTopicStyle {
+  if (!isObj(input)) {
+    throw new ScenarioParseError(`${path} must be an object`)
+  }
+  let color: string | undefined
+  if (input.color !== undefined) {
+    if (typeof input.color !== 'string' || !HEX_COLOR_RE.test(input.color)) {
+      throw new ScenarioParseError(
+        `${path}.color must match #RRGGBB hex format`,
+      )
+    }
+    color = input.color
+  }
+  let thickness: number | undefined
+  if (input.thickness !== undefined) {
+    if (
+      typeof input.thickness !== 'number' ||
+      !Number.isFinite(input.thickness) ||
+      input.thickness <= 0
+    ) {
+      throw new ScenarioParseError(
+        `${path}.thickness must be a finite number > 0`,
+      )
+    }
+    thickness = input.thickness
+  }
+  return {
+    ...(color !== undefined && { color }),
+    ...(thickness !== undefined && { thickness }),
   }
 }
 

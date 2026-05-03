@@ -557,6 +557,8 @@ function makeRenderableSnapshot(
     isSelected: instance.isSelected.bind(instance),
     selectTopic: instance.selectTopic.bind(instance),
     deselectTopic: instance.deselectTopic.bind(instance),
+    getVisualConfig: instance.getVisualConfig.bind(instance),
+    setVisualConfig: instance.setVisualConfig.bind(instance),
   }
 }
 

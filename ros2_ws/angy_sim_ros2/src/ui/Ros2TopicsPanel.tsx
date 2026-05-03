@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useTransportStatus } from '../app/useTransportStatus'
 import { useTopicDiscovery } from '../app/useTopicDiscovery'
 import { useTopicEcho } from '../app/useTopicEcho'
 import { useRenderableTopics } from '../app/useRenderableTopics'
 import { isSystemTopic, type TopicInfo } from '../app/TopicDiscovery'
+import { DEFAULT_PATH_VISUAL_CONFIG } from '../app/RenderableTopics'
 
 /**
  * Inspector card that surfaces the active transport's topic-discovery
@@ -64,6 +65,17 @@ export function Ros2TopicsPanel({
   // renders.
   const [listOpen, setListOpen] = useState(false)
   const [showSystemTopics, setShowSystemTopics] = useState(false)
+  const [expandedTopics, setExpandedTopics] = useState<Set<string>>(new Set())
+  const [hexInputs, setHexInputs] = useState<Map<string, string>>(new Map())
+
+  const toggleExpanded = useCallback((topicName: string) => {
+    setExpandedTopics((prev) => {
+      const next = new Set(prev)
+      if (next.has(topicName)) next.delete(topicName)
+      else next.add(topicName)
+      return next
+    })
+  }, [])
 
   const visibleTopics = useMemo<TopicInfo[]>(() => {
     if (!discovery) return []
@@ -216,8 +228,50 @@ export function Ros2TopicsPanel({
               if (isSelected) renderable.deselectTopic(topic.name)
               else renderable.selectTopic(topic)
             }
+            const isExpanded = expandedTopics.has(topic.name)
+            const visualConfig =
+              renderable?.getVisualConfig?.(topic.name) ?? DEFAULT_PATH_VISUAL_CONFIG
+            const hexValue = hexInputs.get(topic.name) ?? visualConfig.color
+            const hexValid = /^#[0-9a-fA-F]{6}$/.test(hexValue)
+
+            const handleColorPicker = (c: string) => {
+              setHexInputs((prev) => new Map(prev).set(topic.name, c))
+              renderable?.setVisualConfig?.(topic.name, { color: c })
+            }
+            const handleHexInput = (raw: string) => {
+              setHexInputs((prev) => new Map(prev).set(topic.name, raw))
+              if (/^#[0-9a-fA-F]{6}$/.test(raw)) {
+                renderable?.setVisualConfig?.(topic.name, { color: raw })
+              }
+            }
+
             return (
               <li key={topic.name} className="ros2-topics-row">
+                <button
+                  type="button"
+                  className={
+                    'ros2-topics-chevron' +
+                    (!isRenderable ? ' ros2-topics-chevron--disabled' : '')
+                  }
+                  onClick={() => isRenderable && toggleExpanded(topic.name)}
+                  disabled={!isRenderable}
+                  aria-expanded={isRenderable ? isExpanded : undefined}
+                  aria-label={
+                    isRenderable
+                      ? isExpanded
+                        ? `Collapse settings for ${topic.name}`
+                        : `Expand settings for ${topic.name}`
+                      : 'No settings available'
+                  }
+                  title={
+                    isRenderable
+                      ? isExpanded ? 'Collapse settings' : 'Expand settings'
+                      : 'No settings available'
+                  }
+                  data-testid={`ros2-topics-chevron-${topic.name}`}
+                >
+                  {isRenderable && isExpanded ? '\u25BC' : '\u25B6'}
+                </button>
                 <input
                   type="checkbox"
                   className="ros2-topics-render-checkbox"
@@ -249,6 +303,30 @@ export function Ros2TopicsPanel({
                 >
                   Echo
                 </button>
+                {isExpanded && (
+                  <div
+                    className={`ros2-topics-settings${!isSelected ? ' ros2-topics-settings--inactive' : ''}`}
+                  >
+                    <div className="ros2-topics-settings-row">
+                      <label>Color:</label>
+                      <div className="ros2-topics-color-group">
+                        <input
+                          type="color"
+                          className="ros2-topics-color-picker"
+                          value={hexValid ? hexValue : visualConfig.color}
+                          onChange={(e) => handleColorPicker(e.target.value)}
+                        />
+                        <input
+                          type="text"
+                          className={`ros2-topics-color-hex${!hexValid ? ' ros2-topics-color-hex--invalid' : ''}`}
+                          value={hexValue}
+                          onChange={(e) => handleHexInput(e.target.value)}
+                          spellCheck={false}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
               </li>
             )
           })}

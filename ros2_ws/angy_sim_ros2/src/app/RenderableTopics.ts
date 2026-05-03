@@ -37,6 +37,19 @@ import type { TopicInfo } from './TopicDiscovery'
  *     does not need to fan out per kind because the panel only renders
  *     the generic checkbox.
  */
+/** Per-topic visual configuration set by the user in the Inspector. */
+export interface PathVisualConfig {
+  /** CSS hex color, e.g. '#f0c14a'. */
+  color: string
+  /** Line thickness (renderer-specific units, default ~2). */
+  thickness: number
+}
+
+export const DEFAULT_PATH_VISUAL_CONFIG: PathVisualConfig = {
+  color: '#f0c14a',
+  thickness: 2,
+}
+
 export type RenderableTopicKind = 'path2d'
 
 /**
@@ -59,6 +72,7 @@ export interface RenderableTopicSelection {
   topicName: string
   messageType: string
   kind: RenderableTopicKind
+  visualConfig: PathVisualConfig
 }
 
 /**
@@ -98,6 +112,10 @@ export interface RenderableTopicCapability {
   deselectTopic(topicName: string): void
   /** Snapshot of currently-selected topics. Insertion order is stable. */
   selectedTopics: RenderableTopicSelection[]
+  /** Get the current visual config for a selected topic. Returns the default if not customized. */
+  getVisualConfig(topicName: string): PathVisualConfig
+  /** Update per-topic visual config. Only applies to selected topics. */
+  setVisualConfig(topicName: string, config: Partial<PathVisualConfig>): void
 }
 
 /* -- Whitelist (UI policy) --------------------------------------------- */

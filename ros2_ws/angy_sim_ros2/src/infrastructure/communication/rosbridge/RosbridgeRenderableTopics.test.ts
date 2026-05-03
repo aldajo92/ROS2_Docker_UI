@@ -4,6 +4,7 @@ import {
   type RenderableSubscriber,
 } from './RosbridgeRenderableTopics'
 import type { RenderableTopicSelection } from '../../../app/RenderableTopics'
+import { DEFAULT_PATH_VISUAL_CONFIG } from '../../../app/RenderableTopics'
 import { ExternalPathUpdateQueue } from '../../../simulation/paths/ExternalPathUpdateQueue'
 
 class FakeSubscriber implements RenderableSubscriber {
@@ -122,6 +123,7 @@ describe('RosbridgeRenderableTopics — selectTopic / deselectTopic', () => {
         topicName: '/circle_path',
         messageType: 'nav_msgs/msg/Path',
         kind: 'path2d',
+        visualConfig: DEFAULT_PATH_VISUAL_CONFIG,
       },
     ])
     expect(changes.at(-1)).toEqual(capability.selectedTopics)
@@ -212,6 +214,64 @@ describe('RosbridgeRenderableTopics — message routing', () => {
     } finally {
       warn.mockRestore()
     }
+  })
+})
+
+describe('RosbridgeRenderableTopics — visualConfig persistence', () => {
+  it('remembers visualConfig across deselect → re-select within the same session', () => {
+    const { capability } = makeRig()
+    capability.selectTopic(SUPPORTED)
+    capability.setVisualConfig('/circle_path', { color: '#0061ff' })
+
+    expect(capability.getVisualConfig('/circle_path').color).toBe('#0061ff')
+
+    capability.deselectTopic('/circle_path')
+    // While deselected, the remembered config is still queryable.
+    expect(capability.getVisualConfig('/circle_path').color).toBe('#0061ff')
+
+    capability.selectTopic(SUPPORTED)
+    expect(capability.getVisualConfig('/circle_path').color).toBe('#0061ff')
+    expect(capability.selectedTopics[0]?.visualConfig.color).toBe('#0061ff')
+  })
+
+  it('stamps the remembered color onto Path messages received after re-selection', () => {
+    const { subscriber, queue, capability } = makeRig()
+    capability.selectTopic(SUPPORTED)
+    capability.setVisualConfig('/circle_path', { color: '#0061ff' })
+    queue.drain()
+    capability.deselectTopic('/circle_path')
+    queue.drain()
+
+    capability.selectTopic(SUPPORTED)
+    subscriber.pump('/circle_path', {
+      header: { frame_id: 'map' },
+      poses: [
+        {
+          pose: {
+            position: { x: 1, y: 2, z: 0 },
+            orientation: { x: 0, y: 0, z: 0, w: 1 },
+          },
+        },
+      ],
+    })
+
+    const pending = queue.drain()
+    expect(pending).toHaveLength(1)
+    if (pending[0].kind === 'upsert') {
+      expect(pending[0].path.color).toBe('#0061ff')
+    }
+  })
+
+  it('clears remembered visualConfig on closeAll', () => {
+    const { capability } = makeRig()
+    capability.selectTopic(SUPPORTED)
+    capability.setVisualConfig('/circle_path', { color: '#0061ff' })
+    capability.closeAll()
+    // After closeAll, querying a previously-known topic returns the
+    // global default again.
+    expect(capability.getVisualConfig('/circle_path').color).toBe(
+      DEFAULT_PATH_VISUAL_CONFIG.color,
+    )
   })
 })
 

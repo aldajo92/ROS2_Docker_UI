@@ -1,9 +1,11 @@
 import type {
+  PathVisualConfig,
   RenderableTopicCapability,
   RenderableTopicSelection,
   RenderableTopicSupport,
 } from '../../../app/RenderableTopics'
 import {
+  DEFAULT_PATH_VISUAL_CONFIG,
   RENDERABLE_TOPIC_WHITELIST,
   RENDER_UNSUPPORTED_REASON,
   findRenderableSupport,
@@ -71,6 +73,12 @@ interface InternalSelection {
   /** Path-id this selection writes into `state.paths`. */
   pathId: string
   unsubscribe?: () => void
+  visualConfig: PathVisualConfig
+  /** Most-recent Path2D produced by the handler, cached so that
+   *  `setVisualConfig` can re-enqueue it with updated color/thickness
+   *  for immediate visual feedback without waiting for the next ROS
+   *  message. */
+  lastPath: Path2D | null
   /** Diagnostic counters — never feed back into rendering decisions. */
   stats: {
     received: number
@@ -93,6 +101,14 @@ export class RosbridgeRenderableTopics implements RenderableTopicCapability {
     support: RenderableTopicSupport,
   ) => string
   private readonly internal = new Map<string, InternalSelection>()
+  /**
+   * Last-known per-topic visual config, kept across `deselectTopic` so
+   * that a deselect → re-select cycle restores the user's color /
+   * thickness instead of resetting to {@link DEFAULT_PATH_VISUAL_CONFIG}.
+   * Cleared by {@link closeAll} (transport teardown) so we don't leak
+   * preferences across separate connections / sessions.
+   */
+  private readonly rememberedVisualConfig = new Map<string, PathVisualConfig>()
   private cachedSnapshot: RenderableTopicSelection[] = []
   private onChange?: RenderableChangeListener
 
@@ -137,11 +153,19 @@ export class RosbridgeRenderableTopics implements RenderableTopicCapability {
     if (this.internal.has(topic.name)) return
 
     const pathId = this.pathIdFor(topic, support)
+    const remembered = this.rememberedVisualConfig.get(topic.name)
     const selection: InternalSelection = {
       topicName: topic.name,
       support,
       topicType: support.messageType,
       pathId,
+      // Restore the user's last color/thickness for this topic if we
+      // saw it earlier in this session; fall back to the global
+      // default otherwise.
+      visualConfig: remembered
+        ? { ...remembered }
+        : { ...DEFAULT_PATH_VISUAL_CONFIG },
+      lastPath: null,
       stats: {
         received: 0,
         dropped: 0,
@@ -191,19 +215,46 @@ export class RosbridgeRenderableTopics implements RenderableTopicCapability {
     this.emit()
   }
 
+  getVisualConfig(topicName: string): PathVisualConfig {
+    const selection = this.internal.get(topicName)
+    if (selection) return { ...selection.visualConfig }
+    const remembered = this.rememberedVisualConfig.get(topicName)
+    return remembered
+      ? { ...remembered }
+      : { ...DEFAULT_PATH_VISUAL_CONFIG }
+  }
+
+  setVisualConfig(topicName: string, config: Partial<PathVisualConfig>): void {
+    const selection = this.internal.get(topicName)
+    if (!selection) return
+    selection.visualConfig = { ...selection.visualConfig, ...config }
+    this.rememberedVisualConfig.set(topicName, { ...selection.visualConfig })
+    if (selection.lastPath) {
+      selection.lastPath.color = selection.visualConfig.color
+      selection.lastPath.thickness = selection.visualConfig.thickness
+      this.queue.enqueueUpsert(selection.lastPath)
+    }
+    this.emit()
+  }
+
   /**
    * Tear down every active selection. Used by the provider on
    * transport teardown so we don't leak callbacks against a closed
    * socket or leave stale paths in `state.paths` after a disconnect.
    */
   closeAll(): void {
-    if (this.internal.size === 0) return
+    if (this.internal.size === 0 && this.rememberedVisualConfig.size === 0) {
+      return
+    }
     dlog('TopicData', `closeAll selections=${this.internal.size}`)
     for (const selection of this.internal.values()) {
       this.disposeSubscription(selection)
       this.queue.enqueueRemove(selection.pathId)
     }
     this.internal.clear()
+    // Drop remembered visual configs on transport teardown so they
+    // don't bleed into the next connection / session.
+    this.rememberedVisualConfig.clear()
     this.emit()
   }
 
@@ -280,6 +331,9 @@ export class RosbridgeRenderableTopics implements RenderableTopicCapability {
           `stamp=${extractStamp(message) ?? 'n/a'}`,
         ])
 
+        path.color = selection.visualConfig.color
+        path.thickness = selection.visualConfig.thickness
+        selection.lastPath = path
         this.queue.enqueueUpsert(path)
       }
     }
@@ -306,6 +360,7 @@ export class RosbridgeRenderableTopics implements RenderableTopicCapability {
       topicName: s.topicName,
       messageType: s.support.messageType,
       kind: s.support.kind,
+      visualConfig: { ...s.visualConfig },
     }))
     this.onChange?.(this.cachedSnapshot)
   }

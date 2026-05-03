@@ -1518,7 +1518,7 @@ body.layout-splitter-dragging {
 
 .ros2-topics-row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1.2fr) minmax(0, 1fr) auto;
+  grid-template-columns: auto auto minmax(0, 1.2fr) minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   padding: 4px 6px;
@@ -1580,6 +1580,102 @@ body.layout-splitter-dragging {
   cursor: not-allowed;
   opacity: 0.55;
 }
+
+/* ----- Per-topic visualization settings (chevron + expandable area) --- */
+
+.ros2-topics-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--fg-muted);
+  font-size: 10px;
+  cursor: pointer;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.ros2-topics-chevron:hover {
+  color: var(--fg);
+  background: rgb(255 255 255 / 8%);
+}
+
+.ros2-topics-chevron--disabled,
+.ros2-topics-chevron:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.ros2-topics-settings {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 6px 2px 24px;
+}
+
+.ros2-topics-settings--inactive {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.ros2-topics-settings-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ros2-topics-settings-row > label {
+  font-size: 11px;
+  color: var(--fg);
+  white-space: nowrap;
+}
+
+.ros2-topics-color-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ros2-topics-color-picker {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  cursor: pointer;
+  background: none;
+}
+
+.ros2-topics-color-hex {
+  width: 72px;
+  padding: 1px 4px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg-panel-2);
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 11px;
+}
+
+.ros2-topics-color-hex:focus {
+  outline: 1px solid var(--accent);
+  border-color: var(--accent);
+}
+
+.ros2-topics-color-hex--invalid {
+  border-color: var(--danger);
+}
+
+.ros2-topics-color-hex--invalid:focus {
+  outline-color: var(--danger);
+  border-color: var(--danger);
+}
+
 
 /* ----- Echo card ------------------------------------------------------ *
  * One per active topic-echo session. Lives in the inspector sidebar
