@@ -24,6 +24,7 @@ import type {
   TopicInfo,
 } from '../app/TopicDiscovery'
 import type { TopicEchoCapability } from '../app/TopicEcho'
+import type { RenderableTopicCapability } from '../app/RenderableTopics'
 
 /* ----------------------------- harness ----------------------------- */
 
@@ -102,6 +103,43 @@ function makeEcho(
   }
 }
 
+/**
+ * Build a `RenderableTopicCapability` mock with the supplied
+ * `renderableNames` whitelist + selection callbacks. The capability
+ * tracks selection state internally so toggling the checkbox flips
+ * the rendered `checked` attribute.
+ */
+function makeRenderable(options: {
+  renderableNames?: string[]
+  selected?: string[]
+  selectTopic?: (topic: TopicInfo) => void
+  deselectTopic?: (topicName: string) => void
+} = {}): RenderableTopicCapability {
+  const renderableNames = new Set(options.renderableNames ?? ['/circle_path'])
+  const selected = new Set(options.selected ?? [])
+  return {
+    isRenderable: (topic) => renderableNames.has(topic.name),
+    getUnsupportedReason: (topic) =>
+      renderableNames.has(topic.name)
+        ? undefined
+        : 'Rendering for this topic is not supported yet.',
+    isSelected: (name) => selected.has(name),
+    selectTopic: (topic) => {
+      selected.add(topic.name)
+      options.selectTopic?.(topic)
+    },
+    deselectTopic: (name) => {
+      selected.delete(name)
+      options.deselectTopic?.(name)
+    },
+    selectedTopics: Array.from(selected, (name) => ({
+      topicName: name,
+      messageType: 'nav_msgs/msg/Path',
+      kind: 'path2d',
+    })),
+  }
+}
+
 function makeContext(
   overrides: Partial<CommunicationContextValue> = {},
 ): CommunicationContextValue {
@@ -175,6 +213,14 @@ function getErrorText(container: HTMLDivElement): string {
 function getEchoButtons(container: HTMLDivElement): HTMLButtonElement[] {
   return Array.from(
     container.querySelectorAll<HTMLButtonElement>('.ros2-topics-action'),
+  )
+}
+
+function getRenderCheckboxes(container: HTMLDivElement): HTMLInputElement[] {
+  return Array.from(
+    container.querySelectorAll<HTMLInputElement>(
+      '.ros2-topics-render-checkbox',
+    ),
   )
 }
 
@@ -855,6 +901,145 @@ describe('Ros2TopicsPanel — Echo gating', () => {
       buttons[0].click()
     })
     expect(startEcho).not.toHaveBeenCalled()
+  })
+})
+
+describe('Ros2TopicsPanel — render-topic checkbox', () => {
+  let harness: Harness | null = null
+  afterEach(() => {
+    unmount(harness)
+    harness = null
+  })
+
+  function makeRenderableContext(
+    overrides: Partial<CommunicationContextValue> = {},
+  ): CommunicationContextValue {
+    return makeContext({
+      topicDiscovery: makeDiscovery({
+        status: 'ready',
+        topics: [
+          { name: '/circle_path', type: 'nav_msgs/msg/Path' },
+          { name: '/demo/counter', type: 'std_msgs/msg/Int32' },
+        ],
+        lastUpdated: Date.now(),
+      }),
+      ...overrides,
+    })
+  }
+
+  it('renders one checkbox per row when the list is expanded', () => {
+    harness = mountPanel(
+      makeRenderableContext({ renderableTopics: makeRenderable() }),
+    )
+    act(() => {
+      getToggleButton(harness!.container).click()
+    })
+    const boxes = getRenderCheckboxes(harness.container)
+    expect(boxes.length).toBe(2)
+  })
+
+  it('the checkbox is enabled for a whitelisted topic and disabled for unsupported topics', () => {
+    harness = mountPanel(
+      makeRenderableContext({
+        renderableTopics: makeRenderable({
+          renderableNames: ['/circle_path'],
+        }),
+      }),
+    )
+    act(() => {
+      getToggleButton(harness!.container).click()
+    })
+    const boxes = getRenderCheckboxes(harness.container)
+    // Rows are sorted alphabetically: /circle_path, /demo/counter.
+    expect(boxes[0].disabled).toBe(false)
+    expect(boxes[1].disabled).toBe(true)
+    expect(boxes[1].title).toBe(
+      'Rendering for this topic is not supported yet.',
+    )
+  })
+
+  it('clicking an enabled, unchecked checkbox calls selectTopic with the row TopicInfo', () => {
+    const selectTopic = vi.fn()
+    harness = mountPanel(
+      makeRenderableContext({
+        renderableTopics: makeRenderable({
+          renderableNames: ['/circle_path'],
+          selectTopic,
+        }),
+      }),
+    )
+    act(() => {
+      getToggleButton(harness!.container).click()
+    })
+    act(() => {
+      getRenderCheckboxes(harness!.container)[0].click()
+    })
+    expect(selectTopic).toHaveBeenCalledTimes(1)
+    expect(selectTopic).toHaveBeenCalledWith({
+      name: '/circle_path',
+      type: 'nav_msgs/msg/Path',
+    })
+  })
+
+  it('clicking an enabled, already-checked checkbox calls deselectTopic with the topic name', () => {
+    const deselectTopic = vi.fn()
+    harness = mountPanel(
+      makeRenderableContext({
+        renderableTopics: makeRenderable({
+          renderableNames: ['/circle_path'],
+          selected: ['/circle_path'],
+          deselectTopic,
+        }),
+      }),
+    )
+    act(() => {
+      getToggleButton(harness!.container).click()
+    })
+    const boxes = getRenderCheckboxes(harness.container)
+    expect(boxes[0].checked).toBe(true)
+
+    act(() => {
+      boxes[0].click()
+    })
+    expect(deselectTopic).toHaveBeenCalledTimes(1)
+    expect(deselectTopic).toHaveBeenCalledWith('/circle_path')
+  })
+
+  it('clicking a disabled checkbox does NOT call selectTopic / deselectTopic', () => {
+    const selectTopic = vi.fn()
+    const deselectTopic = vi.fn()
+    harness = mountPanel(
+      makeRenderableContext({
+        renderableTopics: makeRenderable({
+          renderableNames: ['/circle_path'],
+          selectTopic,
+          deselectTopic,
+        }),
+      }),
+    )
+    act(() => {
+      getToggleButton(harness!.container).click()
+    })
+    const boxes = getRenderCheckboxes(harness.container)
+    act(() => {
+      boxes[1].click()
+    })
+    expect(selectTopic).not.toHaveBeenCalled()
+    expect(deselectTopic).not.toHaveBeenCalled()
+  })
+
+  it('falls back to a disabled checkbox when no renderable capability is provided (defensive)', () => {
+    harness = mountPanel(
+      makeRenderableContext({ renderableTopics: undefined }),
+    )
+    act(() => {
+      getToggleButton(harness!.container).click()
+    })
+    const boxes = getRenderCheckboxes(harness.container)
+    expect(boxes.length).toBe(2)
+    for (const box of boxes) {
+      expect(box.disabled).toBe(true)
+    }
   })
 })
 

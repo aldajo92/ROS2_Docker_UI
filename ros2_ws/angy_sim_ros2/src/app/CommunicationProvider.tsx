@@ -11,6 +11,10 @@ import type {
   TopicEchoCapability,
   TopicEchoSession,
 } from './TopicEcho'
+import type {
+  RenderableTopicCapability,
+  RenderableTopicSelection,
+} from './RenderableTopics'
 import {
   DEFAULT_TRANSPORT_CONFIG,
   readTransportConfig,
@@ -37,6 +41,7 @@ import { RosTwistToVehicleCommandAdapter } from '../infrastructure/communication
 import { SimClockToRosClockAdapter } from '../infrastructure/communication/rosbridge/adapters/SimClockToRosClockAdapter'
 import { RosbridgeTopicDiscovery } from '../infrastructure/communication/rosbridge/RosbridgeTopicDiscovery'
 import { RosbridgeTopicEcho } from '../infrastructure/communication/rosbridge/RosbridgeTopicEcho'
+import { RosbridgeRenderableTopics } from '../infrastructure/communication/rosbridge/RosbridgeRenderableTopics'
 
 /**
  * Composition root for external communication. Sits below
@@ -98,7 +103,7 @@ export function CommunicationProvider({
   vehicleId = 'ego',
   clockPeriodSec = 1 / 50,
 }: CommunicationProviderProps) {
-  const { engine, commandQueue } = useSimulation()
+  const { engine, commandQueue, externalPathQueue } = useSimulation()
 
   // The active transport config is stateful so the UI picker can swap
   // transports at runtime without a page reload. The initializer runs
@@ -149,6 +154,15 @@ export function CommunicationProvider({
   // built once per rosbridge effect run, torn down on cleanup.
   const [topicEchoState, setTopicEchoState] = useState<
     TopicEchoCapability | undefined
+  >(undefined)
+
+  // Renderable-topic capability state. Same lifecycle as discovery /
+  // echo: built per rosbridge effect run, torn down on cleanup. The
+  // class itself owns subscription bookkeeping; we only mirror its
+  // `selectedTopics` snapshot through React state so the UI checkbox
+  // re-renders when a selection flips.
+  const [renderableTopicsState, setRenderableTopicsState] = useState<
+    RenderableTopicCapability | undefined
   >(undefined)
 
   useEffect(() => {
@@ -300,6 +314,48 @@ export function CommunicationProvider({
         })
       }
 
+      // ----- Renderable-topic capability (rosbridge-only) --------------
+      //
+      // Owns one rosbridge subscription per *selected* renderable
+      // topic. Per architecture rules, the class never touches
+      // `SimulationState` directly — it pushes upserts/removes into
+      // the simulation-side `externalPathQueue`, which
+      // `ExternalPathRenderSystem` drains during the next tick.
+      let renderableInstance: RosbridgeRenderableTopics | null = null
+      if (transport instanceof RoslibRosbridgeTransport) {
+        const rosbridgeTransport = transport
+        renderableInstance = new RosbridgeRenderableTopics(
+          {
+            setTopicType: (name, type) =>
+              rosbridgeTransport.setTopicType(name, type),
+            subscribe: (name, handler) =>
+              rosbridgeTransport.subscribe(name, handler),
+          },
+          externalPathQueue,
+          {
+            onChange: (_selections: RenderableTopicSelection[]) => {
+              if (cancelled || !renderableInstance) return
+              // Re-publish the capability object so React notices the
+              // change. The handlers are bound on the instance and
+              // stay stable across renders.
+              setRenderableTopicsState(
+                makeRenderableSnapshot(renderableInstance),
+              )
+            },
+          },
+        )
+
+        cleanups.push(() => {
+          // closeAll() unsubscribes every selection AND enqueues
+          // removes for the rendered paths. We must call this before
+          // clearing the context so the path teardown is visible to
+          // the next tick.
+          renderableInstance?.closeAll()
+          renderableInstance = null
+          setRenderableTopicsState(undefined)
+        })
+      }
+
       // ----- Inbound: /cmd_vel → VehicleCommandQueue ----------------
       const cmdAdapter = new RosTwistToVehicleCommandAdapter({ vehicleId })
       const cmdBridge = new VehicleCommandTopicBridge(
@@ -392,6 +448,18 @@ export function CommunicationProvider({
               closeEcho: e.closeEcho.bind(e),
             })
           }
+          // Renderable topics: seed an empty-selection capability so
+          // the UI can render the per-row checkbox immediately. The
+          // first onChange will fire when the user actually selects
+          // a topic.
+          if (
+            transport instanceof RoslibRosbridgeTransport &&
+            renderableInstance
+          ) {
+            setRenderableTopicsState(
+              makeRenderableSnapshot(renderableInstance),
+            )
+          }
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err)
           console.error('[CommunicationProvider] connect failed:', err)
@@ -424,16 +492,26 @@ export function CommunicationProvider({
         console.warn('[CommunicationProvider] disconnect failed:', err)
       })
     }
-  }, [config, engine, commandQueue, vehicleId, clockPeriodSec])
+  }, [
+    config,
+    engine,
+    commandQueue,
+    externalPathQueue,
+    vehicleId,
+    clockPeriodSec,
+  ])
 
   // Guard the context value so callers never see rosbridge-specific
-  // discovery / echo state while the active transport is something
-  // else. (The cleanup clears the state, but render order vs. effect
-  // order can briefly expose stale data without this filter.)
+  // discovery / echo / renderable-topic state while the active
+  // transport is something else. (The cleanup clears the state, but
+  // render order vs. effect order can briefly expose stale data
+  // without this filter.)
   const topicDiscovery =
     config.kind === 'rosbridge' ? topicDiscoveryState : undefined
   const topicEcho =
     config.kind === 'rosbridge' ? topicEchoState : undefined
+  const renderableTopics =
+    config.kind === 'rosbridge' ? renderableTopicsState : undefined
 
   const value = useMemo<CommunicationContextValue>(
     () => ({
@@ -443,8 +521,17 @@ export function CommunicationProvider({
       setConfig,
       topicDiscovery,
       topicEcho,
+      renderableTopics,
     }),
-    [config, status, errorMessage, setConfig, topicDiscovery, topicEcho],
+    [
+      config,
+      status,
+      errorMessage,
+      setConfig,
+      topicDiscovery,
+      topicEcho,
+      renderableTopics,
+    ],
   )
 
   return (
@@ -452,6 +539,25 @@ export function CommunicationProvider({
       {children}
     </CommunicationContext.Provider>
   )
+}
+
+/**
+ * Wrap a `RosbridgeRenderableTopics` instance into a fresh
+ * {@link RenderableTopicCapability} object so memoised consumers see
+ * a new identity on each emit. Methods are bound to the instance so
+ * they stay stable for the lifetime of the effect run.
+ */
+function makeRenderableSnapshot(
+  instance: RosbridgeRenderableTopics,
+): RenderableTopicCapability {
+  return {
+    selectedTopics: instance.selectedTopics,
+    isRenderable: instance.isRenderable.bind(instance),
+    getUnsupportedReason: instance.getUnsupportedReason.bind(instance),
+    isSelected: instance.isSelected.bind(instance),
+    selectTopic: instance.selectTopic.bind(instance),
+    deselectTopic: instance.deselectTopic.bind(instance),
+  }
 }
 
 function buildTransport(

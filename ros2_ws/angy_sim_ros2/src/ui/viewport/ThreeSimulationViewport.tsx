@@ -118,14 +118,14 @@ export const ThreeSimulationViewport = forwardRef<
     renderer.init(engine.state)
 
     if (typeof globalThis !== 'undefined') {
-      ;(
+      ; (
         globalThis as unknown as {
           __threeTrajectoryDebug?: () =>
             | ThreeTrajectoryRendererDebugSummary
             | undefined
         }
       ).__threeTrajectoryDebug = () =>
-        rendererRef.current?.getTrajectoryRendererDebugSummary()
+          rendererRef.current?.getTrajectoryRendererDebugSummary()
     }
 
     setCameraMode(renderer.getCameraMode() ?? 'orbit')

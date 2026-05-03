@@ -54,6 +54,10 @@ RUN npm install -g npm@latest && npm cache clean --force
 # RUN apt update && apt install -y \
 #     ros-${ROS_DISTRO}-turtlesim
 
+# sudo apt install ros-humble-tf-transformations
+RUN apt update && apt install -y \
+    ros-${ROS_DISTRO}-tf-transformations
+
 #### USER configuration
 
 ARG HOST_UID

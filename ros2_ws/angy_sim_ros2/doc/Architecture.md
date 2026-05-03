@@ -67,7 +67,7 @@ src/
       bridges/          TopicBridge implementations
     collision/        Backend-agnostic 2D collision contracts
   infrastructure/
-    communication/    Concrete Transports (mock, in-memory, WebSocket)
+    communication/    Concrete Transports (mock, in-memory, WebSocket, rosbridge)
     collision/
       rapier/         Optional Rapier 2D backend (WASM)
 public/
@@ -583,7 +583,11 @@ and never touches `ThreeSimulationRenderer`, `PhaserSimulationRenderer`,
   - `useEntityListVersion()` → updates on entity add/remove + tick
 - **UI components (`src/ui/`)** —
   `ControlPanel` (Start / Pause / Step / Reset / Load Scenario / pick
-  Renderer), `SimulationTimeDisplay`, `MetricsPanel`,
+  Renderer), `ConnectionStatusPanel` (transport selector / endpoint /
+  status only), `Ros2TopicsPanel` (generic topic discovery UI, shown
+  only when the selected transport exposes the capability),
+  `EchoCard` (generic topic echo session view), `SimulationTimeDisplay`,
+  `MetricsPanel`,
   `EntityListPanel`, `RecordingPanel` (Inspector "Recording" panel —
   start/stop/clear/download with config inputs; dumb component),
   `replay/ReplayLoadButton` + `replay/ReplayTimeline` (Phase 3
@@ -684,27 +688,111 @@ imports only the contracts.
   and routes them by topic. **This file is the only place in the repo
   allowed to import the WebSocket API.** It must not be imported from
   `src/simulation`.
+- **`RoslibRosbridgeTransport`** — concrete ROS 2 transport under
+  `src/infrastructure/communication/rosbridge/`. It adapts `roslibjs`
+  / `rosbridge_server` to the generic `Transport` interface and is
+  selected only at the app composition root when
+  `TransportKind === 'rosbridge'`. It may call rosbridge services
+  (for example rosapi) and register runtime topic types for
+  subscriptions, but those details stay in the rosbridge infrastructure
+  folder.
+- **Rosbridge adapters** —
+  `RosTwistToVehicleCommandAdapter` converts
+  `geometry_msgs/msg/Twist` into `VehicleCommand`, and
+  `SimClockToRosClockAdapter` converts `SimClockMessage` into
+  `rosgraph_msgs/msg/Clock`. ROS message shapes do not cross into
+  `src/simulation`.
+
+### App-facing communication capabilities (`src/app/`)
+
+Some transport features are UI conveniences rather than engine
+contracts. They are exposed as optional capabilities from
+`CommunicationContext`, so panels can stay generic and transports can
+still be replaced.
+
+- **Transport status/config** — `CommunicationProvider` owns the
+  selected `TransportKind`, endpoint config, connection status
+  (`disabled | disconnected | connecting | connected | error`), and
+  concrete transport instantiation. `ConnectionStatusPanel` only
+  consumes this generic state and remains focused on transport
+  selection, endpoint URL, status, and short transport help text.
+- **`TopicDiscovery`** — `src/app/TopicDiscovery.ts` defines
+  `TopicInfo`, `TopicDiscoveryState`, and system-topic filtering. The
+  UI sees `topics`, `status`, `error`, `lastUpdated`, and `refresh()`;
+  it does not know whether topics came from rosapi, DDS discovery, a
+  backend gateway, or a mock.
+- **`TopicEcho`** — `src/app/TopicEcho.ts` defines
+  `TopicEchoSession` and `TopicEchoCapability`
+  (`sessions`, `startEcho`, `stopEcho`, `closeEcho`). `EchoCard`
+  renders sessions from this generic shape and never imports
+  transport-specific code.
+- **`RenderableTopics`** — `src/app/RenderableTopics.ts` defines
+  `RenderableTopicKind`, `RenderableTopicSupport`,
+  `RenderableTopicSelection`, and `RenderableTopicCapability`
+  (`isRenderable`, `getUnsupportedReason`, `isSelected`, `selectTopic`,
+  `deselectTopic`, `selectedTopics`). The whitelist of renderable
+  `(topicName, messageType, kind)` tuples lives here as plain data —
+  starting with `/circle_path` (`nav_msgs/msg/Path`, kind `path2d`).
+  `Ros2TopicsPanel` consumes this capability through the
+  `useRenderableTopics()` hook and renders a per-row checkbox; the
+  panel never knows whether the data flows through rosbridge / DDS /
+  MQTT.
+- **Rosbridge implementations** — `RosbridgeTopicDiscovery` calls
+  `rosapi_msgs/srv/Topics` through the rosbridge transport's injected
+  service caller. `RosbridgeTopicEcho` uses the generic subscription
+  path plus rosbridge-local topic type registration.
+  `RosbridgeRenderableTopics` owns one rosbridge subscription per
+  selected renderable topic, runs each frame through a
+  message-type-specific adapter (today: `RosPathToPath2DAdapter` for
+  `nav_msgs/msg/Path` → `Path2D`), and pushes the result into a
+  simulation-side `ExternalPathUpdateQueue` rather than touching
+  `SimulationState` directly. All three live under
+  `src/infrastructure/communication/rosbridge/`.
+- **External-data tick handoff** — `ExternalPathUpdateQueue`
+  (`src/simulation/paths/`) is a coalescing mailbox of pending
+  `Path2D` upserts/removes. `ExternalPathRenderSystem`
+  (`src/simulation/systems/`) drains the queue once per tick and
+  applies it to `state.paths`, which is the single point where
+  externally-sourced paths land in simulation state. This preserves
+  the rule that external (rosbridge / WebSocket / DDS) callbacks
+  never mutate `SimulationState` directly.
+- **UI workflow** — `Ros2TopicsPanel` is rendered only when the active
+  transport is `rosbridge` and the connection is `connected`. It
+  auto-loads discovered topics, hides common ROS system topics by
+  default, keeps the topic list collapsed by default, and enables
+  `Echo` only when the panel is maximized. Echo sessions render as
+  separate closeable `EchoCard`s. Each row also carries a render
+  checkbox at the start: enabled when the topic is in the renderable
+  whitelist, disabled (with tooltip) otherwise.
 
 ### Why this is transport-agnostic
 
 The simulator only ever depends on **interfaces**, never on a
 particular wire. Concretely:
 
-- Swapping WebSocket for ROS2 is implementing one new `Transport` and
-  zero changes to bridges / adapters / engine.
+- Swapping WebSocket for ROS2 is implementing/selecting one concrete
+  `Transport` and zero changes to bridges / engine.
 - ROS2 message types (`nav_msgs/Odometry`, `geometry_msgs/Twist`,
-  `rosgraph_msgs/Clock`) never appear in `src/simulation`; a future
-  `Ros2OdometryAdapter` lives in `src/infrastructure/communication/ros2/`
-  and converts to/from `SimVehicleStateMessage`.
+  `rosgraph_msgs/Clock`) never appear in `src/simulation`; ROS-specific
+  adapters live under `src/infrastructure/communication/rosbridge/` (or
+  another future transport folder) and convert to/from simulator-owned
+  messages.
 - The engine's `dt` is the only timing primitive `PeriodicPublisher`
   uses — replay, headless tests, and fast-forward all "just work".
+- Topic discovery and echo are optional app/provider capabilities, not
+  engine requirements. A future `DdsTransport`, `MqttTransport`, or
+  backend gateway can expose the same capability shape without changing
+  `Ros2TopicsPanel` or `EchoCard`.
 
-### How a future ROS2 integration plugs in
+### ROS2 integration paths
 
-1. **Quickest path — rosbridge.** Implement a `RosbridgeTransport` (or
-   reuse `WebSocketTransport`) and write JSON↔ROS message adapters
-   under `src/infrastructure/communication/rosbridge/`. No engine
-   changes.
+1. **Current path — rosbridge.** `RoslibRosbridgeTransport` uses
+   `roslibjs` to connect to `rosbridge_server` (default endpoint:
+   `ws://localhost:9090`). Inbound `/cmd_vel` uses
+   `RosTwistToVehicleCommandAdapter`; outbound `/clock` uses
+   `SimClockToRosClockAdapter`; topic discovery / echo use generic
+   app capabilities backed by rosbridge-local implementations. No
+   engine changes are required.
 2. **Backend WebSocket bridge to `rclpy` / `rclcpp`.** A small Node /
    Python service exposes a WebSocket using the `WebSocketEnvelope`
    shape and translates frames into ROS2 publishes/subscribes.
@@ -1449,6 +1537,11 @@ deterministic, replayable, and renderer/transport-agnostic.
 - **New transport** — implement `Transport` under
   `src/infrastructure/communication/<wire>/`. Bridges and adapters do
   not need to change.
+- **New UI communication capability** — define the generic type/hook in
+  `src/app/`, expose it from `CommunicationContext`, and implement any
+  vendor-specific behavior under
+  `src/infrastructure/communication/<wire>/`. UI components consume the
+  generic capability only.
 - **New external schema** — implement `MessageAdapter<TWire, TSim>`
   under `src/infrastructure/communication/<wire>/` (or a dedicated
   integration package). Engine code does not change.

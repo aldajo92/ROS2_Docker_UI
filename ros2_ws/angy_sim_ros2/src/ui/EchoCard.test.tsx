@@ -189,7 +189,7 @@ describe('EchoCard — message body', () => {
     expect(queryMessage(harness.container)).toBeNull()
   })
 
-  it('renders the latest payload as pretty JSON once a message arrives', () => {
+  it('renders latest payload as a collapsed JSON tree', () => {
     harness = mount(
       <EchoCard
         session={makeSession({
@@ -207,14 +207,97 @@ describe('EchoCard — message body', () => {
       />,
     )
     expect(queryWaiting(harness.container)).toBeNull()
-    const block = queryMessage(harness.container)
-    expect(block).not.toBeNull()
-    const text = block!.textContent ?? ''
-    // Pretty-print: must be on multiple lines and use 2-space indent.
-    expect(text).toContain('"linear"')
-    expect(text).toContain('"angular"')
-    expect(text).toContain('  "x": 0.5')
-    expect(text.split('\n').length).toBeGreaterThan(3)
+    const tree = queryMessage(harness.container)
+    expect(tree).not.toBeNull()
+    const text = tree!.textContent ?? ''
+    expect(text).toContain('linear')
+    expect(text).toContain('angular')
+    expect(text).toContain('{ ... }')
+    // Nested values are not rendered until the user expands a field.
+    expect(text).not.toContain('0.5')
+    expect(text).not.toContain('1.2')
+  })
+
+  it('allows manual expansion and collapse of JSON fields', () => {
+    harness = mount(
+      <EchoCard
+        session={makeSession({
+          topicName: '/cmd_vel',
+          latestMessage: {
+            header: {
+              stamp: { sec: 1777775932, nanosec: 273857347 },
+              frame_id: 'map',
+            },
+            poses: [
+              {
+                position: { x: -0.152, y: 0.198, z: 0 },
+                orientation: { x: 0, y: 0, z: 0, w: 1 },
+              },
+            ],
+          },
+        })}
+        onStop={() => {}}
+        onResume={() => {}}
+        onClose={() => {}}
+      />,
+    )
+
+    const headerToggle = harness.container.querySelector<HTMLButtonElement>(
+      '[data-testid="json-tree-toggle-header"]',
+    )
+    expect(headerToggle).not.toBeNull()
+    expect(queryMessage(harness.container)?.textContent).not.toContain('stamp')
+
+    act(() => {
+      headerToggle!.click()
+    })
+    expect(queryMessage(harness.container)?.textContent).toContain('stamp')
+    expect(queryMessage(harness.container)?.textContent).toContain('frame_id')
+
+    act(() => {
+      headerToggle!.click()
+    })
+    expect(queryMessage(harness.container)?.textContent).not.toContain('stamp')
+  })
+
+  it('supports expand all and collapse all for the JSON tree', () => {
+    harness = mount(
+      <EchoCard
+        session={makeSession({
+          topicName: '/cmd_vel',
+          latestMessage: {
+            header: {
+              stamp: { sec: 1777775932, nanosec: 273857347 },
+              frame_id: 'map',
+            },
+            poses: [{ position: { x: -0.152 } }],
+          },
+        })}
+        onStop={() => {}}
+        onResume={() => {}}
+        onClose={() => {}}
+      />,
+    )
+
+    const expandAll = harness.container.querySelector<HTMLButtonElement>(
+      '[data-testid="json-tree-expand-all"]',
+    )
+    const collapseAll = harness.container.querySelector<HTMLButtonElement>(
+      '[data-testid="json-tree-collapse-all"]',
+    )
+
+    expect(queryMessage(harness.container)?.textContent).not.toContain('sec')
+    act(() => {
+      expandAll!.click()
+    })
+    expect(queryMessage(harness.container)?.textContent).toContain('sec')
+    expect(queryMessage(harness.container)?.textContent).toContain('-0.152')
+
+    act(() => {
+      collapseAll!.click()
+    })
+    expect(queryMessage(harness.container)?.textContent).not.toContain('sec')
+    expect(queryMessage(harness.container)?.textContent).not.toContain('-0.152')
   })
 
   it('renders an error banner when the session is in error state', () => {

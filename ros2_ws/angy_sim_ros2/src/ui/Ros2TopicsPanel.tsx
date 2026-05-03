@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useTransportStatus } from '../app/useTransportStatus'
 import { useTopicDiscovery } from '../app/useTopicDiscovery'
 import { useTopicEcho } from '../app/useTopicEcho'
+import { useRenderableTopics } from '../app/useRenderableTopics'
 import { isSystemTopic, type TopicInfo } from '../app/TopicDiscovery'
 
 /**
@@ -40,6 +41,7 @@ export interface Ros2TopicsPanelProps {
 
 const ECHO_DISABLED_TOOLTIP_COMPACT = 'Maximize ROS2 Topics to echo topics.'
 const ECHO_DISABLED_TOOLTIP_NO_ECHO = 'Echo capability is unavailable.'
+const RENDER_UNAVAILABLE_TITLE = 'Topic rendering is unavailable.'
 
 export function Ros2TopicsPanel({
   expanded = false,
@@ -48,6 +50,7 @@ export function Ros2TopicsPanel({
   const { config, status } = useTransportStatus()
   const discovery = useTopicDiscovery()
   const echo = useTopicEcho()
+  const renderable = useRenderableTopics()
 
   // Strict gate: only rosbridge + connected. The provider also clears
   // the capability when those conditions don't hold, but defending
@@ -190,27 +193,65 @@ export function Ros2TopicsPanel({
                 : 'No topics to display.'}
             </li>
           )}
-          {visibleTopics.map((topic) => (
-            <li key={topic.name} className="ros2-topics-row">
-              <span className="ros2-topics-name" title={topic.name}>
-                {topic.name}
-              </span>
-              <span className="ros2-topics-type" title={topic.type ?? ''}>
-                {topic.type ?? '—'}
-              </span>
-              <button
-                type="button"
-                className="ros2-topics-action"
-                disabled={!echoEnabled}
-                title={
-                  echoEnabled ? `Echo ${topic.name}` : echoDisabledTitle
-                }
-                onClick={() => handleEchoClick(topic)}
-              >
-                Echo
-              </button>
-            </li>
-          ))}
+          {visibleTopics.map((topic) => {
+            // Per-row render-checkbox state. We treat a missing
+            // `renderable` capability as "render selection unavailable"
+            // — the checkbox stays disabled but visible so the affordance
+            // is consistent across the matrix (rosbridge-disconnected
+            // never gets here; this guards mock context in tests).
+            const isRenderable =
+              renderable?.isRenderable(topic) ?? false
+            const isSelected =
+              isRenderable && (renderable?.isSelected(topic.name) ?? false)
+            const renderDisabledReason = renderable
+              ? renderable.getUnsupportedReason(topic)
+              : RENDER_UNAVAILABLE_TITLE
+            const renderTitle = isRenderable
+              ? isSelected
+                ? `Stop rendering ${topic.name}`
+                : `Render ${topic.name} in the viewport`
+              : (renderDisabledReason ?? RENDER_UNAVAILABLE_TITLE)
+            const handleRenderToggle = () => {
+              if (!renderable || !isRenderable) return
+              if (isSelected) renderable.deselectTopic(topic.name)
+              else renderable.selectTopic(topic)
+            }
+            return (
+              <li key={topic.name} className="ros2-topics-row">
+                <input
+                  type="checkbox"
+                  className="ros2-topics-render-checkbox"
+                  data-testid={`ros2-topics-render-${topic.name}`}
+                  checked={isSelected}
+                  disabled={!isRenderable}
+                  onChange={handleRenderToggle}
+                  aria-label={
+                    isRenderable
+                      ? `Render ${topic.name}`
+                      : `${topic.name} cannot be rendered`
+                  }
+                  title={renderTitle}
+                />
+                <span className="ros2-topics-name" title={topic.name}>
+                  {topic.name}
+                </span>
+                <span className="ros2-topics-type" title={topic.type ?? ''}>
+                  {topic.type ?? '—'}
+                </span>
+                <button
+                  type="button"
+                  className="ros2-topics-action"
+                  disabled={!echoEnabled}
+                  title={
+                    echoEnabled ? `Echo ${topic.name}` : echoDisabledTitle
+                  }
+                  onClick={() => handleEchoClick(topic)}
+                >
+                  Echo
+                </button>
+              </li>
+            )
+          })}
         </ul>
       )}
     </section>

@@ -2,6 +2,7 @@ import { createContext } from 'react'
 import type { TransportConfig } from './TransportConfig'
 import type { TopicDiscoveryState } from './TopicDiscovery'
 import type { TopicEchoCapability } from './TopicEcho'
+import type { RenderableTopicCapability } from './RenderableTopics'
 
 /**
  * Connection status surfaced to the UI. The values mirror
@@ -51,6 +52,16 @@ export interface CommunicationContextValue {
    * provider clears this field on disconnect / transport change.
    */
   topicEcho?: TopicEchoCapability
+  /**
+   * Optional renderable-topic capability. Present only when the
+   * active transport can wire a discovered topic into the
+   * simulation's renderable artifacts (today: rosbridge while
+   * connected). The UI uses this to render a per-row "render this
+   * topic" checkbox; each implementation is responsible for routing
+   * subscriptions through a simulation-side queue rather than
+   * mutating `SimulationState` directly.
+   */
+  renderableTopics?: RenderableTopicCapability
 }
 
 /**

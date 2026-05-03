@@ -1,4 +1,5 @@
-import { formatEchoMessage, type TopicEchoSession } from '../app/TopicEcho'
+import type { TopicEchoSession } from '../app/TopicEcho'
+import { JsonTreeView } from './JsonTreeView'
 
 /**
  * Inspector card for a single live topic-echo session. Renders the
@@ -39,9 +40,6 @@ export function EchoCard({
   onClose,
 }: Readonly<EchoCardProps>) {
   const hasMessage = session.latestMessage !== undefined
-  const formattedMessage = hasMessage
-    ? formatEchoMessage(session.latestMessage)
-    : ''
 
   return (
     <section
@@ -143,9 +141,7 @@ export function EchoCard({
       )}
 
       {hasMessage ? (
-        <pre className="echo-card-message" data-testid="echo-card-message">
-          {formattedMessage}
-        </pre>
+        <JsonTreeView value={session.latestMessage} />
       ) : (
         <p
           className="echo-card-waiting"

@@ -21,3 +21,6 @@
 [submodule "ros2_ws/src/dwa_planner"]
 	path = ros2_ws/src/dwa_planner
 	url = https://github.com/kmilo7204/dwa_planner
+[submodule "ros2_ws/src/rviz2_visuals"]
+	path = ros2_ws/src/rviz2_visuals
+	url = git@github.com:aldajo92/rviz2_visuals.git

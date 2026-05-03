@@ -1518,7 +1518,7 @@ body.layout-splitter-dragging {
 
 .ros2-topics-row {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1.2fr) minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   padding: 4px 6px;
@@ -1564,11 +1564,28 @@ body.layout-splitter-dragging {
   cursor: not-allowed;
 }
 
+/*
+ * Per-row "render this topic in the viewport" checkbox. Lives in the
+ * first grid column so the layout matches the Echo button on the
+ * right edge — checkbox / name / type / Echo. Width is intrinsic; the
+ * actual size comes from the user-agent rendering of the input.
+ */
+.ros2-topics-render-checkbox {
+  margin: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.ros2-topics-render-checkbox:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 /* ----- Echo card ------------------------------------------------------ *
  * One per active topic-echo session. Lives in the inspector sidebar
- * alongside the ROS2 Topics panel. Header carries title + Stop /
- * Resume / Close buttons; body shows topic metadata and the latest
- * payload as pretty-printed JSON.
+ * alongside the ROS2 Topics panel. Header carries title + close; body
+ * shows topic metadata and the latest payload in a collapsible JSON
+ * tree so large ROS messages are inspectable without filling the card.
  */
 
 .echo-card {
@@ -1710,21 +1727,106 @@ body.layout-splitter-dragging {
   word-break: break-word;
 }
 
-.echo-card-message {
+.json-tree-view {
   margin: 0;
   background: var(--bg-panel-2);
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 8px 10px;
   font-family: ui-monospace, "SFMono-Regular", monospace;
   font-size: 11px;
   line-height: 1.4;
   color: var(--fg);
   max-height: 240px;
   overflow: auto;
-  white-space: pre-wrap;
+}
+
+.json-tree-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--bg-panel-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.json-tree-toolbar button {
+  background: var(--bg-panel);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.json-tree-toolbar button:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+
+.json-tree-toolbar button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.json-tree-body {
+  padding: 8px 10px;
+  min-width: max-content;
+}
+
+.json-tree-row {
+  display: grid;
+  grid-template-columns: 18px minmax(70px, max-content) max-content;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  min-height: 20px;
+  color: var(--fg);
+}
+
+.json-tree-row-button {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.json-tree-row-button:hover,
+.json-tree-row-button:focus-visible {
+  background: rgba(255, 255, 255, 0.05);
+  outline: none;
+}
+
+.json-tree-caret,
+.json-tree-spacer {
+  display: inline-flex;
+  width: 14px;
+  color: var(--fg-muted);
+  justify-content: center;
+}
+
+.json-tree-key {
+  color: var(--fg);
   overflow-wrap: anywhere;
-  word-break: break-word;
+}
+
+.json-tree-value {
+  color: #93c5fd;
+  overflow-wrap: anywhere;
+}
+
+.json-tree-summary {
+  color: var(--fg-muted);
+}
+
+.json-tree-bracket {
+  grid-template-columns: 18px max-content;
+  color: var(--fg-muted);
 }
 
 .echo-card-waiting {

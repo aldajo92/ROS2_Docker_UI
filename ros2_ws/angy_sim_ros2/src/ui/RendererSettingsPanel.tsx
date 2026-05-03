@@ -63,24 +63,24 @@ export function RendererSettingsPanel({
       key: K,
       sanitize: (n: number) => number,
     ) =>
-    (event: ChangeEvent<HTMLInputElement>) => {
-      const raw = event.target.value
-      const parsed = raw === '' ? Number.NaN : Number(raw)
-      if (!Number.isFinite(parsed)) return
-      patchTracking({ [key]: sanitize(parsed) } as Partial<TrajectoryTrackingConfig>)
-    }
+      (event: ChangeEvent<HTMLInputElement>) => {
+        const raw = event.target.value
+        const parsed = raw === '' ? Number.NaN : Number(raw)
+        if (!Number.isFinite(parsed)) return
+        patchTracking({ [key]: sanitize(parsed) } as Partial<TrajectoryTrackingConfig>)
+      }
 
   const onNumberViz =
     <K extends keyof ThreeTrajectoryVisualizationConfig>(
       key: K,
       sanitize: (n: number) => number,
     ) =>
-    (event: ChangeEvent<HTMLInputElement>) => {
-      const raw = event.target.value
-      const parsed = raw === '' ? Number.NaN : Number(raw)
-      if (!Number.isFinite(parsed)) return
-      patchViz({ [key]: sanitize(parsed) } as Partial<ThreeTrajectoryVisualizationConfig>)
-    }
+      (event: ChangeEvent<HTMLInputElement>) => {
+        const raw = event.target.value
+        const parsed = raw === '' ? Number.NaN : Number(raw)
+        if (!Number.isFinite(parsed)) return
+        patchViz({ [key]: sanitize(parsed) } as Partial<ThreeTrajectoryVisualizationConfig>)
+      }
 
   const trackTimeWindow =
     trajectoryTrackingConfig.defaultSamplingMode === 'timeWindow'

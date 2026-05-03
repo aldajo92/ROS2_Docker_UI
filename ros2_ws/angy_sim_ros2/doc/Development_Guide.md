@@ -189,6 +189,42 @@ Inbound command bridges must push to `VehicleCommandQueue`.
 
 They must not mutate vehicles directly.
 
+Transport-specific dependencies stay inside their infrastructure
+folder. For example, `roslibjs` may only be imported under:
+
+```text
+src/infrastructure/communication/rosbridge/
+```
+
+The React shell may expose optional communication capabilities through
+`CommunicationContext`, but the capability types must stay generic:
+
+```text
+TopicDiscovery    -> topics/status/error/lastUpdated/refresh
+TopicEcho         -> sessions/startEcho/stopEcho/closeEcho
+RenderableTopics  -> isRenderable/getUnsupportedReason/isSelected/
+                     selectTopic/deselectTopic/selectedTopics
+```
+
+UI panels consume those generic capabilities only. `Ros2TopicsPanel`
+and `EchoCard` must not import `roslib`, rosapi service types, ROS
+message schemas, or any transport implementation directly.
+
+Renderable-topic data flow (rosbridge example):
+
+```text
+rosbridge subscription
+  -> RosPathToPath2DAdapter (infrastructure/communication/rosbridge/adapters/)
+  -> ExternalPathUpdateQueue.enqueueUpsert()                 (simulation/paths/)
+  -> [next tick]
+  -> ExternalPathRenderSystem.update(...) drains the queue   (simulation/systems/)
+  -> state.paths                                              (read by Three / Phaser path renderers)
+```
+
+External callbacks **must not** call `state.paths.add(...)` directly.
+The queue + system handoff is what lets the simulator stay
+deterministic and replayable.
+
 ---
 
 ### 7. Renderer-specific mapping is centralized
@@ -705,6 +741,48 @@ CSS changes
 local helper functions
 minor refactors
 ```
+
+---
+
+## ROS 2 / rosbridge UI Work
+
+When adding or changing ROS 2-facing UI, keep the UI transport-aware
+only at the selection level and capability-driven everywhere else.
+
+Allowed:
+
+```text
+ConnectionStatusPanel -> selected TransportKind, endpoint URL, status, help text
+Ros2TopicsPanel       -> generic TopicDiscovery + TopicEcho capabilities
+EchoCard              -> generic TopicEchoSession
+CommunicationProvider -> selects RoslibRosbridgeTransport when configured
+rosbridge folder      -> roslibjs, rosapi service calls, ROS message shapes
+```
+
+Forbidden:
+
+```text
+ConnectionStatusPanel importing roslib
+Ros2TopicsPanel importing roslib
+EchoCard importing roslib
+src/simulation/ importing roslib or ROS message schemas
+src/math/ importing any transport or browser APIs
+```
+
+Topic discovery and echo lifecycle rules:
+
+```text
+discover topics only when a capable transport is connected
+hide common ROS system topics by default
+keep topic lists collapsed by default
+enable Echo only in the maximized ROS2 Topics panel
+stop/close echo subscriptions on disconnect or transport changes
+render echo payloads as formatted JSON in separate closeable cards
+```
+
+If a future transport supports topic discovery or echo, implement the
+same generic app capability shape instead of adding transport-specific
+branches inside UI components.
 
 ---
 

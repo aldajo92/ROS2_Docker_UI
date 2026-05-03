@@ -17,6 +17,7 @@ import type { SimulationState } from '../simulation/core/SimulationState'
 import { SimulationContext } from './SimulationContext'
 import { SimulationController } from '../simulation/core/SimulationController'
 import { VehicleCommandQueue } from '../simulation/commands/VehicleCommandQueue'
+import { ExternalPathUpdateQueue } from '../simulation/paths/ExternalPathUpdateQueue'
 import { useSimulationProfiler } from './useSimulationProfiler'
 import type { ProfilerSnapshot } from '../simulation/profiling/ProfilerTypes'
 
@@ -61,7 +62,8 @@ function buildContextValue() {
   engine.addSystem(new NoopSystem('only'))
   const controller = new SimulationController(engine)
   const commandQueue = new VehicleCommandQueue()
-  return { engine, controller, commandQueue }
+  const externalPathQueue = new ExternalPathUpdateQueue()
+  return { engine, controller, commandQueue, externalPathQueue }
 }
 
 function mount(children: React.ReactNode): {

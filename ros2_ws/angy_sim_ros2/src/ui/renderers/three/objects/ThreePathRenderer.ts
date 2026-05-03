@@ -37,7 +37,7 @@ export class ThreePathRenderer {
       const projected = path.points.map((p) =>
         simPoint2DToThree(Point2D.of(p.x, p.y), PATH_HEIGHT),
       )
-      ;(line.geometry as THREE.BufferGeometry).setFromPoints(projected)
+        ; (line.geometry as THREE.BufferGeometry).setFromPoints(projected)
     }
   }
 
