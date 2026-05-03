@@ -1185,15 +1185,57 @@ body.layout-splitter-dragging {
 }
 
 /* ----- connection status panel ---------------------------------------- *
- * Live status indicator for the external Transport (rosbridge / mock /
- * memory). Lives in the inspector right above the keyboard / metrics
- * panels. Read-only: the panel never mutates the transport.
+ * Picker + live status for the external Transport. Lives in the
+ * inspector. The picker emits a `TransportKind`; the actual transport
+ * implementation is built by `CommunicationProvider`. The panel stays
+ * generic — it never names a concrete transport in default copy.
  */
 
 .connection-status-panel {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+}
+
+.connection-status-control {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  align-items: center;
+  gap: 10px;
+}
+
+.connection-status-control-label {
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.connection-status-select,
+.connection-status-input {
+  width: 100%;
+  background: var(--bg-panel-2);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-family: ui-monospace, "SFMono-Regular", monospace;
+}
+
+.connection-status-select {
+  cursor: pointer;
+  appearance: none;
+}
+
+.connection-status-input::placeholder {
+  color: var(--fg-muted);
+  opacity: 0.7;
+}
+
+.connection-status-input:focus,
+.connection-status-select:focus {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+  border-color: var(--accent);
 }
 
 .connection-status-row {
@@ -1261,21 +1303,6 @@ body.layout-splitter-dragging {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.connection-status-meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--fg-muted);
-}
-
-.connection-status-meta code {
-  background: var(--bg-panel-2);
-  border-radius: 4px;
-  padding: 1px 5px;
-  color: var(--fg);
 }
 
 .connection-status-error {

@@ -92,13 +92,18 @@ export function CommunicationProvider({
 }: CommunicationProviderProps) {
   const { engine, commandQueue } = useSimulation()
 
-  const config = useMemo<TransportConfig>(() => {
+  // The active transport config is stateful so the UI picker can swap
+  // transports at runtime without a page reload. The initializer runs
+  // once on mount: an explicit `configOverride` (tests / Storybook)
+  // wins; otherwise we fall back to `import.meta.env`. Subsequent
+  // changes flow through `setConfig` exposed via context.
+  const [config, setConfig] = useState<TransportConfig>(() => {
     if (configOverride) return configOverride
     // import.meta.env is only meaningful in a Vite build / vitest run.
     // The cast keeps the helper portable.
     const env = (import.meta.env ?? {}) as Record<string, string | undefined>
     return readTransportConfig(env)
-  }, [configOverride])
+  })
 
   // Status is keyed on `config.kind` so swapping configs at runtime
   // (e.g. via Storybook controls) starts from the right baseline
@@ -259,8 +264,8 @@ export function CommunicationProvider({
   }, [config, engine, commandQueue, vehicleId, clockPeriodSec])
 
   const value = useMemo<CommunicationContextValue>(
-    () => ({ config, status, errorMessage }),
-    [config, status, errorMessage],
+    () => ({ config, status, errorMessage, setConfig }),
+    [config, status, errorMessage, setConfig],
   )
 
   return (

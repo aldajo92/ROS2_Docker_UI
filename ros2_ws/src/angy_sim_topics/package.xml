@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>angy_sim_topics</name>
+  <version>0.0.1</version>
+  <description>
+    Minimal ROS 2 (ament_cmake / C++) demo node for the angy_sim
+    workspace that publishes /demo/string_message
+    (std_msgs/msg/String) and /demo/counter (std_msgs/msg/Int32) at
+    1 Hz. Useful for smoke-testing `ros2 topic list` and
+    `ros2 topic echo` inside the container.
+  </description>
+  <maintainer email="root@todo.todo">root</maintainer>
+  <license>TODO: License declaration</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>std_msgs</depend>
+
+  <!-- Runtime-only deps for the Python launch file under launch/. -->
+  <exec_depend>ros2launch</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
