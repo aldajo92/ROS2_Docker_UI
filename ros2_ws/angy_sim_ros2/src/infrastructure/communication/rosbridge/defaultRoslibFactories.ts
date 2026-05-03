@@ -1,7 +1,9 @@
-import { Ros, Topic } from 'roslib'
+import { Ros, Service, Topic } from 'roslib'
 import type {
   RosFactory,
   RosLike,
+  ServiceFactory,
+  ServiceLike,
   TopicFactory,
   TopicLike,
 } from './RoslibRosbridgeTransport'
@@ -46,4 +48,26 @@ export const defaultTopicFactory: TopicFactory = <T = unknown>(args: {
     messageType: args.messageType,
   })
   return topic as unknown as TopicLike<T>
+}
+
+/**
+ * Concrete factory producing a real `roslibjs` `Service`. Used by the
+ * inspector's topic-discovery flow (and any future rosbridge service
+ * call). Like the topic factory above, this is the only place that
+ * imports `roslib.Service` at runtime.
+ */
+export const defaultServiceFactory: ServiceFactory = <
+  TReq = unknown,
+  TRes = unknown,
+>(args: {
+  ros: RosLike
+  name: string
+  serviceType: string
+}) => {
+  const service = new Service<TReq, TRes>({
+    ros: args.ros as unknown as Ros,
+    name: args.name,
+    serviceType: args.serviceType,
+  })
+  return service as unknown as ServiceLike<TReq, TRes>
 }

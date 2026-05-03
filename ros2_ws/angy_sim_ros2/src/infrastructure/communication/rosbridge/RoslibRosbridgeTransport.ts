@@ -69,12 +69,34 @@ export interface TopicLike<T = unknown> {
   unadvertise(): void
 }
 
+/**
+ * Subset of `roslib`'s `Service` API used by this transport.
+ *
+ * The native callback API (success + failure) is wrapped into a
+ * Promise by `callService` below. `failedCallback` receives the same
+ * shapes roslib uses on the wire — usually a string error message,
+ * sometimes an object — so we type it as `unknown` and let
+ * `callService` normalise.
+ */
+export interface ServiceLike<TReq = unknown, TRes = unknown> {
+  callService(
+    request: TReq,
+    callback: (response: TRes) => void,
+    failedCallback?: (error: unknown) => void,
+  ): void
+}
+
 export type RosFactory = (options: { url: string }) => RosLike
 export type TopicFactory = <T = unknown>(args: {
   ros: RosLike
   name: string
   messageType: string
 }) => TopicLike<T>
+export type ServiceFactory = <TReq = unknown, TRes = unknown>(args: {
+  ros: RosLike
+  name: string
+  serviceType: string
+}) => ServiceLike<TReq, TRes>
 
 export interface RoslibRosbridgeTransportOptions {
   url: string
@@ -86,6 +108,13 @@ export interface RoslibRosbridgeTransportOptions {
   topicTypes: Record<TopicName, string>
   rosFactory: RosFactory
   topicFactory: TopicFactory
+  /**
+   * Optional. Required only if the caller invokes `callService(...)`
+   * (rosbridge UI plumbing). Defaults to undefined; without it,
+   * `callService` rejects with a clear "no service factory configured"
+   * error. Pub/sub paths never touch this.
+   */
+  serviceFactory?: ServiceFactory
   logger?: Logger
   /** Receives transport status transitions; called synchronously. */
   onStatusChange?: RosbridgeStatusListener
@@ -106,6 +135,7 @@ export class RoslibRosbridgeTransport implements Transport {
   private readonly topicTypes: Record<string, string>
   private readonly rosFactory: RosFactory
   private readonly topicFactory: TopicFactory
+  private readonly serviceFactory?: ServiceFactory
   private readonly logger?: Logger
   private statusListeners = new Set<RosbridgeStatusListener>()
 
@@ -123,6 +153,7 @@ export class RoslibRosbridgeTransport implements Transport {
     this.topicTypes = { ...options.topicTypes }
     this.rosFactory = options.rosFactory
     this.topicFactory = options.topicFactory
+    this.serviceFactory = options.serviceFactory
     this.logger = options.logger
     if (options.onStatusChange) this.statusListeners.add(options.onStatusChange)
   }
@@ -312,6 +343,60 @@ export class RoslibRosbridgeTransport implements Transport {
   }
 
   /* -- rosbridge-specific surface (NOT part of Transport) ------------- */
+
+  /**
+   * One-shot ROS service call routed over rosbridge. NOT part of the
+   * generic {@link Transport} contract — services are a rosbridge / ROS
+   * concept that DDS / MQTT / WebRTC transports may model differently
+   * (or not at all). Inspector-only features that need to query the
+   * graph (topic discovery, parameter listing) live above this method,
+   * not above `Transport`.
+   *
+   * Resolves with the response body on success, rejects on transport
+   * failure or rosbridge-side errors. Concurrent calls are
+   * independent; we don't cache `Service` instances because each call
+   * is short-lived and stateless on the wire.
+   */
+  async callService<TReq, TRes>(
+    name: string,
+    serviceType: string,
+    request: TReq,
+  ): Promise<TRes> {
+    if (!this.ros) {
+      throw new Error(
+        `RoslibRosbridgeTransport: cannot callService("${name}") before connect()`,
+      )
+    }
+    if (!this.serviceFactory) {
+      throw new Error(
+        `RoslibRosbridgeTransport: callService("${name}") requires a ` +
+          'serviceFactory in RoslibRosbridgeTransportOptions.',
+      )
+    }
+    const service = this.serviceFactory<TReq, TRes>({
+      ros: this.ros,
+      name,
+      serviceType,
+    })
+    return new Promise<TRes>((resolve, reject) => {
+      try {
+        service.callService(
+          request,
+          (response) => resolve(response),
+          (failure) => {
+            const message = formatError(failure)
+            reject(
+              new Error(
+                `Service call ${name} (${serviceType}) failed: ${message}`,
+              ),
+            )
+          },
+        )
+      } catch (err) {
+        reject(err instanceof Error ? err : new Error(formatError(err)))
+      }
+    })
+  }
 
   /** Current connection status. Cheap synchronous read. */
   getStatus(): RosbridgeStatus {

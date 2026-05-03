@@ -1,5 +1,6 @@
 import { createContext } from 'react'
 import type { TransportConfig } from './TransportConfig'
+import type { TopicDiscoveryState } from './TopicDiscovery'
 
 /**
  * Connection status surfaced to the UI. The values mirror
@@ -32,6 +33,15 @@ export interface CommunicationContextValue {
    * WebRTC, …) interchangeable from the shell's point of view.
    */
   setConfig: (next: TransportConfig) => void
+  /**
+   * Optional topic-discovery capability. Present only when the active
+   * transport supports it (today: rosbridge while connected); UI
+   * components must guard on `kind === 'rosbridge'` AND
+   * `status === 'connected'` before rendering anything that depends
+   * on it. Kept generic on purpose — the consuming UI never knows
+   * whether it's rosbridge / DDS / MQTT under the hood.
+   */
+  topicDiscovery?: TopicDiscoveryState
 }
 
 /**

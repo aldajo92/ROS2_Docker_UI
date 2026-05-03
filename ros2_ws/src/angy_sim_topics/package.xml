@@ -18,10 +18,17 @@
   <depend>rclcpp</depend>
   <depend>std_msgs</depend>
 
-  <!-- Runtime-only deps for the Python launch file under launch/. -->
+  <!-- Runtime-only deps for the Python launch files under launch/. -->
   <exec_depend>ros2launch</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
+
+  <!-- web_test.launch.py composes the rosbridge WebSocket bridge so
+       the web simulator can connect at ws://localhost:9090.
+       `rosapi` is pulled in by rosbridge_server's bundled launch
+       file — declared explicitly so `rosdep install` finds it. -->
+  <exec_depend>rosbridge_server</exec_depend>
+  <exec_depend>rosapi</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

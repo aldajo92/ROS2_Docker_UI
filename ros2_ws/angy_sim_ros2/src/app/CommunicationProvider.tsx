@@ -6,6 +6,7 @@ import {
   type CommunicationContextValue,
   type TransportConnectionStatus,
 } from './CommunicationContext'
+import type { TopicDiscoveryState } from './TopicDiscovery'
 import {
   DEFAULT_TRANSPORT_CONFIG,
   readTransportConfig,
@@ -24,11 +25,13 @@ import {
 } from '../infrastructure/communication/rosbridge/RoslibRosbridgeTransport'
 import {
   defaultRosFactory,
+  defaultServiceFactory,
   defaultTopicFactory,
 } from '../infrastructure/communication/rosbridge/defaultRoslibFactories'
 import { ROS_MESSAGE_TYPES } from '../infrastructure/communication/rosbridge/RosMessageTypes'
 import { RosTwistToVehicleCommandAdapter } from '../infrastructure/communication/rosbridge/adapters/RosTwistToVehicleCommandAdapter'
 import { SimClockToRosClockAdapter } from '../infrastructure/communication/rosbridge/adapters/SimClockToRosClockAdapter'
+import { RosbridgeTopicDiscovery } from '../infrastructure/communication/rosbridge/RosbridgeTopicDiscovery'
 
 /**
  * Composition root for external communication. Sits below
@@ -126,6 +129,15 @@ export function CommunicationProvider({
   const errorMessage =
     statusByConfig.kind === config.kind ? statusByConfig.errorMessage : undefined
 
+  // Topic-discovery capability state. `undefined` means "no discovery
+  // available on the active transport" (today: anything that isn't a
+  // connected rosbridge). The provider owns this state because it
+  // already owns the transport lifecycle, and a single `useEffect`
+  // already tears down on every config change.
+  const [topicDiscoveryState, setTopicDiscoveryState] = useState<
+    TopicDiscoveryState | undefined
+  >(undefined)
+
   useEffect(() => {
     if (config.kind === 'none') {
       // No transport to wire; the render-time `status` derivation
@@ -166,6 +178,66 @@ export function CommunicationProvider({
           onStatus(s as TransportConnectionStatus, err),
         )
         cleanups.push(() => unsubscribeStatus?.())
+      }
+
+      // ----- Topic-discovery capability (rosbridge-only) ----------------
+      //
+      // Built once per effect run. Lives until cleanup (config change /
+      // unmount), at which point we clear the context value so the UI
+      // stops rendering stale data. The discovery class itself never
+      // imports `roslib` — it talks to the transport via callService.
+      let discoveryRefresh: (() => void) | undefined
+      if (transport instanceof RoslibRosbridgeTransport) {
+        const rosbridgeTransport = transport
+        const discovery = new RosbridgeTopicDiscovery(
+          (name, type, request) =>
+            rosbridgeTransport.callService(name, type, request),
+        )
+
+        // Coalesce concurrent refreshes — the UI may double-click or
+        // repeated auto-loads can race during reconnect storms.
+        let refreshing = false
+        const refresh = (): void => {
+          if (cancelled || refreshing) return
+          refreshing = true
+          setTopicDiscoveryState((prev) => ({
+            status: 'loading',
+            topics: prev?.topics ?? [],
+            lastUpdated: prev?.lastUpdated,
+            refresh,
+          }))
+          discovery
+            .refreshTopics()
+            .then((topics) => {
+              if (cancelled) return
+              setTopicDiscoveryState({
+                status: 'ready',
+                topics,
+                lastUpdated: Date.now(),
+                refresh,
+              })
+            })
+            .catch((err: unknown) => {
+              if (cancelled) return
+              const message =
+                err instanceof Error ? err.message : String(err)
+              setTopicDiscoveryState((prev) => ({
+                status: 'error',
+                topics: prev?.topics ?? [],
+                lastUpdated: prev?.lastUpdated,
+                error: message,
+                refresh,
+              }))
+            })
+            .finally(() => {
+              refreshing = false
+            })
+        }
+        discoveryRefresh = refresh
+
+        // Tear down: clear the capability so consumers don't keep
+        // calling a stale refresh against a disconnected transport.
+        cleanups.push(() => setTopicDiscoveryState(undefined))
       }
 
       // ----- Inbound: /cmd_vel → VehicleCommandQueue ----------------
@@ -229,6 +301,22 @@ export function CommunicationProvider({
           if (!(transport instanceof RoslibRosbridgeTransport)) {
             onStatus('connected')
           }
+          // Topic discovery is rosbridge-only: seed the capability
+          // with an `idle` snapshot now that the bridge is up, then
+          // auto-load once. After this, the UI is in control via the
+          // refresh button.
+          if (
+            transport instanceof RoslibRosbridgeTransport &&
+            discoveryRefresh
+          ) {
+            const refresh = discoveryRefresh
+            setTopicDiscoveryState({
+              status: 'idle',
+              topics: [],
+              refresh,
+            })
+            refresh()
+          }
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err)
           console.error('[CommunicationProvider] connect failed:', err)
@@ -263,9 +351,16 @@ export function CommunicationProvider({
     }
   }, [config, engine, commandQueue, vehicleId, clockPeriodSec])
 
+  // Guard the context value so callers never see rosbridge-specific
+  // discovery state while the active transport is something else.
+  // (The cleanup clears the state, but render order vs. effect order
+  // can briefly expose stale data without this filter.)
+  const topicDiscovery =
+    config.kind === 'rosbridge' ? topicDiscoveryState : undefined
+
   const value = useMemo<CommunicationContextValue>(
-    () => ({ config, status, errorMessage, setConfig }),
-    [config, status, errorMessage, setConfig],
+    () => ({ config, status, errorMessage, setConfig, topicDiscovery }),
+    [config, status, errorMessage, setConfig, topicDiscovery],
   )
 
   return (
@@ -297,6 +392,9 @@ function buildTransport(
         },
         rosFactory: defaultRosFactory,
         topicFactory: defaultTopicFactory,
+        // Required so the topic-discovery capability can call
+        // /rosapi/topics through the same Ros connection.
+        serviceFactory: defaultServiceFactory,
         onStatusChange,
       })
   }

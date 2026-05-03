@@ -67,9 +67,7 @@ body,
      `minmax()`. The viewport has its own minimum so the inspector
      can never starve it past `--viewport-min-width`. */
   grid-template-columns:
-    minmax(var(--viewport-min-width, 640px), 1fr)
-    var(--splitter-width, 6px)
-    minmax(380px, var(--inspector-width, 380px));
+    minmax(var(--viewport-min-width, 640px), 1fr) var(--splitter-width, 6px) minmax(380px, var(--inspector-width, 380px));
   gap: 12px;
   align-items: stretch;
 }
@@ -93,7 +91,7 @@ body,
   flex-direction: column;
 }
 
-.viewport-surface > .viewport {
+.viewport-surface>.viewport {
   flex: 1 1 0;
   min-height: 0;
 }
@@ -499,7 +497,7 @@ body.layout-splitter-dragging {
   background: #111118;
 }
 
-.three-viewport > canvas {
+.three-viewport>canvas {
   display: block;
   width: 100% !important;
   height: 100% !important;
@@ -513,7 +511,7 @@ body.layout-splitter-dragging {
   overflow: hidden;
 }
 
-.phaser-viewport > canvas {
+.phaser-viewport>canvas {
   display: block;
   width: 100% !important;
   height: 100% !important;
@@ -949,7 +947,7 @@ body.layout-splitter-dragging {
   color: var(--fg);
 }
 
-.renderer-settings-row > span {
+.renderer-settings-row>span {
   color: var(--fg-muted);
   display: flex;
   align-items: center;
@@ -960,7 +958,7 @@ body.layout-splitter-dragging {
   grid-template-columns: auto 1fr;
 }
 
-.renderer-settings-row--checkbox > span {
+.renderer-settings-row--checkbox>span {
   order: 2;
   color: var(--fg);
   font-size: 13px;
@@ -1226,6 +1224,18 @@ body.layout-splitter-dragging {
   appearance: none;
 }
 
+/* Chrome / Edge insert a check glyph before the SELECTED <option> in
+   the dropdown popup, which pushes its label a few px to the right
+   relative to unselected rows. Reserving left padding on every option
+   gives the check a place to live inside that whitespace, so all the
+   row labels align at the same x. The right padding mirrors the
+   left for visual symmetry. (On Safari the popover is OS-rendered
+   and ignores these rules — there's no in-popup check there either,
+   so the outcome is still consistent.) */
+.connection-status-select option {
+  padding: 4px 1.6em;
+}
+
 .connection-status-input::placeholder {
   color: var(--fg-muted);
   opacity: 0.7;
@@ -1276,11 +1286,13 @@ body.layout-splitter-dragging {
 }
 
 @keyframes connection-status-pulse {
+
   0%,
   100% {
     transform: scale(1);
     opacity: 1;
   }
+
   50% {
     transform: scale(1.35);
     opacity: 0.6;
@@ -1324,4 +1336,174 @@ body.layout-splitter-dragging {
   border-radius: 4px;
   padding: 1px 5px;
   color: var(--fg);
+}
+
+/* ----- ROS2 Topics panel ---------------------------------------------- *
+ * Sibling to the Connection card. Only renders when the active transport
+ * is `rosbridge` and the connection is `connected` — gated by the panel
+ * itself plus the provider-side topic-discovery capability.
+ */
+
+.ros2-topics-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ros2-topics-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ros2-topics-count {
+  font-size: 13px;
+  color: var(--fg);
+  font-weight: 500;
+  flex: 1 1 auto;
+}
+
+.ros2-topics-refresh {
+  flex: 0 0 auto;
+  background: var(--bg-panel-2);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ros2-topics-refresh:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.ros2-topics-refresh:disabled {
+  opacity: 0.55;
+  cursor: progress;
+}
+
+.ros2-topics-meta {
+  margin: 0;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+.ros2-topics-meta span {
+  font-family: ui-monospace, "SFMono-Regular", monospace;
+  color: var(--fg);
+}
+
+.ros2-topics-error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--danger);
+  word-break: break-word;
+}
+
+.ros2-topics-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* When the list is expanded, the system-topics checkbox sits between
+   the Show/Hide button and the topic list. Indent slightly to read as
+   a sub-control of the just-expanded section. */
+.ros2-topics-panel > .ros2-topics-system-toggle {
+  margin-left: 2px;
+}
+
+.ros2-topics-toggle {
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ros2-topics-toggle:hover {
+  border-color: var(--accent);
+}
+
+.ros2-topics-system-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--fg-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.ros2-topics-system-toggle input {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.ros2-topics-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 220px;
+  overflow-y: auto;
+  font-family: ui-monospace, "SFMono-Regular", monospace;
+  font-size: 11px;
+}
+
+.ros2-topics-empty {
+  padding: 8px;
+  text-align: center;
+  color: var(--fg-muted);
+  font-style: italic;
+}
+
+.ros2-topics-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+
+.ros2-topics-row:hover {
+  background: rgb(255 255 255 / 4%);
+}
+
+.ros2-topics-name {
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ros2-topics-type {
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ros2-topics-action {
+  background: transparent;
+  color: var(--fg-muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 8px;
+  font-size: 11px;
+  cursor: not-allowed;
+}
+
+.ros2-topics-action:disabled {
+  opacity: 0.55;
 }

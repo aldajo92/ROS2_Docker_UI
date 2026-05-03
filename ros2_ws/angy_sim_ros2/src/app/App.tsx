@@ -3,6 +3,7 @@ import { SimulationProvider } from './SimulationProvider'
 import { CommunicationProvider } from './CommunicationProvider'
 import { useSimulation, useSimulationRunning } from './useSimulation'
 import { ConnectionStatusPanel } from '../ui/ConnectionStatusPanel'
+import { Ros2TopicsPanel } from '../ui/Ros2TopicsPanel'
 import { ControlPanel } from '../ui/ControlPanel'
 import { RendererPanel } from '../ui/RendererPanel'
 import { SimulationControlPanel } from '../ui/SimulationControlPanel'
@@ -682,6 +683,7 @@ function AppShell() {
             <h2 className="layout-title">Inspector</h2>
             <SimulationControlPanel />
             {!scenarioEditorExpanded && <ConnectionStatusPanel />}
+            {!scenarioEditorExpanded && <Ros2TopicsPanel />}
             {!scenarioEditorExpanded && (
               <ControlPanel
                 onScenarioLoaded={handleScenarioLoaded}
