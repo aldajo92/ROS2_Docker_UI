@@ -7,6 +7,10 @@ import {
   type TransportConnectionStatus,
 } from './CommunicationContext'
 import type { TopicDiscoveryState } from './TopicDiscovery'
+import type {
+  TopicEchoCapability,
+  TopicEchoSession,
+} from './TopicEcho'
 import {
   DEFAULT_TRANSPORT_CONFIG,
   readTransportConfig,
@@ -32,6 +36,7 @@ import { ROS_MESSAGE_TYPES } from '../infrastructure/communication/rosbridge/Ros
 import { RosTwistToVehicleCommandAdapter } from '../infrastructure/communication/rosbridge/adapters/RosTwistToVehicleCommandAdapter'
 import { SimClockToRosClockAdapter } from '../infrastructure/communication/rosbridge/adapters/SimClockToRosClockAdapter'
 import { RosbridgeTopicDiscovery } from '../infrastructure/communication/rosbridge/RosbridgeTopicDiscovery'
+import { RosbridgeTopicEcho } from '../infrastructure/communication/rosbridge/RosbridgeTopicEcho'
 
 /**
  * Composition root for external communication. Sits below
@@ -138,6 +143,14 @@ export function CommunicationProvider({
     TopicDiscoveryState | undefined
   >(undefined)
 
+  // Topic-echo capability state. Holds the current echo capability
+  // (with bound `sessions` snapshot + start/stop/close handlers) when
+  // available, undefined otherwise. Mirrors the discovery lifecycle:
+  // built once per rosbridge effect run, torn down on cleanup.
+  const [topicEchoState, setTopicEchoState] = useState<
+    TopicEchoCapability | undefined
+  >(undefined)
+
   useEffect(() => {
     if (config.kind === 'none') {
       // No transport to wire; the render-time `status` derivation
@@ -240,6 +253,53 @@ export function CommunicationProvider({
         cleanups.push(() => setTopicDiscoveryState(undefined))
       }
 
+      // ----- Topic-echo capability (rosbridge-only) ---------------------
+      //
+      // Built alongside discovery. The echo class owns one rosbridge
+      // subscription per active session and pushes a fresh snapshot
+      // through `onChange` whenever a session changes (start, stop,
+      // new message, error). We mirror that snapshot into React
+      // state so the inspector cards re-render. The capability is
+      // *seeded* with an empty-sessions handle on connect so the UI
+      // has a callable `startEcho` before any topic is selected.
+      let echoInstance: RosbridgeTopicEcho | null = null
+      if (transport instanceof RoslibRosbridgeTransport) {
+        const rosbridgeTransport = transport
+        // The echo class only needs the two methods it actually uses.
+        // Passing the transport directly would also work, but the
+        // narrow adapter keeps the dependency graph (and
+        // `RosbridgeTopicEcho.test.ts`) simple.
+        echoInstance = new RosbridgeTopicEcho(
+          {
+            setTopicType: (name, type) =>
+              rosbridgeTransport.setTopicType(name, type),
+            subscribe: (name, handler) =>
+              rosbridgeTransport.subscribe(name, handler),
+          },
+          (sessions: TopicEchoSession[]) => {
+            if (cancelled || !echoInstance) return
+            // Re-publish a fresh capability object on every change so
+            // memoised consumers (`useMemo([sessions])`) actually
+            // see the update. Handlers are bound on the instance and
+            // stay stable for the lifetime of the effect run.
+            setTopicEchoState({
+              sessions,
+              startEcho: echoInstance.startEcho.bind(echoInstance),
+              stopEcho: echoInstance.stopEcho.bind(echoInstance),
+              closeEcho: echoInstance.closeEcho.bind(echoInstance),
+            })
+          },
+        )
+
+        cleanups.push(() => {
+          // Drop subscriptions BEFORE clearing context so any final
+          // unsubscribe runs while the transport is still alive.
+          echoInstance?.closeAll()
+          echoInstance = null
+          setTopicEchoState(undefined)
+        })
+      }
+
       // ----- Inbound: /cmd_vel → VehicleCommandQueue ----------------
       const cmdAdapter = new RosTwistToVehicleCommandAdapter({ vehicleId })
       const cmdBridge = new VehicleCommandTopicBridge(
@@ -317,6 +377,21 @@ export function CommunicationProvider({
             })
             refresh()
           }
+          // Topic echo: seed an empty-sessions capability so the UI
+          // can call `startEcho` immediately. Subsequent state
+          // updates flow through the echo class's onChange callback.
+          if (
+            transport instanceof RoslibRosbridgeTransport &&
+            echoInstance
+          ) {
+            const e = echoInstance
+            setTopicEchoState({
+              sessions: e.sessions,
+              startEcho: e.startEcho.bind(e),
+              stopEcho: e.stopEcho.bind(e),
+              closeEcho: e.closeEcho.bind(e),
+            })
+          }
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err)
           console.error('[CommunicationProvider] connect failed:', err)
@@ -352,15 +427,24 @@ export function CommunicationProvider({
   }, [config, engine, commandQueue, vehicleId, clockPeriodSec])
 
   // Guard the context value so callers never see rosbridge-specific
-  // discovery state while the active transport is something else.
-  // (The cleanup clears the state, but render order vs. effect order
-  // can briefly expose stale data without this filter.)
+  // discovery / echo state while the active transport is something
+  // else. (The cleanup clears the state, but render order vs. effect
+  // order can briefly expose stale data without this filter.)
   const topicDiscovery =
     config.kind === 'rosbridge' ? topicDiscoveryState : undefined
+  const topicEcho =
+    config.kind === 'rosbridge' ? topicEchoState : undefined
 
   const value = useMemo<CommunicationContextValue>(
-    () => ({ config, status, errorMessage, setConfig, topicDiscovery }),
-    [config, status, errorMessage, setConfig, topicDiscovery],
+    () => ({
+      config,
+      status,
+      errorMessage,
+      setConfig,
+      topicDiscovery,
+      topicEcho,
+    }),
+    [config, status, errorMessage, setConfig, topicDiscovery, topicEcho],
   )
 
   return (

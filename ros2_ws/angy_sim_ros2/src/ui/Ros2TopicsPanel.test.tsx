@@ -3,7 +3,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { Ros2TopicsPanel } from './Ros2TopicsPanel'
+import {
+  Ros2TopicsPanel,
+  type Ros2TopicsPanelProps,
+} from './Ros2TopicsPanel'
 import { ConnectionStatusPanel } from './ConnectionStatusPanel'
 import {
   CommunicationContext,
@@ -20,6 +23,7 @@ import type {
   TopicDiscoveryStatus,
   TopicInfo,
 } from '../app/TopicDiscovery'
+import type { TopicEchoCapability } from '../app/TopicEcho'
 
 /* ----------------------------- harness ----------------------------- */
 
@@ -28,25 +32,32 @@ interface Harness {
   root: Root
 }
 
-function mountPanel(value: CommunicationContextValue): Harness {
+function mountPanel(
+  value: CommunicationContextValue,
+  panelProps: Ros2TopicsPanelProps = {},
+): Harness {
   const container = document.createElement('div')
   document.body.appendChild(container)
   const root = createRoot(container)
   act(() => {
     root.render(
       <CommunicationContext.Provider value={value}>
-        <Ros2TopicsPanel />
+        <Ros2TopicsPanel {...panelProps} />
       </CommunicationContext.Provider>,
     )
   })
   return { container, root }
 }
 
-function rerender(harness: Harness, value: CommunicationContextValue): void {
+function rerender(
+  harness: Harness,
+  value: CommunicationContextValue,
+  panelProps: Ros2TopicsPanelProps = {},
+): void {
   act(() => {
     harness.root.render(
       <CommunicationContext.Provider value={value}>
-        <Ros2TopicsPanel />
+        <Ros2TopicsPanel {...panelProps} />
       </CommunicationContext.Provider>,
     )
   })
@@ -77,6 +88,18 @@ function makeDiscovery(
     refresh: vi.fn(),
     ...overrides,
   } as TopicDiscoveryState
+}
+
+function makeEcho(
+  overrides: Partial<TopicEchoCapability> = {},
+): TopicEchoCapability {
+  return {
+    sessions: [],
+    startEcho: vi.fn(),
+    stopEcho: vi.fn(),
+    closeEcho: vi.fn(),
+    ...overrides,
+  }
 }
 
 function makeContext(
@@ -146,6 +169,20 @@ function getCountText(container: HTMLDivElement): string {
 function getErrorText(container: HTMLDivElement): string {
   return (
     container.querySelector('.ros2-topics-error')?.textContent?.trim() ?? ''
+  )
+}
+
+function getEchoButtons(container: HTMLDivElement): HTMLButtonElement[] {
+  return Array.from(
+    container.querySelectorAll<HTMLButtonElement>('.ros2-topics-action'),
+  )
+}
+
+function queryExpandButton(
+  container: HTMLDivElement,
+): HTMLButtonElement | null {
+  return container.querySelector<HTMLButtonElement>(
+    '[data-testid="ros2-topics-expand"]',
   )
 }
 
@@ -359,19 +396,15 @@ describe('Ros2TopicsPanel — list expansion', () => {
     expect(getToggleButton(harness.container).textContent).toBe('Show topics')
   })
 
-  it('renders an Echo button per row that is disabled with a tooltip', () => {
+  it('renders one Echo button per row', () => {
     harness = mountPanel(makeContext())
     act(() => {
       getToggleButton(harness!.container).click()
     })
-    const echoButtons = harness.container.querySelectorAll<HTMLButtonElement>(
-      '.ros2-topics-action',
-    )
+    const echoButtons = getEchoButtons(harness.container)
     expect(echoButtons.length).toBe(2)
-    for (const btn of Array.from(echoButtons)) {
+    for (const btn of echoButtons) {
       expect(btn.textContent).toBe('Echo')
-      expect(btn.disabled).toBe(true)
-      expect(btn.title).toBe('Topic echo coming next')
     }
   })
 
@@ -659,6 +692,169 @@ describe('Architecture: ConnectionStatusPanel does NOT render topic discovery UI
     expect(text).not.toContain('hide topics')
     expect(text).not.toContain('show system topics')
     expect(text).not.toContain('topics: ')
+  })
+})
+
+describe('Ros2TopicsPanel — maximize / restore', () => {
+  let harness: Harness | null = null
+  afterEach(() => {
+    unmount(harness)
+    harness = null
+  })
+
+  it('renders an expand button in the header that is enabled by default', () => {
+    harness = mountPanel(makeContext())
+    const btn = queryExpandButton(harness.container)
+    expect(btn).not.toBeNull()
+    expect(btn!.disabled).toBe(false)
+  })
+
+  it('reports `aria-pressed=false` while compact and `true` while expanded', () => {
+    const onExpandedChange = vi.fn()
+    harness = mountPanel(makeContext(), { onExpandedChange })
+    expect(queryExpandButton(harness.container)!.getAttribute('aria-pressed')).toBe(
+      'false',
+    )
+
+    rerender(harness, makeContext(), { expanded: true, onExpandedChange })
+    expect(queryExpandButton(harness.container)!.getAttribute('aria-pressed')).toBe(
+      'true',
+    )
+  })
+
+  it('calls onExpandedChange(!expanded) when the button is clicked', () => {
+    const onExpandedChange = vi.fn()
+    harness = mountPanel(makeContext(), { expanded: false, onExpandedChange })
+    act(() => {
+      queryExpandButton(harness!.container)!.click()
+    })
+    expect(onExpandedChange).toHaveBeenCalledWith(true)
+
+    rerender(harness, makeContext(), { expanded: true, onExpandedChange })
+    act(() => {
+      queryExpandButton(harness!.container)!.click()
+    })
+    expect(onExpandedChange).toHaveBeenLastCalledWith(false)
+  })
+
+  it('uses different glyphs for expand vs collapse', () => {
+    harness = mountPanel(makeContext(), { expanded: false })
+    const compactGlyph = queryExpandButton(harness.container)!.textContent
+    rerender(harness, makeContext(), { expanded: true })
+    const expandedGlyph = queryExpandButton(harness.container)!.textContent
+    expect(compactGlyph).not.toBe(expandedGlyph)
+    // Sanity: both are non-empty.
+    expect((compactGlyph ?? '').trim().length).toBeGreaterThan(0)
+    expect((expandedGlyph ?? '').trim().length).toBeGreaterThan(0)
+  })
+
+  it('adds the --expanded class to the section when expanded', () => {
+    harness = mountPanel(makeContext(), { expanded: true })
+    const section = queryPanel(harness.container)
+    expect(section?.className).toContain('ros2-topics-panel--expanded')
+  })
+
+  it('does NOT add the --expanded class while compact', () => {
+    harness = mountPanel(makeContext(), { expanded: false })
+    const section = queryPanel(harness.container)
+    expect(section?.className).not.toContain('ros2-topics-panel--expanded')
+  })
+})
+
+describe('Ros2TopicsPanel — Echo gating', () => {
+  let harness: Harness | null = null
+  afterEach(() => {
+    unmount(harness)
+    harness = null
+  })
+
+  it('disables every Echo button when the card is compact', () => {
+    harness = mountPanel(
+      makeContext({ topicEcho: makeEcho() }),
+      { expanded: false },
+    )
+    act(() => {
+      getToggleButton(harness!.container).click()
+    })
+    const buttons = getEchoButtons(harness.container)
+    expect(buttons.length).toBeGreaterThan(0)
+    for (const btn of buttons) {
+      expect(btn.disabled).toBe(true)
+      expect(btn.title).toBe('Maximize ROS2 Topics to echo topics.')
+    }
+  })
+
+  it('enables every Echo button when the card is expanded AND echo capability is present', () => {
+    harness = mountPanel(
+      makeContext({ topicEcho: makeEcho() }),
+      { expanded: true },
+    )
+    act(() => {
+      getToggleButton(harness!.container).click()
+    })
+    const buttons = getEchoButtons(harness.container)
+    expect(buttons.length).toBeGreaterThan(0)
+    for (const btn of buttons) {
+      expect(btn.disabled).toBe(false)
+    }
+  })
+
+  it('keeps Echo buttons disabled when expanded but echo capability is missing (defensive)', () => {
+    harness = mountPanel(
+      makeContext({ topicEcho: undefined }),
+      { expanded: true },
+    )
+    act(() => {
+      getToggleButton(harness!.container).click()
+    })
+    const buttons = getEchoButtons(harness.container)
+    for (const btn of buttons) {
+      expect(btn.disabled).toBe(true)
+      expect(btn.title).toBe('Echo capability is unavailable.')
+    }
+  })
+
+  it('clicking Echo on the expanded card calls topicEcho.startEcho with the row TopicInfo', () => {
+    const startEcho = vi.fn()
+    harness = mountPanel(
+      makeContext({
+        topicEcho: makeEcho({ startEcho }),
+      }),
+      { expanded: true },
+    )
+    act(() => {
+      getToggleButton(harness!.container).click()
+    })
+    const buttons = getEchoButtons(harness.container)
+    act(() => {
+      buttons[0].click()
+    })
+    expect(startEcho).toHaveBeenCalledTimes(1)
+    expect(startEcho).toHaveBeenCalledWith({
+      name: '/demo/counter',
+      type: 'std_msgs/msg/Int32',
+    })
+  })
+
+  it('clicking Echo on the compact card is a no-op even with capability available', () => {
+    const startEcho = vi.fn()
+    harness = mountPanel(
+      makeContext({
+        topicEcho: makeEcho({ startEcho }),
+      }),
+      { expanded: false },
+    )
+    act(() => {
+      getToggleButton(harness!.container).click()
+    })
+    const buttons = getEchoButtons(harness.container)
+    // The button is disabled in compact mode; clicking a disabled
+    // button still fires the synthetic click event in test environments,
+    // but the handler short-circuits on the gate. So either way no call.
+    act(() => {
+      buttons[0].click()
+    })
+    expect(startEcho).not.toHaveBeenCalled()
   })
 })
 

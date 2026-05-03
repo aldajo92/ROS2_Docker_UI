@@ -4,6 +4,8 @@ import { CommunicationProvider } from './CommunicationProvider'
 import { useSimulation, useSimulationRunning } from './useSimulation'
 import { ConnectionStatusPanel } from '../ui/ConnectionStatusPanel'
 import { Ros2TopicsPanel } from '../ui/Ros2TopicsPanel'
+import { EchoCard } from '../ui/EchoCard'
+import { useTopicEcho } from './useTopicEcho'
 import { ControlPanel } from '../ui/ControlPanel'
 import { RendererPanel } from '../ui/RendererPanel'
 import { SimulationControlPanel } from '../ui/SimulationControlPanel'
@@ -541,6 +543,29 @@ function AppShell() {
   // stay in sync.
   const [scenarioEditorExpanded, setScenarioEditorExpanded] = useState(false)
 
+  // ROS2 Topics card has its own "fullscreen-in-the-inspector" mode
+  // (mutually exclusive with the scenario editor's expanded mode).
+  // While expanded, sibling cards collapse so the topic list and the
+  // resulting echo cards have room to grow, and Echo actions become
+  // enabled inside the panel.
+  const [ros2TopicsExpanded, setRos2TopicsExpanded] = useState(false)
+  // If both expansion flags ever flipped true together, the inspector
+  // would be unable to render either card meaningfully. Guarding via
+  // the setters keeps the invariant that at most one card is expanded
+  // at a time without burying it in the JSX.
+  const handleScenarioEditorExpandedChange = useCallback((next: boolean) => {
+    setScenarioEditorExpanded(next)
+    if (next) setRos2TopicsExpanded(false)
+  }, [])
+  const handleRos2TopicsExpandedChange = useCallback((next: boolean) => {
+    setRos2TopicsExpanded(next)
+    if (next) setScenarioEditorExpanded(false)
+  }, [])
+
+  const echo = useTopicEcho()
+  const echoSessions = echo?.sessions ?? []
+  const isTransportConnected = echo !== undefined
+
   const handleScenarioLoaded = useCallback(
     (spec: ScenarioSpec) => {
       lastInteractionRef.current = spec.interaction
@@ -682,9 +707,49 @@ function AppShell() {
           <aside className="layout-right" aria-label="Inspector">
             <h2 className="layout-title">Inspector</h2>
             <SimulationControlPanel />
-            {!scenarioEditorExpanded && <ConnectionStatusPanel />}
-            {!scenarioEditorExpanded && <Ros2TopicsPanel />}
+            {!scenarioEditorExpanded && !ros2TopicsExpanded && (
+              <ConnectionStatusPanel />
+            )}
+            {/*
+              ROS2 Topics is always part of the inspector while
+              rosbridge is connected. The card itself short-circuits
+              when the transport isn't a connected rosbridge, so this
+              JSX is safe to render unconditionally for the
+              connection-state matrix. We still hide it when the
+              scenario editor takes over the inspector, by symmetry
+              with the existing rule.
+            */}
             {!scenarioEditorExpanded && (
+              <Ros2TopicsPanel
+                expanded={ros2TopicsExpanded}
+                onExpandedChange={handleRos2TopicsExpandedChange}
+              />
+            )}
+            {/*
+              Live echo cards. One per active session in the topicEcho
+              capability. Rendered while connected and not in either
+              expanded mode that hides siblings — except when ROS2
+              Topics itself is expanded, in which case echo cards are
+              the whole point of being expanded and stay visible.
+            */}
+            {!scenarioEditorExpanded &&
+              isTransportConnected &&
+              echoSessions.map((session) => (
+                <EchoCard
+                  key={session.topicName}
+                  session={session}
+                  canResume={isTransportConnected}
+                  onStop={(name) => echo?.stopEcho(name)}
+                  onResume={(name) =>
+                    echo?.startEcho({
+                      name,
+                      type: session.topicType,
+                    })
+                  }
+                  onClose={(name) => echo?.closeEcho(name)}
+                />
+              ))}
+            {!scenarioEditorExpanded && !ros2TopicsExpanded && (
               <ControlPanel
                 onScenarioLoaded={handleScenarioLoaded}
                 recordWhileRunning={recordWhileRunning}
@@ -694,20 +759,22 @@ function AppShell() {
                 saveRecordingDisabledReason={saveRecordingDisabledReason}
               />
             )}
-            <ScenarioEditorPanel
-              scenarioText={currentScenarioText}
-              onScenarioTextChange={handleScenarioTextChange}
-              onApplyScenario={handleApplyScenario}
-              onDownloadScenario={handleDownloadScenario}
-              disabledReason={
-                isReplayMode
-                  ? 'Editing the scenario is disabled while replay mode is active.'
-                  : undefined
-              }
-              errorMessage={scenarioEditorError}
-              expanded={scenarioEditorExpanded}
-              onExpandedChange={setScenarioEditorExpanded}
-            />
+            {!ros2TopicsExpanded && (
+              <ScenarioEditorPanel
+                scenarioText={currentScenarioText}
+                onScenarioTextChange={handleScenarioTextChange}
+                onApplyScenario={handleApplyScenario}
+                onDownloadScenario={handleDownloadScenario}
+                disabledReason={
+                  isReplayMode
+                    ? 'Editing the scenario is disabled while replay mode is active.'
+                    : undefined
+                }
+                errorMessage={scenarioEditorError}
+                expanded={scenarioEditorExpanded}
+                onExpandedChange={handleScenarioEditorExpandedChange}
+              />
+            )}
             {/*
               In expanded mode the editor swallows the whole inspector
               column under Simulation Time, so we hide every other
@@ -716,8 +783,12 @@ function AppShell() {
               (`flex: 1 1 auto; min-height: 0` shrinks it to zero when
               the parent overflows). Collapsing the editor restores the
               full inspector layout via React unmount/remount.
+
+              The same rule applies when ROS2 Topics is expanded: only
+              the topics card and any echo cards stay rendered, all
+              other inspector panels collapse so the list has room.
             */}
-            {!scenarioEditorExpanded && (
+            {!scenarioEditorExpanded && !ros2TopicsExpanded && (
               <>
                 <RendererPanel
                   rendererType={rendererType}

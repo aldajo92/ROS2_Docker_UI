@@ -1,6 +1,7 @@
 import { createContext } from 'react'
 import type { TransportConfig } from './TransportConfig'
 import type { TopicDiscoveryState } from './TopicDiscovery'
+import type { TopicEchoCapability } from './TopicEcho'
 
 /**
  * Connection status surfaced to the UI. The values mirror
@@ -42,6 +43,14 @@ export interface CommunicationContextValue {
    * whether it's rosbridge / DDS / MQTT under the hood.
    */
   topicDiscovery?: TopicDiscoveryState
+  /**
+   * Optional live topic-echo capability. Present only when the active
+   * transport supports it (today: rosbridge while connected). UI must
+   * gate rendering on `kind === 'rosbridge'` AND
+   * `status === 'connected'` before exposing echo controls — the
+   * provider clears this field on disconnect / transport change.
+   */
+  topicEcho?: TopicEchoCapability
 }
 
 /**

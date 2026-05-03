@@ -398,6 +398,54 @@ export class RoslibRosbridgeTransport implements Transport {
     })
   }
 
+  /**
+   * Register (or override) the ROS message type for a topic at
+   * runtime.
+   *
+   * The constructor `topicTypes` map is fine for static topics the
+   * shell knows about ahead of time (`/cmd_vel`, `/clock`). Inspector
+   * features that work with arbitrary topics — e.g. live "echo any
+   * topic" — discover the type at runtime and need a way to feed it
+   * back so the next `subscribe()` call has the metadata roslib
+   * needs.
+   *
+   * Behavior:
+   *   - First registration is always accepted.
+   *   - Re-registering with the same type is a no-op.
+   *   - Re-registering with a *different* type is rejected when the
+   *     topic already has a live publisher / subscriber bound (roslib
+   *     locks `messageType` per `Topic`); a warning is logged via the
+   *     transport's logger.
+   *
+   * NOT part of the generic `Transport` contract — other transports
+   * (DDS, MQTT, native WebSocket) don't necessarily need a string
+   * type tag, so this stays on the rosbridge-specific surface.
+   */
+  setTopicType(topic: TopicName, messageType: string): void {
+    if (typeof topic !== 'string' || topic.length === 0) {
+      throw new Error('RoslibRosbridgeTransport.setTopicType: topic is required')
+    }
+    if (typeof messageType !== 'string' || messageType.length === 0) {
+      throw new Error(
+        `RoslibRosbridgeTransport.setTopicType("${topic}"): messageType is required`,
+      )
+    }
+    const existing = this.topicTypes[topic]
+    if (existing === messageType) return
+    if (existing && existing !== messageType) {
+      const inUse =
+        this.publishers.has(topic) || this.subscriptions.has(topic)
+      if (inUse) {
+        this.logger?.warn(
+          `[RoslibRosbridgeTransport] refusing to change messageType for "${topic}" ` +
+            `from "${existing}" to "${messageType}" while a publisher/subscriber is live.`,
+        )
+        return
+      }
+    }
+    this.topicTypes[topic] = messageType
+  }
+
   /** Current connection status. Cheap synchronous read. */
   getStatus(): RosbridgeStatus {
     return this.status

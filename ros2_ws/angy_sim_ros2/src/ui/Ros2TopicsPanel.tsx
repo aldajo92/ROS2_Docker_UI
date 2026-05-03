@@ -1,23 +1,53 @@
 import { useMemo, useState } from 'react'
 import { useTransportStatus } from '../app/useTransportStatus'
 import { useTopicDiscovery } from '../app/useTopicDiscovery'
+import { useTopicEcho } from '../app/useTopicEcho'
 import { isSystemTopic, type TopicInfo } from '../app/TopicDiscovery'
 
 /**
  * Inspector card that surfaces the active transport's topic-discovery
- * capability. Today this only renders for a connected rosbridge; the
- * UI is kept generic on purpose so adding DDS / MQTT / native discovery
- * later is a one-file change in `CommunicationProvider` and nothing
- * here has to move.
+ * capability and (when maximized) live topic-echo controls. Today
+ * this only renders for a connected rosbridge; the UI is kept generic
+ * on purpose so adding DDS / MQTT / native discovery later is a
+ * one-file change in `CommunicationProvider` and nothing here has to
+ * move.
+ *
+ * Layout modes:
+ *   - **Compact**: count + refresh + last-updated + collapsible list.
+ *     Echo buttons are present but disabled (the card is too narrow
+ *     for the usual JSON pretty-print, and dynamic subscriptions
+ *     deserve more vertical real estate).
+ *   - **Maximized**: same controls, but Echo buttons are enabled.
+ *     The parent (App.tsx) usually hides sibling cards in this mode
+ *     so the topic list and the resulting echo cards can grow.
  *
  * Architectural rule: this file does NOT import `roslib` and never
- * speaks rosapi-specific JSON. It consumes the
- * `topicDiscovery` capability exposed by `CommunicationContext` and
+ * speaks rosapi-specific JSON. It consumes `topicDiscovery` and
+ * `topicEcho` capabilities exposed by `CommunicationContext` and
  * renders generic `TopicInfo` rows.
  */
-export function Ros2TopicsPanel() {
+
+export interface Ros2TopicsPanelProps {
+  /**
+   * `true` when the panel is maximized to fill the inspector. Echo
+   * actions become enabled in this mode. App.tsx owns the state so
+   * sibling cards can be hidden in sync.
+   */
+  expanded?: boolean
+  /** Notified when the user clicks the maximize / restore button. */
+  onExpandedChange?: (expanded: boolean) => void
+}
+
+const ECHO_DISABLED_TOOLTIP_COMPACT = 'Maximize ROS2 Topics to echo topics.'
+const ECHO_DISABLED_TOOLTIP_NO_ECHO = 'Echo capability is unavailable.'
+
+export function Ros2TopicsPanel({
+  expanded = false,
+  onExpandedChange,
+}: Readonly<Ros2TopicsPanelProps> = {}) {
   const { config, status } = useTransportStatus()
   const discovery = useTopicDiscovery()
+  const echo = useTopicEcho()
 
   // Strict gate: only rosbridge + connected. The provider also clears
   // the capability when those conditions don't hold, but defending
@@ -29,7 +59,7 @@ export function Ros2TopicsPanel() {
   // Hooks must be called unconditionally — declare local UI state
   // BEFORE the early return so the hook order stays stable across
   // renders.
-  const [expanded, setExpanded] = useState(false)
+  const [listOpen, setListOpen] = useState(false)
   const [showSystemTopics, setShowSystemTopics] = useState(false)
 
   const visibleTopics = useMemo<TopicInfo[]>(() => {
@@ -56,9 +86,45 @@ export function Ros2TopicsPanel() {
 
   const refreshLabel = isLoading ? 'Refreshing…' : 'Refresh topics'
 
+  // Echo gating:
+  //   - the capability must exist (rosbridge connected),
+  //   - the panel must be maximized.
+  // Both have to be true; in compact mode we keep the button visible
+  // but disabled so the affordance is discoverable, with a tooltip
+  // pointing the user at the maximize control.
+  const echoEnabled = expanded && echo !== undefined
+  const echoDisabledTitle = !expanded
+    ? ECHO_DISABLED_TOOLTIP_COMPACT
+    : ECHO_DISABLED_TOOLTIP_NO_ECHO
+  const handleEchoClick = (topic: TopicInfo) => {
+    if (!echoEnabled || !echo) return
+    echo.startEcho(topic)
+  }
+
+  const expandLabel = expanded
+    ? 'Collapse ROS2 Topics'
+    : 'Expand ROS2 Topics'
+
+  const sectionClassName = expanded
+    ? 'panel ros2-topics-panel ros2-topics-panel--expanded'
+    : 'panel ros2-topics-panel'
+
   return (
-    <section className="panel ros2-topics-panel" aria-label="ROS2 Topics">
-      <h2>ROS2 Topics</h2>
+    <section className={sectionClassName} aria-label="ROS2 Topics">
+      <div className="ros2-topics-header">
+        <h2>ROS2 Topics</h2>
+        <button
+          type="button"
+          className="ros2-topics-expand-button"
+          onClick={() => onExpandedChange?.(!expanded)}
+          aria-pressed={expanded}
+          aria-label={expandLabel}
+          title={expandLabel}
+          data-testid="ros2-topics-expand"
+        >
+          <span aria-hidden="true">{expanded ? '\u2921' : '\u2922'}</span>
+        </button>
+      </div>
 
       <div className="ros2-topics-summary">
         <span className="ros2-topics-count">
@@ -90,11 +156,11 @@ export function Ros2TopicsPanel() {
         <button
           type="button"
           className="ros2-topics-toggle"
-          onClick={() => setExpanded((v) => !v)}
-          aria-expanded={expanded}
+          onClick={() => setListOpen((v) => !v)}
+          aria-expanded={listOpen}
           aria-controls="ros2-topics-list"
         >
-          {expanded ? 'Hide topics' : 'Show topics'}
+          {listOpen ? 'Hide topics' : 'Show topics'}
         </button>
       </div>
 
@@ -104,7 +170,7 @@ export function Ros2TopicsPanel() {
         Hiding it while collapsed keeps the summary compact and avoids
         a control whose effect isn't visible.
       */}
-      {expanded && (
+      {listOpen && (
         <label className="ros2-topics-system-toggle">
           <input
             type="checkbox"
@@ -115,7 +181,7 @@ export function Ros2TopicsPanel() {
         </label>
       )}
 
-      {expanded && (
+      {listOpen && (
         <ul id="ros2-topics-list" className="ros2-topics-list">
           {visibleTopics.length === 0 && (
             <li className="ros2-topics-empty">
@@ -135,8 +201,11 @@ export function Ros2TopicsPanel() {
               <button
                 type="button"
                 className="ros2-topics-action"
-                disabled
-                title="Topic echo coming next"
+                disabled={!echoEnabled}
+                title={
+                  echoEnabled ? `Echo ${topic.name}` : echoDisabledTitle
+                }
+                onClick={() => handleEchoClick(topic)}
               >
                 Echo
               </button>

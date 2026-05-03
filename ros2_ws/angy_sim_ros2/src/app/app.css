@@ -1350,6 +1350,55 @@ body.layout-splitter-dragging {
   gap: 8px;
 }
 
+.ros2-topics-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ros2-topics-header h2 {
+  margin: 0;
+}
+
+.ros2-topics-expand-button {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-panel-2);
+  color: var(--fg-muted);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 120ms, color 120ms, border-color 120ms;
+}
+
+.ros2-topics-expand-button:hover,
+.ros2-topics-expand-button:focus-visible {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+  outline: none;
+}
+
+/* Expanded mode: the panel itself sizes to its content (just like
+   the compact card), so a small graph with 3 topics doesn't render a
+   400px-tall whitespace. The mode flag is still meaningful: it
+   enables Echo actions, hides sibling inspector panels, and gives
+   the topic list a slightly more generous max-height so longer
+   graphs use more vertical space before they need internal scroll.
+   We deliberately do NOT use `flex: 1 1 auto` here — that was the
+   bug that made the list stretch to fill the inspector. */
+.ros2-topics-panel--expanded .ros2-topics-list {
+  max-height: 50vh;
+}
+
 .ros2-topics-summary {
   display: flex;
   align-items: center;
@@ -1501,9 +1550,191 @@ body.layout-splitter-dragging {
   border-radius: 4px;
   padding: 1px 8px;
   font-size: 11px;
-  cursor: not-allowed;
+  cursor: pointer;
+}
+
+.ros2-topics-action:not(:disabled):hover {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
 }
 
 .ros2-topics-action:disabled {
   opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ----- Echo card ------------------------------------------------------ *
+ * One per active topic-echo session. Lives in the inspector sidebar
+ * alongside the ROS2 Topics panel. Header carries title + Stop /
+ * Resume / Close buttons; body shows topic metadata and the latest
+ * payload as pretty-printed JSON.
+ */
+
+.echo-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.echo-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.echo-card-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg);
+  font-family: ui-monospace, "SFMono-Regular", monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Stop / Resume live on their own row directly under the header
+   (the close icon stays in the header next to the title). Keep the
+   row a thin flex container so future actions can stack
+   horizontally without revisiting the layout. */
+.echo-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.echo-card-actions button {
+  background: var(--bg-panel-2);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.echo-card-actions button:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+
+.echo-card-actions button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Close icon button — self-contained (no longer inside
+   `.echo-card-actions`). Same 26×26 square pattern as the
+   Ros2TopicsPanel / ScenarioEditorPanel expand buttons so the
+   inspector chrome stays consistent. The visible × is decorative;
+   aria-label carries the accessible name. */
+.echo-card-close {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-panel-2);
+  color: var(--fg-muted);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 120ms, color 120ms, border-color 120ms;
+}
+
+.echo-card-close:hover,
+.echo-card-close:focus-visible {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+  outline: none;
+}
+
+.echo-card-meta {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 10px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.echo-card-meta dt {
+  color: var(--fg-muted);
+}
+
+.echo-card-meta dd {
+  margin: 0;
+  color: var(--fg);
+  font-family: ui-monospace, "SFMono-Regular", monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.echo-card-meta dd code {
+  background: var(--bg-panel-2);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+.echo-card-status {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.echo-card-status-listening {
+  color: #34d399;
+}
+
+.echo-card-status-stopped {
+  color: var(--fg-muted);
+}
+
+.echo-card-status-error {
+  color: var(--danger);
+}
+
+.echo-card-error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--danger);
+  word-break: break-word;
+}
+
+.echo-card-message {
+  margin: 0;
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-family: ui-monospace, "SFMono-Regular", monospace;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--fg);
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.echo-card-waiting {
+  margin: 0;
+  background: var(--bg-panel-2);
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  padding: 12px 10px;
+  text-align: center;
+  font-style: italic;
+  color: var(--fg-muted);
+  font-size: 12px;
 }
