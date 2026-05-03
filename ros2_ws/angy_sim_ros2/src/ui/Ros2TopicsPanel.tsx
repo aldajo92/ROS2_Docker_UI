@@ -325,6 +325,28 @@ export function Ros2TopicsPanel({
                         />
                       </div>
                     </div>
+                    <div className="ros2-topics-settings-row">
+                      <label>Thickness:</label>
+                      <div className="ros2-topics-thickness-group">
+                        <input
+                          type="number"
+                          className="ros2-topics-thickness-input"
+                          min={0.5}
+                          max={10}
+                          step={0.5}
+                          value={visualConfig.thickness}
+                          onChange={(e) => {
+                            const raw = Number(e.target.value)
+                            if (!Number.isFinite(raw)) return
+                            const clamped = Math.min(10, Math.max(0.5, raw))
+                            renderable?.setVisualConfig?.(topic.name, {
+                              thickness: clamped,
+                            })
+                          }}
+                          aria-label={`Path thickness for ${topic.name}`}
+                        />
+                      </div>
+                    </div>
                   </div>
                 )}
               </li>

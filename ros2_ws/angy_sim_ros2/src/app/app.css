@@ -1613,8 +1613,9 @@ body.layout-splitter-dragging {
 .ros2-topics-settings {
   grid-column: 1 / -1;
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
   padding: 2px 6px 2px 24px;
 }
 
@@ -1674,6 +1675,30 @@ body.layout-splitter-dragging {
 .ros2-topics-color-hex--invalid:focus {
   outline-color: var(--danger);
   border-color: var(--danger);
+}
+
+.ros2-topics-thickness-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ros2-topics-thickness-input {
+  width: 56px;
+  padding: 1px 4px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg-panel-2);
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color-scheme: dark;
+}
+
+.ros2-topics-thickness-input:focus {
+  outline: 1px solid var(--accent);
+  border-color: var(--accent);
 }
 
 
