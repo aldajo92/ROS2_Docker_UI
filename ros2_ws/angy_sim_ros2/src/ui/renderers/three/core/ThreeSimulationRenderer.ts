@@ -1,4 +1,10 @@
 import * as THREE from 'three'
+import {
+  derror,
+  isRenderDebugEnabled,
+  readMemoryMB,
+  throttledLog,
+} from '../../../../debug/RenderDebug'
 import type { SimulationRenderer } from '../../../../simulation/render/SimulationRenderer'
 import type { SimulationState } from '../../../../simulation/core/SimulationState'
 import type { ThreeSceneContext } from './ThreeSceneContext'
@@ -123,16 +129,76 @@ export class ThreeSimulationRenderer implements SimulationRenderer {
     if (!this.context) return
     this.lastState = state
 
-    this.pathRenderer?.sync(state)
-    this.trajectoryRenderer?.sync(state)
-    this.vehicleRenderer?.sync(state)
-    this.staticObstacleRenderer?.sync(state)
-    this.dynamicActorRenderer?.sync(state)
-    this.debugLayer?.sync(state)
+    // Per-step instrumentation. Wrapped so a throw from any single
+    // sub-renderer (geometry, debug layer, camera controller, GL
+    // submit) cannot kill the engine event-bus iteration — that would
+    // also stop *Phaser* from rendering, since both viewports are
+    // listeners on the same `tick` channel.
+    const debug = isRenderDebugEnabled()
+    const t0 = debug ? perfNow() : 0
 
-    this.cameraControllerManager?.update(state)
+    let pathErr: unknown = undefined
+    try {
+      this.pathRenderer?.sync(state)
+    } catch (err) {
+      pathErr = err
+      derror('ThreeRenderer', 'pathRenderer.sync threw:', err)
+    }
+    const tPath = debug ? perfNow() : 0
 
-    this.context.renderer.render(this.context.scene, this.context.camera)
+    try {
+      this.trajectoryRenderer?.sync(state)
+    } catch (err) {
+      derror('ThreeRenderer', 'trajectoryRenderer.sync threw:', err)
+    }
+    const tTraj = debug ? perfNow() : 0
+
+    try {
+      this.vehicleRenderer?.sync(state)
+      this.staticObstacleRenderer?.sync(state)
+      this.dynamicActorRenderer?.sync(state)
+      this.debugLayer?.sync(state)
+    } catch (err) {
+      derror('ThreeRenderer', 'entity sync threw:', err)
+    }
+    const tEntities = debug ? perfNow() : 0
+
+    try {
+      this.cameraControllerManager?.update(state)
+    } catch (err) {
+      derror('ThreeRenderer', 'camera update threw:', err)
+    }
+    const tCamera = debug ? perfNow() : 0
+
+    try {
+      this.context.renderer.render(this.context.scene, this.context.camera)
+    } catch (err) {
+      derror('ThreeRenderer', 'WebGL render threw:', err)
+    }
+    const tGL = debug ? perfNow() : 0
+
+    if (debug) {
+      throttledLog('ThreeRenderer', 'render:summary', () => {
+        const sceneObjectCount = countSceneObjects(this.context!.scene)
+        const info = this.context!.renderer.info
+        const mem = readMemoryMB()
+        return [
+          `pathMs=${(tPath - t0).toFixed(2)}`,
+          `trajMs=${(tTraj - tPath).toFixed(2)}`,
+          `entitiesMs=${(tEntities - tTraj).toFixed(2)}`,
+          `cameraMs=${(tCamera - tEntities).toFixed(2)}`,
+          `glMs=${(tGL - tCamera).toFixed(2)}`,
+          `totalMs=${(tGL - t0).toFixed(2)}`,
+          `sceneObjects=${sceneObjectCount}`,
+          `glCalls=${info.render.calls}`,
+          `glTriangles=${info.render.triangles}`,
+          `glGeometries=${info.memory.geometries}`,
+          `glTextures=${info.memory.textures}`,
+          mem ? `memMB=${mem.usedMB.toFixed(1)}/${mem.limitMB.toFixed(0)}` : 'memMB=n/a',
+          pathErr ? `pathErr=1` : 'pathErr=0',
+        ]
+      })
+    }
   }
 
   resize(): void {
@@ -333,4 +399,24 @@ export class ThreeSimulationRenderer implements SimulationRenderer {
     directional.position.set(8, 12, 8)
     scene.add(directional)
   }
+}
+
+function perfNow(): number {
+  const perf = (
+    globalThis as unknown as { performance?: { now?: () => number } }
+  ).performance
+  return perf?.now?.() ?? Date.now()
+}
+
+/**
+ * Recursively counts every `THREE.Object3D` descendant of `root`,
+ * including the root itself. Used as a coarse "is the scene
+ * accumulating objects?" signal in the throttled debug summary.
+ */
+function countSceneObjects(root: THREE.Object3D): number {
+  let count = 0
+  root.traverse(() => {
+    count += 1
+  })
+  return count
 }

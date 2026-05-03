@@ -26,6 +26,19 @@ export interface RendererSettingsPanelProps {
    *  buffer attribute / material; Phaser: Graphics objects / drawn
    *  point count / screen positions). */
   onExportActiveRendererDebug?: () => void
+  /**
+   * Render-pipeline debug logging (RosbridgeRenderableTopics ->
+   * ExternalPathRenderSystem -> Three.js renderer). Independent of the
+   * trajectory tracker above. When enabled, structured logs are
+   * captured into an in-memory ring buffer; Export produces a JSON
+   * download similar to the trajectory debug exporter.
+   */
+  renderDebugEnabled: boolean
+  onRenderDebugEnabledChange: (enabled: boolean) => void
+  onExportRenderDebug: () => void
+  onClearRenderDebug: () => void
+  /** Live entry count of the render-debug ring buffer (for the hint). */
+  renderDebugEntryCount: number
 }
 
 /**
@@ -44,6 +57,11 @@ export function RendererSettingsPanel({
   onClearTrajectoryDebug,
   activeRendererType,
   onExportActiveRendererDebug,
+  renderDebugEnabled,
+  onRenderDebugEnabledChange,
+  onExportRenderDebug,
+  onClearRenderDebug,
+  renderDebugEntryCount,
 }: Readonly<RendererSettingsPanelProps>) {
   const patchTracking = (partial: Partial<TrajectoryTrackingConfig>) => {
     onTrajectoryTrackingChange({ ...trajectoryTrackingConfig, ...partial })
@@ -63,24 +81,24 @@ export function RendererSettingsPanel({
       key: K,
       sanitize: (n: number) => number,
     ) =>
-      (event: ChangeEvent<HTMLInputElement>) => {
-        const raw = event.target.value
-        const parsed = raw === '' ? Number.NaN : Number(raw)
-        if (!Number.isFinite(parsed)) return
-        patchTracking({ [key]: sanitize(parsed) } as Partial<TrajectoryTrackingConfig>)
-      }
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const raw = event.target.value
+      const parsed = raw === '' ? Number.NaN : Number(raw)
+      if (!Number.isFinite(parsed)) return
+      patchTracking({ [key]: sanitize(parsed) } as Partial<TrajectoryTrackingConfig>)
+    }
 
   const onNumberViz =
     <K extends keyof ThreeTrajectoryVisualizationConfig>(
       key: K,
       sanitize: (n: number) => number,
     ) =>
-      (event: ChangeEvent<HTMLInputElement>) => {
-        const raw = event.target.value
-        const parsed = raw === '' ? Number.NaN : Number(raw)
-        if (!Number.isFinite(parsed)) return
-        patchViz({ [key]: sanitize(parsed) } as Partial<ThreeTrajectoryVisualizationConfig>)
-      }
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const raw = event.target.value
+      const parsed = raw === '' ? Number.NaN : Number(raw)
+      if (!Number.isFinite(parsed)) return
+      patchViz({ [key]: sanitize(parsed) } as Partial<ThreeTrajectoryVisualizationConfig>)
+    }
 
   const trackTimeWindow =
     trajectoryTrackingConfig.defaultSamplingMode === 'timeWindow'
@@ -297,6 +315,49 @@ export function RendererSettingsPanel({
             </div>
           </>
         )}
+      </section>
+
+      <section className="panel renderer-settings">
+        <h2>Render pipeline debug logging</h2>
+        <p className="renderer-settings-hint">
+          Captures structured logs from the rosbridge → simulation → Three.js
+          path under tags <code>[TopicData]</code>, <code>[Tick]</code>,{' '}
+          <code>[ThreeRenderer]</code>, <code>[ThreePath]</code>. Used to
+          diagnose freezes / stalls when dynamic paths are published at high
+          rates. Lines also print to the browser console while enabled.
+        </p>
+        <div className="renderer-settings-grid">
+          <label className="renderer-settings-row renderer-settings-row--checkbox">
+            <input
+              type="checkbox"
+              checked={renderDebugEnabled}
+              onChange={(e) => onRenderDebugEnabledChange(e.target.checked)}
+              data-testid="render-debug-enabled"
+            />
+            <span>Enable render pipeline logs</span>
+          </label>
+        </div>
+        <p className="renderer-settings-hint">
+          Buffered entries: <strong>{renderDebugEntryCount}</strong>
+        </p>
+        <div className="renderer-settings-actions">
+          <button
+            type="button"
+            onClick={onExportRenderDebug}
+            data-testid="render-debug-export"
+            disabled={renderDebugEntryCount === 0}
+          >
+            Export render debug log
+          </button>
+          <button
+            type="button"
+            onClick={onClearRenderDebug}
+            data-testid="render-debug-clear"
+            disabled={renderDebugEntryCount === 0}
+          >
+            Clear debug log
+          </button>
+        </div>
       </section>
     </>
   )

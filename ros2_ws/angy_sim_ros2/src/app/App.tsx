@@ -23,6 +23,13 @@ import {
 } from '../ui/renderers/debug/DebugOverlayConfig'
 import { ScenarioEditorPanel } from '../ui/scenario/ScenarioEditorPanel'
 import {
+  clearRenderDebugLog,
+  downloadRenderDebugLog,
+  getRenderDebugLog,
+  isRenderDebugEnabled,
+  setRenderDebugEnabled,
+} from '../debug/RenderDebug'
+import {
   downloadScenarioJsonText,
   formatScenarioJson,
 } from '../ui/scenario/ScenarioJsonUtils'
@@ -182,6 +189,45 @@ function AppShell() {
   const handleClearTrajectoryDebug = useCallback(() => {
     controller.clearTrajectoryDebugRecords()
   }, [controller])
+
+  // Render-pipeline debug logging — independent of the trajectory
+  // tracker above. Wires the inspector toggle / Export / Clear buttons
+  // to the in-memory ring buffer maintained by `src/debug/RenderDebug.ts`.
+  // We poll the buffer entry count once a second so the inspector hint
+  // ("Buffered entries: N") stays meaningful without a per-log
+  // re-render.
+  const [renderDebugEnabled, setRenderDebugEnabledState] = useState(() =>
+    isRenderDebugEnabled(),
+  )
+  const [renderDebugEntryCount, setRenderDebugEntryCount] = useState(
+    () => getRenderDebugLog().entryCount,
+  )
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      // Cheap snapshot — just reads the buffer length, copies nothing
+      // until Export is clicked.
+      setRenderDebugEntryCount(getRenderDebugLog().entryCount)
+    }, 1000)
+    return () => window.clearInterval(id)
+  }, [])
+
+  const handleRenderDebugEnabledChange = useCallback((enabled: boolean) => {
+    setRenderDebugEnabled(enabled)
+    setRenderDebugEnabledState(enabled)
+    // Refresh count immediately so the user sees the buffer freezing
+    // (when disabling) or starting fresh (when enabling).
+    setRenderDebugEntryCount(getRenderDebugLog().entryCount)
+  }, [])
+
+  const handleExportRenderDebug = useCallback(() => {
+    downloadRenderDebugLog()
+  }, [])
+
+  const handleClearRenderDebug = useCallback(() => {
+    clearRenderDebugLog()
+    setRenderDebugEntryCount(0)
+  }, [])
 
   const viewportSwitcherRef = useRef<SimulationViewportSwitcherHandle | null>(
     null,
@@ -825,6 +871,11 @@ function AppShell() {
                   onClearTrajectoryDebug={handleClearTrajectoryDebug}
                   activeRendererType={rendererType}
                   onExportActiveRendererDebug={handleExportRendererDebug}
+                  renderDebugEnabled={renderDebugEnabled}
+                  onRenderDebugEnabledChange={handleRenderDebugEnabledChange}
+                  onExportRenderDebug={handleExportRenderDebug}
+                  onClearRenderDebug={handleClearRenderDebug}
+                  renderDebugEntryCount={renderDebugEntryCount}
                 />
                 <RecordingPanel
                   status={recordingStatus}

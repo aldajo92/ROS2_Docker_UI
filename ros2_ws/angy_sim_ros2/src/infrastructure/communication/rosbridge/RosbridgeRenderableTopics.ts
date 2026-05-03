@@ -9,6 +9,7 @@ import {
   findRenderableSupport,
 } from '../../../app/RenderableTopics'
 import type { TopicInfo } from '../../../app/TopicDiscovery'
+import { dlog, dwarn, throttledLog } from '../../../debug/RenderDebug'
 import type { ExternalPathUpdateQueue } from '../../../simulation/paths/ExternalPathUpdateQueue'
 import type { Path2D } from '../../../simulation/paths/Path2D'
 import { RosPathToPath2DAdapter } from './adapters/RosPathToPath2DAdapter'
@@ -51,11 +52,10 @@ export interface RosbridgeRenderableTopicsOptions {
    */
   whitelist?: ReadonlyArray<RenderableTopicSupport>
   /**
-   * Map a `RenderableTopicSupport` row to the path-id used inside
-   * `state.paths`. Defaults to the topic name (so a path published on
-   * `/circle_path` is keyed as `'/circle_path'` in the registry).
+   * Map a discovered topic to the path-id used inside `state.paths`.
+   * Defaults to the discovered topic name.
    */
-  pathIdFor?: (support: RenderableTopicSupport) => string
+  pathIdFor?: (topic: TopicInfo, support: RenderableTopicSupport) => string
   /**
    * Callback fired whenever the set of selected topics changes. The
    * provider mirrors this into React state so the UI re-renders.
@@ -64,19 +64,34 @@ export interface RosbridgeRenderableTopicsOptions {
 }
 
 interface InternalSelection {
+  topicName: string
   support: RenderableTopicSupport
   /** Cached ROS type at selection time (matches `support.messageType`). */
   topicType: string
   /** Path-id this selection writes into `state.paths`. */
   pathId: string
   unsubscribe?: () => void
+  /** Diagnostic counters — never feed back into rendering decisions. */
+  stats: {
+    received: number
+    dropped: number
+    empty: number
+    unchanged: number
+    /** Cheap fingerprint of the previous frame (pointCount + first/last). */
+    lastFingerprint: string | null
+    /** First-frame log already emitted? (one-shot per subscription) */
+    loggedFirst: boolean
+  }
 }
 
 export class RosbridgeRenderableTopics implements RenderableTopicCapability {
   private readonly subscriber: RenderableSubscriber
   private readonly queue: ExternalPathUpdateQueue
   private readonly whitelist: ReadonlyArray<RenderableTopicSupport>
-  private readonly pathIdFor: (support: RenderableTopicSupport) => string
+  private readonly pathIdFor: (
+    topic: TopicInfo,
+    support: RenderableTopicSupport,
+  ) => string
   private readonly internal = new Map<string, InternalSelection>()
   private cachedSnapshot: RenderableTopicSelection[] = []
   private onChange?: RenderableChangeListener
@@ -89,7 +104,7 @@ export class RosbridgeRenderableTopics implements RenderableTopicCapability {
     this.subscriber = subscriber
     this.queue = queue
     this.whitelist = options.whitelist ?? RENDERABLE_TOPIC_WHITELIST
-    this.pathIdFor = options.pathIdFor ?? ((s) => s.topicName)
+    this.pathIdFor = options.pathIdFor ?? ((topic) => topic.name)
     this.onChange = options.onChange
   }
 
@@ -119,23 +134,33 @@ export class RosbridgeRenderableTopics implements RenderableTopicCapability {
   selectTopic(topic: TopicInfo): void {
     const support = findRenderableSupport(topic, this.whitelist)
     if (!support) return
-    if (this.internal.has(support.topicName)) return
+    if (this.internal.has(topic.name)) return
 
-    const pathId = this.pathIdFor(support)
+    const pathId = this.pathIdFor(topic, support)
     const selection: InternalSelection = {
+      topicName: topic.name,
       support,
       topicType: support.messageType,
       pathId,
+      stats: {
+        received: 0,
+        dropped: 0,
+        empty: 0,
+        unchanged: 0,
+        lastFingerprint: null,
+        loggedFirst: false,
+      },
     }
 
     try {
-      this.subscriber.setTopicType(support.topicName, support.messageType)
-      const handler = this.makeHandler(support, pathId)
-      const off = this.subscriber.subscribe<unknown>(
-        support.topicName,
-        handler,
-      )
+      this.subscriber.setTopicType(topic.name, support.messageType)
+      const handler = this.makeHandler(topic.name, support, pathId, selection)
+      const off = this.subscriber.subscribe<unknown>(topic.name, handler)
       selection.unsubscribe = off
+      dlog(
+        'TopicData',
+        `subscribe topic="${topic.name}" type="${support.messageType}" pathId="${pathId}"`,
+      )
     } catch (err) {
       // Surface the failure by NOT registering the selection so the UI
       // checkbox falls back to unchecked. The thrown error propagates
@@ -144,7 +169,7 @@ export class RosbridgeRenderableTopics implements RenderableTopicCapability {
       throw err instanceof Error ? err : new Error(String(err))
     }
 
-    this.internal.set(support.topicName, selection)
+    this.internal.set(topic.name, selection)
     this.emit()
   }
 
@@ -158,6 +183,11 @@ export class RosbridgeRenderableTopics implements RenderableTopicCapability {
     // `state.paths.remove(...)` here — that would mutate state from a
     // non-tick context.
     this.queue.enqueueRemove(selection.pathId)
+    dlog(
+      'TopicData',
+      `unsubscribe topic="${topicName}" stats=`,
+      selection.stats,
+    )
     this.emit()
   }
 
@@ -168,6 +198,7 @@ export class RosbridgeRenderableTopics implements RenderableTopicCapability {
    */
   closeAll(): void {
     if (this.internal.size === 0) return
+    dlog('TopicData', `closeAll selections=${this.internal.size}`)
     for (const selection of this.internal.values()) {
       this.disposeSubscription(selection)
       this.queue.enqueueRemove(selection.pathId)
@@ -179,29 +210,76 @@ export class RosbridgeRenderableTopics implements RenderableTopicCapability {
   /* -- internals ----------------------------------------------------- */
 
   private makeHandler(
+    topicName: string,
     support: RenderableTopicSupport,
     pathId: string,
+    selection: InternalSelection,
   ): (message: unknown) => void {
     if (support.kind === 'path2d') {
       const adapter = new RosPathToPath2DAdapter({
         pathId,
-        pathName: support.topicName,
+        pathName: topicName,
       })
       return (message: unknown) => {
+        const stats = selection.stats
+        stats.received += 1
+
         let path: Path2D
         try {
           path = adapter.toInternal(message)
         } catch (err) {
+          stats.dropped += 1
           // A single malformed frame must not poison the subscription.
           // We swallow with a console warn — the architecture rule
-          // forbids us from mutating state from this callback, and
-          // we don't have a logger handle here.
+          // forbids us from mutating state from this callback.
           console.warn(
-            `[RosbridgeRenderableTopics] dropping malformed Path on "${support.topicName}":`,
+            `[TopicData] dropping malformed Path on "${topicName}":`,
             err,
+          )
+          dwarn(
+            'TopicData',
+            `malformed topic="${topicName}" droppedTotal=${stats.dropped} receivedTotal=${stats.received}`,
           )
           return
         }
+
+        const pointCount = path.points.length
+        const isEmpty = pointCount === 0
+        if (isEmpty) stats.empty += 1
+
+        const fingerprint = pathFingerprint(path)
+        const isUnchanged =
+          stats.lastFingerprint !== null &&
+          stats.lastFingerprint === fingerprint
+        if (isUnchanged) stats.unchanged += 1
+        stats.lastFingerprint = fingerprint
+
+        // One-shot log on the very first message of this subscription
+        // so we can confirm the wire is live even without throttling.
+        if (!stats.loggedFirst) {
+          stats.loggedFirst = true
+          dlog(
+            'TopicData',
+            `firstMessage topic="${topicName}" points=${pointCount}` +
+              ` frameId="${path.frameId ?? ''}"` +
+              ` stamp=${extractStamp(message) ?? 'n/a'}`,
+          )
+        }
+
+        // Periodic summary so high-rate publishers don't flood the
+        // console. Includes growth/empty/unchanged counters that make
+        // backpressure and dropped-frame issues visible.
+        throttledLog('TopicData', `recv:${topicName}`, () => [
+          `topic="${topicName}"`,
+          `points=${pointCount}`,
+          `received=${stats.received}`,
+          `dropped=${stats.dropped}`,
+          `empty=${stats.empty}`,
+          `unchanged=${stats.unchanged}`,
+          `frameId="${path.frameId ?? ''}"`,
+          `stamp=${extractStamp(message) ?? 'n/a'}`,
+        ])
+
         this.queue.enqueueUpsert(path)
       }
     }
@@ -225,10 +303,40 @@ export class RosbridgeRenderableTopics implements RenderableTopicCapability {
 
   private emit(): void {
     this.cachedSnapshot = Array.from(this.internal.values()).map((s) => ({
-      topicName: s.support.topicName,
+      topicName: s.topicName,
       messageType: s.support.messageType,
       kind: s.support.kind,
     }))
     this.onChange?.(this.cachedSnapshot)
   }
+}
+
+/**
+ * Cheap "did this frame change?" fingerprint. Avoids touching every
+ * point — we only sample first/last + count, which is enough to
+ * distinguish the resampled paths the simulator actually cares about.
+ */
+function pathFingerprint(path: Path2D): string {
+  const n = path.points.length
+  if (n === 0) return '0:'
+  const first = path.points[0]
+  const last = path.points[n - 1]
+  return `${n}:${first.x.toFixed(3)},${first.y.toFixed(3)};${last.x.toFixed(3)},${last.y.toFixed(3)}`
+}
+
+/**
+ * Best-effort `header.stamp` extractor from a wire-format ROS message.
+ * Returns `undefined` when the field is missing or shaped unexpectedly,
+ * so logging never fails on malformed payloads.
+ */
+function extractStamp(message: unknown): string | undefined {
+  const m = message as
+    | { header?: { stamp?: { sec?: number; nanosec?: number } } }
+    | undefined
+  const stamp = m?.header?.stamp
+  if (!stamp) return undefined
+  const sec = typeof stamp.sec === 'number' ? stamp.sec : undefined
+  const nanosec = typeof stamp.nanosec === 'number' ? stamp.nanosec : undefined
+  if (sec === undefined && nanosec === undefined) return undefined
+  return `${sec ?? '?'}.${(nanosec ?? 0).toString().padStart(9, '0')}`
 }

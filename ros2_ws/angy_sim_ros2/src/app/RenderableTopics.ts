@@ -40,15 +40,11 @@ import type { TopicInfo } from './TopicDiscovery'
 export type RenderableTopicKind = 'path2d'
 
 /**
- * Static description of one supported (topic name, message type) pair.
- * The whitelist matches *both* the topic name and the message type
- * before considering a row renderable, which keeps the UI honest if
- * a publisher ever republishes the same topic name with a different
- * type after a graph reset.
+ * Static description of one supported message type.
+ * The whitelist matches message type only, so any discovered topic
+ * with the same wire type is renderable.
  */
 export interface RenderableTopicSupport {
-  /** Fully-qualified topic name including leading slash. */
-  topicName: string
   /** ROS 2 message type, e.g. `nav_msgs/msg/Path`. */
   messageType: string
   kind: RenderableTopicKind
@@ -77,8 +73,8 @@ export interface RenderableTopicSelection {
  */
 export interface RenderableTopicCapability {
   /**
-   * `true` when `topic` is whitelisted as a renderable kind AND its
-   * type matches. The UI uses this to gate the checkbox.
+   * `true` when `topic.type` is whitelisted as a renderable kind.
+   * The UI uses this to gate the checkbox.
    */
   isRenderable(topic: TopicInfo): boolean
   /**
@@ -114,7 +110,6 @@ export interface RenderableTopicCapability {
 export const RENDERABLE_TOPIC_WHITELIST: ReadonlyArray<RenderableTopicSupport> =
   Object.freeze([
     {
-      topicName: '/circle_path',
       messageType: 'nav_msgs/msg/Path',
       kind: 'path2d',
     },
@@ -129,18 +124,15 @@ export const RENDER_UNSUPPORTED_REASON =
 
 /**
  * Resolve a discovered topic to its whitelist entry, or `undefined` if
- * the topic isn't supported. Both name and type must match — a topic
- * with a different type than the whitelist expects is *not*
- * renderable.
+ * the topic isn't supported. Matching is type-based only.
  */
 export function findRenderableSupport(
   topic: TopicInfo,
   whitelist: ReadonlyArray<RenderableTopicSupport> = RENDERABLE_TOPIC_WHITELIST,
 ): RenderableTopicSupport | undefined {
-  if (!topic || typeof topic.name !== 'string') return undefined
+  if (!topic || typeof topic.type !== 'string') return undefined
   for (const entry of whitelist) {
-    if (entry.topicName !== topic.name) continue
-    if (topic.type && entry.messageType !== topic.type) continue
+    if (entry.messageType !== topic.type) continue
     return entry
   }
   return undefined

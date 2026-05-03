@@ -64,24 +64,30 @@ const SUPPORTED = {
 } as const
 
 describe('RosbridgeRenderableTopics — whitelist gating', () => {
-  it('isRenderable returns true for the whitelisted topic name and type', () => {
+  it('isRenderable returns true for any topic with a whitelisted type', () => {
     const { capability } = makeRig()
     expect(capability.isRenderable(SUPPORTED)).toBe(true)
+    expect(
+      capability.isRenderable({
+        name: '/circle_wave',
+        type: 'nav_msgs/msg/Path',
+      }),
+    ).toBe(true)
     expect(capability.getUnsupportedReason(SUPPORTED)).toBeUndefined()
   })
 
-  it('isRenderable returns false for an unknown topic name', () => {
+  it('isRenderable returns false for an unsupported type', () => {
     const { capability } = makeRig()
     expect(
       capability.isRenderable({
         name: '/random',
-        type: 'nav_msgs/msg/Path',
+        type: 'std_msgs/msg/String',
       }),
     ).toBe(false)
     expect(
       capability.getUnsupportedReason({
         name: '/random',
-        type: 'nav_msgs/msg/Path',
+        type: 'std_msgs/msg/String',
       }),
     ).toMatch(/not supported/)
   })
@@ -96,9 +102,9 @@ describe('RosbridgeRenderableTopics — whitelist gating', () => {
     ).toBe(false)
   })
 
-  it('treats a missing topic type as a wildcard match (UI hasn\'t resolved type yet)', () => {
+  it('treats a missing topic type as unsupported', () => {
     const { capability } = makeRig()
-    expect(capability.isRenderable({ name: '/circle_path' })).toBe(true)
+    expect(capability.isRenderable({ name: '/circle_path' })).toBe(false)
   })
 })
 
@@ -237,18 +243,22 @@ describe('RosbridgeRenderableTopics — overrides', () => {
     const queue = new ExternalPathUpdateQueue()
     const capability = new RosbridgeRenderableTopics(subscriber, queue, {
       whitelist: [
-        { topicName: '/x', messageType: 'std_msgs/msg/Empty', kind: 'path2d' },
+        { messageType: 'std_msgs/msg/Empty', kind: 'path2d' },
       ],
     })
-    expect(capability.isRenderable({ name: '/circle_path' })).toBe(false)
-    expect(capability.isRenderable({ name: '/x' })).toBe(true)
+    expect(
+      capability.isRenderable({ name: '/circle_path', type: 'nav_msgs/msg/Path' }),
+    ).toBe(false)
+    expect(capability.isRenderable({ name: '/x', type: 'std_msgs/msg/Empty' })).toBe(
+      true,
+    )
   })
 
   it('uses pathIdFor to key state.paths entries', () => {
     const subscriber = new FakeSubscriber()
     const queue = new ExternalPathUpdateQueue()
     const capability = new RosbridgeRenderableTopics(subscriber, queue, {
-      pathIdFor: (s) => `external-${s.topicName}`,
+      pathIdFor: (topic) => `external-${topic.name}`,
     })
     capability.selectTopic(SUPPORTED)
     capability.deselectTopic('/circle_path')

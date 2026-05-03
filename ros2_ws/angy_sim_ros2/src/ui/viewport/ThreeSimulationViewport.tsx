@@ -6,6 +6,14 @@ import {
   useState,
 } from 'react'
 import { useSimulation } from '../../app/useSimulation'
+import {
+  derror,
+  dlog,
+  isRenderDebugEnabled,
+  makeFrameTracker,
+  readMemoryMB,
+  safeRun,
+} from '../../debug/RenderDebug'
 import { ThreeSimulationRenderer } from '../renderers/three/core/ThreeSimulationRenderer'
 import type { CameraMode } from '../renderers/three/cameras/CameraMode'
 import type { Projection } from '../renderers/three/cameras/Projection'
@@ -108,6 +116,7 @@ export const ThreeSimulationViewport = forwardRef<
     const container = containerRef.current
     if (!container) return
 
+    dlog('ThreeRenderer', 'mount: creating renderer')
     const renderer = new ThreeSimulationRenderer(
       container,
       trajectoryVisualization
@@ -115,17 +124,22 @@ export const ThreeSimulationViewport = forwardRef<
         : {},
     )
     rendererRef.current = renderer
-    renderer.init(engine.state)
+    safeRun('ThreeRenderer', 'init', () => renderer.init(engine.state))
+    dlog(
+      'ThreeRenderer',
+      `mount: renderer initialized memMB=`,
+      readMemoryMB() ?? 'n/a',
+    )
 
     if (typeof globalThis !== 'undefined') {
-      ; (
+      ;(
         globalThis as unknown as {
           __threeTrajectoryDebug?: () =>
             | ThreeTrajectoryRendererDebugSummary
             | undefined
         }
       ).__threeTrajectoryDebug = () =>
-          rendererRef.current?.getTrajectoryRendererDebugSummary()
+        rendererRef.current?.getTrajectoryRendererDebugSummary()
     }
 
     setCameraMode(renderer.getCameraMode() ?? 'orbit')
@@ -138,8 +152,18 @@ export const ThreeSimulationViewport = forwardRef<
     // means a stray event still paints the correct frame.
     const currentState = () => replayStateRef.current ?? engine.state
 
+    // Frame tracker doubles as the "renderer is alive" heartbeat.
+    // Logs FPS once per debug-throttle window so we can tell at a
+    // glance whether the engine event stream stopped reaching Three.
+    const frameTracker = makeFrameTracker('ThreeRenderer', 'engineDriven')
     const renderCurrent = () => {
-      renderer.render(currentState())
+      const ok = safeRun('ThreeRenderer', 'render', () =>
+        renderer.render(currentState()),
+      )
+      // Only count successful renders. A throw here is logged with a
+      // stack trace by `safeRun` and we still increment a separate
+      // failure counter on the global toggle for post-hoc inspection.
+      if (ok !== undefined) frameTracker.tick()
     }
 
     const unsubs = [
@@ -151,25 +175,71 @@ export const ThreeSimulationViewport = forwardRef<
       engine.events.on('collision', renderCurrent),
     ]
 
+    // Stall-detection watchdog. When debug logging is enabled and the
+    // renderer is event-driven (i.e. no requestAnimationFrame loop),
+    // a sudden silence is a meaningful signal — the engine stopped
+    // ticking, all listeners were torn down, or something upstream is
+    // throwing. We poll once per second and warn after 2s of silence.
+    const STALL_GRACE_MS = 2000
+    let lastSeenFrameCount = 0
+    let lastSeenAtMs = nowMs()
+    let stallReported = false
+    const stallTimer = window.setInterval(() => {
+      if (!isRenderDebugEnabled()) {
+        stallReported = false
+        lastSeenFrameCount = frameTracker.cumulative()
+        lastSeenAtMs = nowMs()
+        return
+      }
+      const cur = frameTracker.cumulative()
+      const now = nowMs()
+      if (cur !== lastSeenFrameCount) {
+        lastSeenFrameCount = cur
+        lastSeenAtMs = now
+        stallReported = false
+        return
+      }
+      const silenceMs = now - lastSeenAtMs
+      if (!stallReported && silenceMs >= STALL_GRACE_MS) {
+        stallReported = true
+        derror(
+          'ThreeRenderer',
+          `STALL: no frames rendered for ${(silenceMs / 1000).toFixed(1)}s` +
+            ` (cumulative=${cur}). engine.isRunning=${engine.isRunning()}` +
+            ` ticks=${engine.state.metrics.ticks}` +
+            ` paths=${engine.state.paths.toArray().length}`,
+        )
+      }
+    }, 1000)
+
     const handleResize = () => {
-      renderer.resize()
-      renderer.render(currentState())
+      safeRun('ThreeRenderer', 'resize', () => {
+        renderer.resize()
+        renderer.render(currentState())
+      })
     }
     window.addEventListener('resize', handleResize)
 
     let resizeObserver: ResizeObserver | undefined
     if (typeof ResizeObserver !== 'undefined') {
       resizeObserver = new ResizeObserver(() => {
-        renderer.resize()
-        renderer.render(currentState())
+        safeRun('ThreeRenderer', 'resize:observer', () => {
+          renderer.resize()
+          renderer.render(currentState())
+        })
       })
       resizeObserver.observe(container)
     }
 
     return () => {
+      dlog(
+        'ThreeRenderer',
+        `unmount: cumulativeFrames=${frameTracker.cumulative()}`,
+      )
       for (const unsub of unsubs) unsub()
       window.removeEventListener('resize', handleResize)
       resizeObserver?.disconnect()
+      window.clearInterval(stallTimer)
       renderer.dispose()
       rendererRef.current = null
       if (typeof globalThis !== 'undefined') {
@@ -257,3 +327,10 @@ export const ThreeSimulationViewport = forwardRef<
     </section>
   )
 })
+
+function nowMs(): number {
+  const perf = (
+    globalThis as unknown as { performance?: { now?: () => number } }
+  ).performance
+  return perf?.now?.() ?? Date.now()
+}

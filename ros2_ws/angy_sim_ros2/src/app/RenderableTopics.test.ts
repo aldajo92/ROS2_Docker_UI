@@ -6,9 +6,9 @@ import {
 } from './RenderableTopics'
 
 describe('RenderableTopics — whitelist', () => {
-  it('exposes /circle_path as nav_msgs/msg/Path of kind path2d', () => {
+  it('exposes nav_msgs/msg/Path as kind path2d', () => {
     const entry = RENDERABLE_TOPIC_WHITELIST.find(
-      (e) => e.topicName === '/circle_path',
+      (e) => e.messageType === 'nav_msgs/msg/Path',
     )
     expect(entry).toBeDefined()
     expect(entry?.messageType).toBe('nav_msgs/msg/Path')
@@ -21,20 +21,20 @@ describe('RenderableTopics — whitelist', () => {
 })
 
 describe('RenderableTopics — findRenderableSupport', () => {
-  it('matches a discovered topic with the same name + type', () => {
+  it('matches a discovered topic with the same type', () => {
     expect(
       findRenderableSupport({
-        name: '/circle_path',
+        name: '/any_topic_name',
         type: 'nav_msgs/msg/Path',
       }),
     ).toBeDefined()
   })
 
-  it('matches when the topic type is unknown (UI hasn\'t resolved it yet)', () => {
-    expect(findRenderableSupport({ name: '/circle_path' })).toBeDefined()
+  it('does NOT match when topic type is unknown', () => {
+    expect(findRenderableSupport({ name: '/circle_path' })).toBeUndefined()
   })
 
-  it('does NOT match when the type is set but disagrees with the whitelist', () => {
+  it('does NOT match when the type disagrees with the whitelist', () => {
     expect(
       findRenderableSupport({
         name: '/circle_path',
@@ -43,21 +43,21 @@ describe('RenderableTopics — findRenderableSupport', () => {
     ).toBeUndefined()
   })
 
-  it('does NOT match an unknown topic name', () => {
+  it('matches any topic name when the type is supported', () => {
     expect(
       findRenderableSupport({
         name: '/nope',
         type: 'nav_msgs/msg/Path',
       }),
-    ).toBeUndefined()
+    ).toBeDefined()
   })
 
   it('respects a custom whitelist', () => {
     const list = [
-      { topicName: '/x', messageType: 'std_msgs/msg/Empty', kind: 'path2d' as const },
+      { messageType: 'std_msgs/msg/Empty', kind: 'path2d' as const },
     ]
-    expect(findRenderableSupport({ name: '/x' }, list)).toBeDefined()
-    expect(findRenderableSupport({ name: '/circle_path' }, list)).toBeUndefined()
+    expect(findRenderableSupport({ name: '/x', type: 'std_msgs/msg/Empty' }, list)).toBeDefined()
+    expect(findRenderableSupport({ name: '/circle_path', type: 'nav_msgs/msg/Path' }, list)).toBeUndefined()
   })
 
   it('rejects malformed input gracefully', () => {
