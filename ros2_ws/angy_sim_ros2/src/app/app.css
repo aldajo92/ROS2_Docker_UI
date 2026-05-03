@@ -1183,3 +1183,118 @@ body.layout-splitter-dragging {
     overflow-y: visible;
   }
 }
+
+/* ----- connection status panel ---------------------------------------- *
+ * Live status indicator for the external Transport (rosbridge / mock /
+ * memory). Lives in the inspector right above the keyboard / metrics
+ * panels. Read-only: the panel never mutates the transport.
+ */
+
+.connection-status-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.connection-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.connection-status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--fg-muted);
+  flex: 0 0 auto;
+  box-shadow: 0 0 0 2px rgb(0 0 0 / 25%);
+}
+
+.connection-status-dot-disabled {
+  background: #4a5160;
+}
+
+.connection-status-dot-disconnected {
+  background: var(--fg-muted);
+}
+
+.connection-status-dot-connecting {
+  background: #fbbf24;
+  animation: connection-status-pulse 1.2s ease-in-out infinite;
+}
+
+.connection-status-dot-connected {
+  background: #34d399;
+}
+
+.connection-status-dot-error {
+  background: var(--danger);
+}
+
+@keyframes connection-status-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.35);
+    opacity: 0.6;
+  }
+}
+
+.connection-status-label {
+  color: var(--fg);
+  font-weight: 500;
+}
+
+.connection-status-target {
+  color: var(--fg-muted);
+  background: var(--bg-panel-2);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
+  margin-left: auto;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connection-status-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+.connection-status-meta code {
+  background: var(--bg-panel-2);
+  border-radius: 4px;
+  padding: 1px 5px;
+  color: var(--fg);
+}
+
+.connection-status-error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--danger);
+  word-break: break-word;
+}
+
+.connection-status-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--fg-muted);
+  line-height: 1.4;
+}
+
+.connection-status-hint code {
+  background: var(--bg-panel-2);
+  border-radius: 4px;
+  padding: 1px 5px;
+  color: var(--fg);
+}

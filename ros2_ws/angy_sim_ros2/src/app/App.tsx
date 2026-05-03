@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { SimulationProvider } from './SimulationProvider'
+import { CommunicationProvider } from './CommunicationProvider'
 import { useSimulation, useSimulationRunning } from './useSimulation'
+import { ConnectionStatusPanel } from '../ui/ConnectionStatusPanel'
 import { ControlPanel } from '../ui/ControlPanel'
 import { RendererPanel } from '../ui/RendererPanel'
 import { SimulationControlPanel } from '../ui/SimulationControlPanel'
@@ -85,7 +87,9 @@ const REPLAY_DISABLED_REASON =
 export default function App() {
   return (
     <SimulationProvider>
-      <AppShell />
+      <CommunicationProvider>
+        <AppShell />
+      </CommunicationProvider>
     </SimulationProvider>
   )
 }
@@ -677,6 +681,7 @@ function AppShell() {
           <aside className="layout-right" aria-label="Inspector">
             <h2 className="layout-title">Inspector</h2>
             <SimulationControlPanel />
+            {!scenarioEditorExpanded && <ConnectionStatusPanel />}
             {!scenarioEditorExpanded && (
               <ControlPanel
                 onScenarioLoaded={handleScenarioLoaded}
