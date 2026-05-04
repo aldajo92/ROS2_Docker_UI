@@ -11,10 +11,23 @@ import {
   findRenderableSupport,
 } from '../../../app/RenderableTopics'
 import type { TopicInfo } from '../../../app/TopicDiscovery'
+import type {
+  DisplayPlugin,
+  DisplayRuntimeContext,
+  DisplayVisualConfig,
+} from '../../../app/display/DisplayPlugin'
+import {
+  DisplayPluginRegistry,
+  defaultDisplayPluginRegistry,
+} from '../../../app/display/DisplayPluginRegistry'
 import { dlog, dwarn, throttledLog } from '../../../debug/RenderDebug'
 import type { ExternalPathUpdateQueue } from '../../../simulation/paths/ExternalPathUpdateQueue'
 import type { Path2D } from '../../../simulation/paths/Path2D'
-import { RosPathToPath2DAdapter } from './adapters/RosPathToPath2DAdapter'
+import type { RosTopicDisplayBinding } from './display/RosTopicDisplayBinding'
+import {
+  ROS_TOPIC_DISPLAY_BINDINGS,
+  findRosTopicDisplayBinding,
+} from './display/RosTopicDisplayBindings'
 
 /**
  * Rosbridge-flavoured implementation of the generic
@@ -23,6 +36,14 @@ import { RosPathToPath2DAdapter } from './adapters/RosPathToPath2DAdapter'
  * `ExternalPathUpdateQueue` (drained by `ExternalPathRenderSystem`
  * during the next tick) instead of touching `SimulationState`
  * directly.
+ *
+ * Message-specific behaviour (adapter creation, artifact lifecycle) is
+ * delegated to a {@link RosTopicDisplayBinding} + {@link DisplayPlugin}
+ * pair looked up at selection time. Adding support for a new ROS message
+ * type only requires:
+ *   1. A new RosTopicDisplayBinding entry in RosTopicDisplayBindings.ts.
+ *   2. A new DisplayPlugin registered in DisplayPluginRegistry.
+ *   3. A whitelist entry in RenderableTopics.ts.
  *
  * This file deliberately does NOT import `roslib`. It works against
  * the small `RenderableSubscriber` adapter the wider system passes in
@@ -63,6 +84,16 @@ export interface RosbridgeRenderableTopicsOptions {
    * provider mirrors this into React state so the UI re-renders.
    */
   onChange?: RenderableChangeListener
+  /**
+   * Override the display-plugin registry. Tests may supply a trimmed
+   * registry; production wiring uses {@link defaultDisplayPluginRegistry}.
+   */
+  displayPluginRegistry?: DisplayPluginRegistry
+  /**
+   * Override the ROS topic → display-plugin bindings. Tests may supply
+   * a custom list; production wiring uses {@link ROS_TOPIC_DISPLAY_BINDINGS}.
+   */
+  bindings?: ReadonlyArray<RosTopicDisplayBinding<unknown>>
 }
 
 interface InternalSelection {
@@ -70,15 +101,16 @@ interface InternalSelection {
   support: RenderableTopicSupport
   /** Cached ROS type at selection time (matches `support.messageType`). */
   topicType: string
-  /** Path-id this selection writes into `state.paths`. */
+  /** Artifact-id this selection writes into the simulation registry. */
   pathId: string
   unsubscribe?: () => void
   visualConfig: PathVisualConfig
-  /** Most-recent Path2D produced by the handler, cached so that
-   *  `setVisualConfig` can re-enqueue it with updated color/thickness
-   *  for immediate visual feedback without waiting for the next ROS
-   *  message. */
-  lastPath: Path2D | null
+  /** Resolved plugin for this selection — used by setVisualConfig / deselect. */
+  plugin: DisplayPlugin<unknown, DisplayVisualConfig>
+  /** Most-recent artifact produced by the handler, cached so that
+   *  `setVisualConfig` can re-enqueue it with updated visual config
+   *  for immediate visual feedback without waiting for the next ROS message. */
+  lastArtifact: unknown
   /** Diagnostic counters — never feed back into rendering decisions. */
   stats: {
     received: number
@@ -95,11 +127,14 @@ interface InternalSelection {
 export class RosbridgeRenderableTopics implements RenderableTopicCapability {
   private readonly subscriber: RenderableSubscriber
   private readonly queue: ExternalPathUpdateQueue
+  private readonly context: DisplayRuntimeContext
   private readonly whitelist: ReadonlyArray<RenderableTopicSupport>
   private readonly pathIdFor: (
     topic: TopicInfo,
     support: RenderableTopicSupport,
   ) => string
+  private readonly pluginRegistry: DisplayPluginRegistry
+  private readonly bindings: ReadonlyArray<RosTopicDisplayBinding<unknown>>
   private readonly internal = new Map<string, InternalSelection>()
   /**
    * Last-known per-topic visual config, kept across `deselectTopic` so
@@ -119,9 +154,13 @@ export class RosbridgeRenderableTopics implements RenderableTopicCapability {
   ) {
     this.subscriber = subscriber
     this.queue = queue
+    this.context = { pathQueue: queue }
     this.whitelist = options.whitelist ?? RENDERABLE_TOPIC_WHITELIST
     this.pathIdFor = options.pathIdFor ?? ((topic) => topic.name)
     this.onChange = options.onChange
+    this.pluginRegistry =
+      options.displayPluginRegistry ?? defaultDisplayPluginRegistry
+    this.bindings = options.bindings ?? ROS_TOPIC_DISPLAY_BINDINGS
   }
 
   /** Replace the change listener after construction (used by the provider). */
@@ -152,6 +191,20 @@ export class RosbridgeRenderableTopics implements RenderableTopicCapability {
     if (!support) return
     if (this.internal.has(topic.name)) return
 
+    // Resolve the binding + plugin pair for this message type.
+    const binding = findRosTopicDisplayBinding(support.messageType, this.bindings)
+    if (!binding) {
+      throw new Error(
+        `RosbridgeRenderableTopics: no binding registered for message type "${support.messageType}"`,
+      )
+    }
+    const plugin = this.pluginRegistry.get(binding.displayPluginId)
+    if (!plugin) {
+      throw new Error(
+        `RosbridgeRenderableTopics: no plugin registered for id "${binding.displayPluginId}"`,
+      )
+    }
+
     const pathId = this.pathIdFor(topic, support)
     const remembered = this.rememberedVisualConfig.get(topic.name)
     const selection: InternalSelection = {
@@ -165,7 +218,8 @@ export class RosbridgeRenderableTopics implements RenderableTopicCapability {
       visualConfig: remembered
         ? { ...remembered }
         : { ...DEFAULT_PATH_VISUAL_CONFIG },
-      lastPath: null,
+      plugin,
+      lastArtifact: null,
       stats: {
         received: 0,
         dropped: 0,
@@ -178,7 +232,7 @@ export class RosbridgeRenderableTopics implements RenderableTopicCapability {
 
     try {
       this.subscriber.setTopicType(topic.name, support.messageType)
-      const handler = this.makeHandler(topic.name, support, pathId, selection)
+      const handler = this.makeHandler(topic.name, pathId, selection, binding)
       const off = this.subscriber.subscribe<unknown>(topic.name, handler)
       selection.unsubscribe = off
       dlog(
@@ -202,11 +256,9 @@ export class RosbridgeRenderableTopics implements RenderableTopicCapability {
     if (!selection) return
     this.disposeSubscription(selection)
     this.internal.delete(topicName)
-    // Tell the simulation system to drop the path on the next tick so
-    // the viewport visibly loses the line. We never call
-    // `state.paths.remove(...)` here — that would mutate state from a
-    // non-tick context.
-    this.queue.enqueueRemove(selection.pathId)
+    // Tell the simulation system to drop the artifact on the next tick
+    // so the viewport visibly loses the line.
+    selection.plugin.enqueueRemove(selection.pathId, this.context)
     dlog(
       'TopicData',
       `unsubscribe topic="${topicName}" stats=`,
@@ -229,10 +281,13 @@ export class RosbridgeRenderableTopics implements RenderableTopicCapability {
     if (!selection) return
     selection.visualConfig = { ...selection.visualConfig, ...config }
     this.rememberedVisualConfig.set(topicName, { ...selection.visualConfig })
-    if (selection.lastPath) {
-      selection.lastPath.color = selection.visualConfig.color
-      selection.lastPath.thickness = selection.visualConfig.thickness
-      this.queue.enqueueUpsert(selection.lastPath)
+    if (selection.lastArtifact !== null) {
+      const configured = selection.plugin.applyConfig(
+        selection.lastArtifact,
+        selection.visualConfig as DisplayVisualConfig,
+      )
+      selection.lastArtifact = configured
+      selection.plugin.enqueueUpsert(configured, this.context)
     }
     this.emit()
   }
@@ -240,7 +295,7 @@ export class RosbridgeRenderableTopics implements RenderableTopicCapability {
   /**
    * Tear down every active selection. Used by the provider on
    * transport teardown so we don't leak callbacks against a closed
-   * socket or leave stale paths in `state.paths` after a disconnect.
+   * socket or leave stale artifacts in state after a disconnect.
    */
   closeAll(): void {
     if (this.internal.size === 0 && this.rememberedVisualConfig.size === 0) {
@@ -249,7 +304,7 @@ export class RosbridgeRenderableTopics implements RenderableTopicCapability {
     dlog('TopicData', `closeAll selections=${this.internal.size}`)
     for (const selection of this.internal.values()) {
       this.disposeSubscription(selection)
-      this.queue.enqueueRemove(selection.pathId)
+      selection.plugin.enqueueRemove(selection.pathId, this.context)
     }
     this.internal.clear()
     // Drop remembered visual configs on transport teardown so they
@@ -262,87 +317,78 @@ export class RosbridgeRenderableTopics implements RenderableTopicCapability {
 
   private makeHandler(
     topicName: string,
-    support: RenderableTopicSupport,
     pathId: string,
     selection: InternalSelection,
+    binding: RosTopicDisplayBinding<unknown>,
   ): (message: unknown) => void {
-    if (support.kind === 'path2d') {
-      const adapter = new RosPathToPath2DAdapter({
-        pathId,
-        pathName: topicName,
-      })
-      return (message: unknown) => {
-        const stats = selection.stats
-        stats.received += 1
+    const adapter = binding.createAdapter({
+      artifactId: pathId,
+      artifactName: topicName,
+    })
 
-        let path: Path2D
-        try {
-          path = adapter.toInternal(message)
-        } catch (err) {
-          stats.dropped += 1
-          // A single malformed frame must not poison the subscription.
-          // We swallow with a console warn — the architecture rule
-          // forbids us from mutating state from this callback.
-          console.warn(
-            `[TopicData] dropping malformed Path on "${topicName}":`,
-            err,
-          )
-          dwarn(
-            'TopicData',
-            `malformed topic="${topicName}" droppedTotal=${stats.dropped} receivedTotal=${stats.received}`,
-          )
-          return
-        }
+    return (message: unknown) => {
+      const stats = selection.stats
+      stats.received += 1
 
-        const pointCount = path.points.length
-        const isEmpty = pointCount === 0
-        if (isEmpty) stats.empty += 1
-
-        const fingerprint = pathFingerprint(path)
-        const isUnchanged =
-          stats.lastFingerprint !== null &&
-          stats.lastFingerprint === fingerprint
-        if (isUnchanged) stats.unchanged += 1
-        stats.lastFingerprint = fingerprint
-
-        // One-shot log on the very first message of this subscription
-        // so we can confirm the wire is live even without throttling.
-        if (!stats.loggedFirst) {
-          stats.loggedFirst = true
-          dlog(
-            'TopicData',
-            `firstMessage topic="${topicName}" points=${pointCount}` +
-              ` frameId="${path.frameId ?? ''}"` +
-              ` stamp=${extractStamp(message) ?? 'n/a'}`,
-          )
-        }
-
-        // Periodic summary so high-rate publishers don't flood the
-        // console. Includes growth/empty/unchanged counters that make
-        // backpressure and dropped-frame issues visible.
-        throttledLog('TopicData', `recv:${topicName}`, () => [
-          `topic="${topicName}"`,
-          `points=${pointCount}`,
-          `received=${stats.received}`,
-          `dropped=${stats.dropped}`,
-          `empty=${stats.empty}`,
-          `unchanged=${stats.unchanged}`,
-          `frameId="${path.frameId ?? ''}"`,
-          `stamp=${extractStamp(message) ?? 'n/a'}`,
-        ])
-
-        path.color = selection.visualConfig.color
-        path.thickness = selection.visualConfig.thickness
-        selection.lastPath = path
-        this.queue.enqueueUpsert(path)
+      let artifact: unknown
+      try {
+        artifact = adapter.toInternal(message)
+      } catch (err) {
+        stats.dropped += 1
+        // A single malformed frame must not poison the subscription.
+        console.warn(
+          `[TopicData] dropping malformed message on "${topicName}":`,
+          err,
+        )
+        dwarn(
+          'TopicData',
+          `malformed topic="${topicName}" droppedTotal=${stats.dropped} receivedTotal=${stats.received}`,
+        )
+        return
       }
+
+      // Path-specific diagnostic logging (cast is safe: path2d is the
+      // only binding today; generalise when new artifact types arrive).
+      const path = artifact as Path2D
+      const pointCount = path.points?.length ?? 0
+      const isEmpty = pointCount === 0
+      if (isEmpty) stats.empty += 1
+
+      const fingerprint = pathFingerprint(path)
+      const isUnchanged =
+        stats.lastFingerprint !== null &&
+        stats.lastFingerprint === fingerprint
+      if (isUnchanged) stats.unchanged += 1
+      stats.lastFingerprint = fingerprint
+
+      if (!stats.loggedFirst) {
+        stats.loggedFirst = true
+        dlog(
+          'TopicData',
+          `firstMessage topic="${topicName}" points=${pointCount}` +
+            ` frameId="${path.frameId ?? ''}"` +
+            ` stamp=${extractStamp(message) ?? 'n/a'}`,
+        )
+      }
+
+      throttledLog('TopicData', `recv:${topicName}`, () => [
+        `topic="${topicName}"`,
+        `points=${pointCount}`,
+        `received=${stats.received}`,
+        `dropped=${stats.dropped}`,
+        `empty=${stats.empty}`,
+        `unchanged=${stats.unchanged}`,
+        `frameId="${path.frameId ?? ''}"`,
+        `stamp=${extractStamp(message) ?? 'n/a'}`,
+      ])
+
+      const configured = selection.plugin.applyConfig(
+        artifact,
+        selection.visualConfig as DisplayVisualConfig,
+      )
+      selection.lastArtifact = configured
+      selection.plugin.enqueueUpsert(configured, this.context)
     }
-    // Defensive: we currently only model 'path2d'. Kept as a runtime
-    // throw so adding a new kind without a handler fails loudly during
-    // development rather than silently dropping frames.
-    throw new Error(
-      `RosbridgeRenderableTopics: unsupported kind "${support.kind}"`,
-    )
   }
 
   private disposeSubscription(selection: InternalSelection): void {
@@ -372,7 +418,7 @@ export class RosbridgeRenderableTopics implements RenderableTopicCapability {
  * distinguish the resampled paths the simulator actually cares about.
  */
 function pathFingerprint(path: Path2D): string {
-  const n = path.points.length
+  const n = path.points?.length ?? 0
   if (n === 0) return '0:'
   const first = path.points[0]
   const last = path.points[n - 1]
