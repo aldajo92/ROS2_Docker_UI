@@ -3,6 +3,7 @@ import type { SimulationEngine } from '../simulation/core/SimulationEngine'
 import type { SimulationController } from '../simulation/core/SimulationController'
 import type { VehicleCommandQueue } from '../simulation/commands/VehicleCommandQueue'
 import type { ExternalPathUpdateQueue } from '../simulation/paths/ExternalPathUpdateQueue'
+import type { ExternalPoseArrayUpdateQueue } from '../simulation/poses/ExternalPoseArrayUpdateQueue'
 
 export interface SimulationContextValue {
   controller: SimulationController
@@ -26,6 +27,11 @@ export interface SimulationContextValue {
    * without recreating the system or the engine.
    */
   externalPathQueue: ExternalPathUpdateQueue
+  /**
+   * Shared mailbox for pose-array mutations from external transports.
+   * Drained by `ExternalPoseArrayRenderSystem` into `state.poseArrays`.
+   */
+  externalPoseArrayQueue: ExternalPoseArrayUpdateQueue
 }
 
 /**

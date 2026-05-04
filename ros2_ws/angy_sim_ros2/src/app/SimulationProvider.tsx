@@ -19,6 +19,8 @@ import { VehicleCommandQueue } from '../simulation/commands/VehicleCommandQueue'
 import { VehicleCommandSystem } from '../simulation/commands/VehicleCommandSystem'
 import { ExternalPathUpdateQueue } from '../simulation/paths/ExternalPathUpdateQueue'
 import { ExternalPathRenderSystem } from '../simulation/systems/ExternalPathRenderSystem'
+import { ExternalPoseArrayUpdateQueue } from '../simulation/poses/ExternalPoseArrayUpdateQueue'
+import { ExternalPoseArrayRenderSystem } from '../simulation/systems/ExternalPoseArrayRenderSystem'
 import { SimulationContext } from './SimulationContext'
 import type { SimulationContextValue } from './SimulationContext'
 
@@ -69,6 +71,7 @@ function buildContext(collisionConfig: CollisionConfig): SimulationContextValue 
   const engine = new SimulationEngine()
   const commandQueue = new VehicleCommandQueue()
   const externalPathQueue = new ExternalPathUpdateQueue()
+  const externalPoseArrayQueue = new ExternalPoseArrayUpdateQueue()
 
   // Registration order is the tick order. Keep it explicit:
   //   1. ScenarioSystem               — may emit commands or spawn entities
@@ -76,14 +79,16 @@ function buildContext(collisionConfig: CollisionConfig): SimulationContextValue 
   //   3. ExternalPathRenderSystem     — drains externally-published paths
   //                                     into state.paths BEFORE downstream
   //                                     systems read them
-  //   4. VehicleDynamicsSystem        — integrates pose
-  //   5. TrajectoryTrackingSystem     — appends to state.trajectories
-  //   6. CollisionSystem              — checks collisions
-  //   7. MetricsSystem                — observes final state
-  //   8. SimulationRecorderSystem     — snapshots the final post-tick state
+  //   4. ExternalPoseArrayRenderSystem — drains pose-array updates into state.poseArrays
+  //   5. VehicleDynamicsSystem        — integrates pose
+  //   6. TrajectoryTrackingSystem     — appends to state.trajectories
+  //   7. CollisionSystem              — checks collisions
+  //   8. MetricsSystem                — observes final state
+  //   9. SimulationRecorderSystem     — snapshots the final post-tick state
   engine.systems.add(new ScenarioSystem())
   engine.systems.add(new VehicleCommandSystem(commandQueue))
   engine.systems.add(new ExternalPathRenderSystem(externalPathQueue))
+  engine.systems.add(new ExternalPoseArrayRenderSystem(externalPoseArrayQueue))
   engine.systems.add(new VehicleDynamicsSystem())
   engine.systems.add(new TrajectoryTrackingSystem())
   engine.systems.add(new CollisionSystem(buildCollisionBackend(collisionConfig)))
@@ -91,7 +96,7 @@ function buildContext(collisionConfig: CollisionConfig): SimulationContextValue 
   engine.systems.add(new SimulationRecorderSystem(engine.recorder))
 
   const controller = new SimulationController(engine)
-  return { controller, engine, commandQueue, externalPathQueue }
+  return { controller, engine, commandQueue, externalPathQueue, externalPoseArrayQueue }
 }
 
 function buildCollisionBackend(config: CollisionConfig): CollisionBackend2D {

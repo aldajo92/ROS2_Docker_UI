@@ -22,6 +22,7 @@ import {
 } from '../../../app/display/DisplayPluginRegistry'
 import { dlog, dwarn, throttledLog } from '../../../debug/RenderDebug'
 import type { ExternalPathUpdateQueue } from '../../../simulation/paths/ExternalPathUpdateQueue'
+import { ExternalPoseArrayUpdateQueue } from '../../../simulation/poses/ExternalPoseArrayUpdateQueue'
 import type { Path2D } from '../../../simulation/paths/Path2D'
 import type { RosTopicDisplayBinding } from './display/RosTopicDisplayBinding'
 import {
@@ -94,6 +95,11 @@ export interface RosbridgeRenderableTopicsOptions {
    * a custom list; production wiring uses {@link ROS_TOPIC_DISPLAY_BINDINGS}.
    */
   bindings?: ReadonlyArray<RosTopicDisplayBinding<unknown>>
+  /**
+   * Queue for pose-array mutations. Required for pose_array_2d topics.
+   * If omitted, pose-array topics will fail at selection time.
+   */
+  poseArrayQueue?: ExternalPoseArrayUpdateQueue
 }
 
 interface InternalSelection {
@@ -154,7 +160,12 @@ export class RosbridgeRenderableTopics implements RenderableTopicCapability {
   ) {
     this.subscriber = subscriber
     this.queue = queue
-    this.context = { pathQueue: queue }
+    this.context = {
+      pathQueue: queue,
+      // Fall back to a disconnected queue so tests that don't care about
+      // pose arrays don't need to supply one. Updates accumulate until GC.
+      poseArrayQueue: options.poseArrayQueue ?? new ExternalPoseArrayUpdateQueue(),
+    }
     this.whitelist = options.whitelist ?? RENDERABLE_TOPIC_WHITELIST
     this.pathIdFor = options.pathIdFor ?? ((topic) => topic.name)
     this.onChange = options.onChange
@@ -212,12 +223,12 @@ export class RosbridgeRenderableTopics implements RenderableTopicCapability {
       support,
       topicType: support.messageType,
       pathId,
-      // Restore the user's last color/thickness for this topic if we
-      // saw it earlier in this session; fall back to the global
-      // default otherwise.
+      // Restore the user's last visual config for this topic if we
+      // saw it earlier in this session; fall back to the plugin's own
+      // default so each plugin type starts with its intended colors/sizes.
       visualConfig: remembered
         ? { ...remembered }
-        : { ...DEFAULT_PATH_VISUAL_CONFIG },
+        : pluginDefaultToVisualConfig(plugin.defaultConfig as Record<string, unknown>),
       plugin,
       lastArtifact: null,
       stats: {
@@ -409,6 +420,28 @@ export class RosbridgeRenderableTopics implements RenderableTopicCapability {
       visualConfig: { ...s.visualConfig },
     }))
     this.onChange?.(this.cachedSnapshot)
+  }
+}
+
+/**
+ * Build a `PathVisualConfig` from a plugin's `defaultConfig`. Spreads all
+ * known fields so plugin-specific extras (e.g. `arrowSize`) are preserved
+ * without `RosbridgeRenderableTopics` needing to know about each plugin's
+ * concrete config type.
+ */
+function pluginDefaultToVisualConfig(
+  defaultConfig: Record<string, unknown>,
+): PathVisualConfig {
+  return {
+    color: (typeof defaultConfig.color === 'string'
+      ? defaultConfig.color
+      : DEFAULT_PATH_VISUAL_CONFIG.color) as string,
+    thickness: (typeof defaultConfig.thickness === 'number'
+      ? defaultConfig.thickness
+      : DEFAULT_PATH_VISUAL_CONFIG.thickness) as number,
+    ...(typeof defaultConfig.arrowSize === 'number'
+      ? { arrowSize: defaultConfig.arrowSize }
+      : {}),
   }
 }
 

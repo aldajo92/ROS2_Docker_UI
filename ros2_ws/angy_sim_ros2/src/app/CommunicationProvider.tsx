@@ -103,7 +103,7 @@ export function CommunicationProvider({
   vehicleId = 'ego',
   clockPeriodSec = 1 / 50,
 }: CommunicationProviderProps) {
-  const { engine, commandQueue, externalPathQueue } = useSimulation()
+  const { engine, commandQueue, externalPathQueue, externalPoseArrayQueue } = useSimulation()
 
   // The active transport config is stateful so the UI picker can swap
   // transports at runtime without a page reload. The initializer runs
@@ -333,6 +333,7 @@ export function CommunicationProvider({
           },
           externalPathQueue,
           {
+            poseArrayQueue: externalPoseArrayQueue,
             onChange: (_selections: RenderableTopicSelection[]) => {
               if (cancelled || !renderableInstance) return
               // Re-publish the capability object so React notices the
@@ -497,6 +498,7 @@ export function CommunicationProvider({
     engine,
     commandQueue,
     externalPathQueue,
+    externalPoseArrayQueue,
     vehicleId,
     clockPeriodSec,
   ])

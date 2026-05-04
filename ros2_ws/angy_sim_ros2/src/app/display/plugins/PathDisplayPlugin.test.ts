@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { pathDisplayPlugin, PATH_DISPLAY_PLUGIN_ID } from './PathDisplayPlugin'
 import { ExternalPathUpdateQueue } from '../../../simulation/paths/ExternalPathUpdateQueue'
+import { ExternalPoseArrayUpdateQueue } from '../../../simulation/poses/ExternalPoseArrayUpdateQueue'
 import type { Path2D } from '../../../simulation/paths/Path2D'
 import type { DisplayRuntimeContext } from '../DisplayPlugin'
 
 function makeContext(): { queue: ExternalPathUpdateQueue; ctx: DisplayRuntimeContext } {
   const queue = new ExternalPathUpdateQueue()
-  return { queue, ctx: { pathQueue: queue } }
+  return { queue, ctx: { pathQueue: queue, poseArrayQueue: new ExternalPoseArrayUpdateQueue() } }
 }
 
 const BASE_PATH: Path2D = {

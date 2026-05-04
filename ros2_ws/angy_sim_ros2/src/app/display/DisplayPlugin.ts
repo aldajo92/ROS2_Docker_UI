@@ -1,4 +1,5 @@
 import type { ExternalPathUpdateQueue } from '../../simulation/paths/ExternalPathUpdateQueue'
+import type { ExternalPoseArrayUpdateQueue } from '../../simulation/poses/ExternalPoseArrayUpdateQueue'
 
 /**
  * Visual configuration shared by every display plugin. Plugins extend this
@@ -20,6 +21,7 @@ export interface DisplayVisualConfig {
  */
 export interface DisplayRuntimeContext {
   pathQueue: ExternalPathUpdateQueue
+  poseArrayQueue: ExternalPoseArrayUpdateQueue
 }
 
 /**

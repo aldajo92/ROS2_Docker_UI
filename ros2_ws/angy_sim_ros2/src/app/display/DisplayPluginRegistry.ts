@@ -1,5 +1,6 @@
 import type { DisplayPlugin, DisplayVisualConfig } from './DisplayPlugin'
 import { pathDisplayPlugin } from './plugins/PathDisplayPlugin'
+import { poseArrayDisplayPlugin } from './plugins/PoseArrayDisplayPlugin'
 
 /**
  * Registry of all active display plugins, keyed by plugin id.
@@ -37,3 +38,4 @@ export const defaultDisplayPluginRegistry: DisplayPluginRegistry =
   new DisplayPluginRegistry()
 
 defaultDisplayPluginRegistry.register(pathDisplayPlugin)
+defaultDisplayPluginRegistry.register(poseArrayDisplayPlugin)

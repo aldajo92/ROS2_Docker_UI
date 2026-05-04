@@ -1,6 +1,7 @@
 import { EntityManager } from './EntityManager'
 import { SimulationClock } from './SimulationClock'
 import { PathRegistry } from '../paths/PathRegistry'
+import { PoseArrayRegistry } from '../poses/PoseArrayRegistry'
 import { TrajectoryRegistry } from '../trajectories/TrajectoryRegistry'
 import { TrajectoryDebugRecorder } from '../trajectories/TrajectoryDebugRecorder'
 import type { TypedEventBus } from '../events/EventBus'
@@ -32,6 +33,7 @@ export class SimulationState {
   readonly events: TypedEventBus<SimulationEvents>
   readonly logger: Logger
   readonly paths: PathRegistry
+  readonly poseArrays: PoseArrayRegistry
   readonly trajectories: TrajectoryRegistry
   readonly trajectoryDebug: TrajectoryDebugRecorder
   scenarioName: string | null
@@ -47,6 +49,7 @@ export class SimulationState {
     this.events = events
     this.logger = logger
     this.paths = new PathRegistry()
+    this.poseArrays = new PoseArrayRegistry()
     this.trajectories = new TrajectoryRegistry()
     this.trajectoryDebug = new TrajectoryDebugRecorder()
     this.metrics = {

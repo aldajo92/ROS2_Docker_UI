@@ -18,6 +18,7 @@ import {
   type ThreeTrajectoryRendererDebugSummary,
 } from '../objects/ThreeTrajectoryRenderer'
 import { ThreePathRenderer } from '../objects/ThreePathRenderer'
+import { ThreePoseArrayRenderer } from '../objects/ThreePoseArrayRenderer'
 import { ThreeDebugLayer, type ThreeDebugLayerOptions } from '../debug/ThreeDebugLayer'
 import { CameraControllerManager } from '../cameras/CameraControllerManager'
 import {
@@ -57,6 +58,7 @@ export class ThreeSimulationRenderer implements SimulationRenderer {
   private dynamicActorRenderer?: ThreeDynamicActorRenderer
   private trajectoryRenderer?: ThreeTrajectoryRenderer
   private pathRenderer?: ThreePathRenderer
+  private poseArrayRenderer?: ThreePoseArrayRenderer
   private debugLayer?: ThreeDebugLayer
   private cameraControllerManager?: CameraControllerManager
   private projection: Projection
@@ -105,6 +107,7 @@ export class ThreeSimulationRenderer implements SimulationRenderer {
     }
 
     this.pathRenderer = new ThreePathRenderer(this.context)
+    this.poseArrayRenderer = new ThreePoseArrayRenderer(this.context)
     this.trajectoryRenderer = new ThreeTrajectoryRenderer(
       this.context,
       this.config.trajectoryVisualization,
@@ -143,6 +146,11 @@ export class ThreeSimulationRenderer implements SimulationRenderer {
     } catch (err) {
       pathErr = err
       derror('ThreeRenderer', 'pathRenderer.sync threw:', err)
+    }
+    try {
+      this.poseArrayRenderer?.sync(state)
+    } catch (err) {
+      derror('ThreeRenderer', 'poseArrayRenderer.sync threw:', err)
     }
     const tPath = debug ? perfNow() : 0
 
@@ -227,6 +235,7 @@ export class ThreeSimulationRenderer implements SimulationRenderer {
   dispose(): void {
     this.cameraControllerManager?.dispose()
     this.debugLayer?.dispose()
+    this.poseArrayRenderer?.dispose()
     this.pathRenderer?.dispose()
     this.trajectoryRenderer?.dispose()
     this.dynamicActorRenderer?.dispose()
@@ -252,6 +261,7 @@ export class ThreeSimulationRenderer implements SimulationRenderer {
     this.dynamicActorRenderer = undefined
     this.trajectoryRenderer = undefined
     this.pathRenderer = undefined
+    this.poseArrayRenderer = undefined
     this.debugLayer = undefined
     this.cameraControllerManager = undefined
   }

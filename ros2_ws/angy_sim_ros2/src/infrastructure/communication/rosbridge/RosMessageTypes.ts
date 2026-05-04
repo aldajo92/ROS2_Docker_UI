@@ -84,10 +84,17 @@ export interface RosPathMessage {
   poses: RosPoseStampedMessage[]
 }
 
+/** `geometry_msgs/msg/PoseArray` */
+export interface RosPoseArrayMessage {
+  header?: RosHeaderMessage
+  poses: RosPoseMessage[]
+}
+
 export const ROS_MESSAGE_TYPES = {
   twist: 'geometry_msgs/msg/Twist',
   clock: 'rosgraph_msgs/msg/Clock',
   path: 'nav_msgs/msg/Path',
+  poseArray: 'geometry_msgs/msg/PoseArray',
 } as const
 
 export type RosMessageType =

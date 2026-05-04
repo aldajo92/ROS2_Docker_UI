@@ -6,6 +6,8 @@ import { useRenderableTopics } from '../app/useRenderableTopics'
 import { isSystemTopic, type TopicInfo } from '../app/TopicDiscovery'
 import { DEFAULT_PATH_VISUAL_CONFIG } from '../app/RenderableTopics'
 
+const POSE_ARRAY_MESSAGE_TYPE = 'geometry_msgs/msg/PoseArray'
+
 /**
  * Inspector card that surfaces the active transport's topic-discovery
  * capability and (when maximized) live topic-echo controls. Today
@@ -343,10 +345,34 @@ export function Ros2TopicsPanel({
                               thickness: clamped,
                             })
                           }}
-                          aria-label={`Path thickness for ${topic.name}`}
+                          aria-label={`Thickness for ${topic.name}`}
                         />
                       </div>
                     </div>
+                    {topic.type === POSE_ARRAY_MESSAGE_TYPE && (
+                      <div className="ros2-topics-settings-row">
+                        <label>Arrow size (m):</label>
+                        <div className="ros2-topics-thickness-group">
+                          <input
+                            type="number"
+                            className="ros2-topics-thickness-input"
+                            min={0.1}
+                            max={10}
+                            step={0.1}
+                            value={visualConfig.arrowSize ?? 0.5}
+                            onChange={(e) => {
+                              const raw = Number(e.target.value)
+                              if (!Number.isFinite(raw)) return
+                              const clamped = Math.min(10, Math.max(0.1, raw))
+                              renderable?.setVisualConfig?.(topic.name, {
+                                arrowSize: clamped,
+                              })
+                            }}
+                            aria-label={`Arrow size for ${topic.name}`}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </li>

@@ -41,8 +41,10 @@ import type { TopicInfo } from './TopicDiscovery'
 export interface PathVisualConfig {
   /** CSS hex color, e.g. '#f0c14a'. */
   color: string
-  /** Line thickness (renderer-specific units, default ~2). */
+  /** Line / shaft thickness (renderer-specific units, default ~2). */
   thickness: number
+  /** Arrow length in meters. Only used by pose_array_2d topics. */
+  arrowSize?: number
 }
 
 export const DEFAULT_PATH_VISUAL_CONFIG: PathVisualConfig = {
@@ -50,7 +52,13 @@ export const DEFAULT_PATH_VISUAL_CONFIG: PathVisualConfig = {
   thickness: 2,
 }
 
-export type RenderableTopicKind = 'path2d'
+export const DEFAULT_POSE_ARRAY_VISUAL_CONFIG: PathVisualConfig = {
+  color: '#00bcd4',
+  thickness: 2,
+  arrowSize: 0.5,
+}
+
+export type RenderableTopicKind = 'path2d' | 'pose_array_2d'
 
 /**
  * Static description of one supported message type.
@@ -130,6 +138,10 @@ export const RENDERABLE_TOPIC_WHITELIST: ReadonlyArray<RenderableTopicSupport> =
     {
       messageType: 'nav_msgs/msg/Path',
       kind: 'path2d',
+    },
+    {
+      messageType: 'geometry_msgs/msg/PoseArray',
+      kind: 'pose_array_2d',
     },
   ])
 

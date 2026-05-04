@@ -292,6 +292,52 @@ Register them in `ThreeSimulationRenderer` / `PhaserSimulationRenderer`.
 **Renderer rule:** renderers read `state` — they never write to it, never call queues,
 and never import rosbridge or roslib.
 
+**Three.js coordinate rule:** any coordinate, vector, heading, yaw, or path sample that
+comes from simulation state must pass through the central mapping helpers in
+`src/ui/renderers/three/mapping/simToThree.ts`.
+
+```ts
+import {
+  simPoint2DToThree,
+  simPoint3DToThree,
+  simVector2DToThree,
+  simVector3DToThree,
+  simDirection3DToThree,
+  simYawToThreeRotationY,
+} from '../mapping/simToThree'
+```
+
+Do not publish simulation coordinates directly into Three.js objects:
+
+```ts
+// Incorrect for simulation data: puts sim Y into three's vertical axis.
+mesh.position.set(simX, simY, height)
+const point = new THREE.Vector3(simX, simY, 0)
+arrow.rotation.set(0, 0, simYaw)
+```
+
+Use the project mapping instead:
+
+```ts
+mesh.position.copy(simPoint2DToThree(point2d, height))
+mesh.rotation.set(0, simYawToThreeRotationY(yaw), 0)
+```
+
+The documented mapping is:
+
+```text
+sim.x -> three.x
+sim.y -> -three.z
+sim.z -> three.y
+yaw   -> rotation.y
+```
+
+Raw `THREE.Vector3(...)` and direct `position.set(...)` are only acceptable for
+Three-native data such as local mesh geometry, local basis vectors, lights, camera
+internals, or code inside the mapping module itself. When using raw Three.js
+coordinates for one of those exceptions, add a short comment explaining that the
+value is local/Three-space and not a simulation-frame coordinate.
+
 ### Step 10 — Add replay support
 
 Extend `SimulationFrameSnapshot` and the snapshot/restore helpers:
@@ -321,6 +367,18 @@ Required test categories (mirror the existing `path2d` tests as a template):
 | Replay snapshot | `createSnapshotFromState.test.ts` (extend existing) |
 | Architecture boundary | `architecture.display.test.ts` catches violations automatically |
 
+If the plugin adds a Three.js renderer for simulation geometry, also add mapping
+tests that prove the renderer respects `simToThree.ts`:
+
+- [ ] 2D sim points map to `(x, height, -y)` via `simPoint2DToThree(...)`.
+- [ ] 3D sim points map to `(x, z, -y)` via `simPoint3DToThree(...)`.
+- [ ] Sim yaw drives `rotation.y` via `simYawToThreeRotationY(...)`, not `rotation.z`.
+- [ ] Trajectories, paths, pose arrays, arrows, vectors, and outlines render on the
+      horizontal Three.js ground plane unless the artifact explicitly represents 3D data.
+- [ ] Any raw `THREE.Vector3(...)`, `.position.set(...)`, or direct rotation assignment
+      in the renderer is either removed or covered by a comment explaining why it is
+      local/Three-space rather than simulation-frame data.
+
 ### Step 12 — Verify
 
 ```bash
@@ -339,6 +397,8 @@ Before opening a PR for a new plugin, confirm:
 - [ ] The display plugin does not import `roslib`, `rosbridge`, `three`, or `phaser`.
 - [ ] The ROS binding does not import renderer modules.
 - [ ] Renderers do not mutate `SimulationState`.
+- [ ] Three.js renderers convert simulation coordinates only through
+      `src/ui/renderers/three/mapping/simToThree.ts`.
 - [ ] External callbacks enqueue updates; they do not write directly to state.
 - [ ] Replay can reproduce the rendered artifact (`SimulationFrameSnapshot` extended).
 - [ ] All existing tests still pass.
