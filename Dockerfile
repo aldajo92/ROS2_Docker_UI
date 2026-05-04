@@ -1,53 +1,32 @@
 # humble, jazzy
 ARG ROS_DISTRO=humble
 
-FROM arm64v8/ros:${ROS_DISTRO}
+FROM ros:${ROS_DISTRO}-ros-base
 ENV ROS_DISTRO=${ROS_DISTRO}
-
-## Install new gazebo (ionic, harmonic, fortress)
-# ENV GAZEBO_VERSION="fortress"
-# RUN apt install curl lsb-release gnupg
-# RUN curl https://packages.osrfoundation.org/gazebo.gpg --output /usr/share/keyrings/pkgs-osrf-archive-keyring.gpg
-# RUN echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/pkgs-osrf-archive-keyring.gpg] http://packages.osrfoundation.org/gazebo/ubuntu-stable $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/gazebo-stable.list > /dev/null
-# RUN apt update && apt install -y gz-${GAZEBO_VERSION}
-# RUN apt update && apt install -y \
-#     ros-${ROS_DISTRO}-ros-gz
-
-# RUN apt update && apt install -y \
-#     ros-${ROS_DISTRO}-gazebo-ros-pkgs \
-#     ros-${ROS_DISTRO}-gazebo-ros2-control \
-#     ros-${ROS_DISTRO}-ros-gz \
-#     ros-${ROS_DISTRO}-ros-ign-bridge
 
 RUN apt update && apt install -y \
     ros-${ROS_DISTRO}-robot-state-publisher \
     ros-${ROS_DISTRO}-joint-state-publisher \
-    ros-${ROS_DISTRO}-urdf-tutorial
+    ros-${ROS_DISTRO}-urdf-tutorial \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
 
 RUN apt update && apt install -y \
     ros-${ROS_DISTRO}-navigation2 \
     ros-${ROS_DISTRO}-nav2-bringup \
     ros-${ROS_DISTRO}-slam-toolbox\
-    ros-${ROS_DISTRO}-cv-bridge
+    ros-${ROS_DISTRO}-cv-bridge \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
 
 RUN apt update && apt install -y \
-    ros-${ROS_DISTRO}-rqt-reconfigure
-
-RUN apt update && apt install -y \
-    ros-${ROS_DISTRO}-interactive-markers
-
-RUN apt update && apt install -y \
-    python3-scipy
-
-RUN apt update && apt install -y \
-    python3-pygame
-
-RUN apt update && apt install -y \
-    ros-${ROS_DISTRO}-rosbridge-suite
+    ros-${ROS_DISTRO}-rqt-reconfigure \
+    ros-${ROS_DISTRO}-interactive-markers \
+    ros-${ROS_DISTRO}-rosbridge-suite \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
 
 RUN apt update && apt install -y curl \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt install -y nodejs
+    && apt install -y nodejs \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
 
 RUN npm install -g npm@latest && npm cache clean --force
 
