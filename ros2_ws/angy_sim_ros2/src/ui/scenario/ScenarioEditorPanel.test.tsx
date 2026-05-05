@@ -244,6 +244,158 @@ describe('ScenarioEditorPanel', () => {
   })
 })
 
+describe('ScenarioEditorPanel — copy to clipboard', () => {
+  let harness: Harness | null = null
+
+  afterEach(() => {
+    unmount(harness)
+    harness = null
+    vi.clearAllMocks()
+    vi.useRealTimers()
+    // Remove the clipboard mock so other tests aren't affected.
+    Object.defineProperty(globalThis.navigator, 'clipboard', {
+      value: undefined,
+      configurable: true,
+      writable: true,
+    })
+  })
+
+  const mountWithClipboard = (writeText: ReturnType<typeof vi.fn>) => {
+    Object.defineProperty(globalThis.navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+      writable: true,
+    })
+    return mount(<ScenarioEditorPanel scenarioText={SAMPLE_TEXT} />)
+  }
+
+  it('renders the Copy button in preview mode when a scenario is loaded', () => {
+    harness = mountWithClipboard(vi.fn().mockResolvedValue(undefined))
+    const btn = harness.container.querySelector(
+      '[data-testid="scenario-editor-copy"]',
+    ) as HTMLButtonElement | null
+    expect(btn).not.toBeNull()
+    expect(btn?.title).toBe('Copy')
+  })
+
+  it('does not render the Copy button when the editor is in edit mode', () => {
+    harness = mountWithClipboard(vi.fn().mockResolvedValue(undefined))
+    const toggle = harness.container.querySelector(
+      '[data-testid="scenario-editor-toggle"]',
+    ) as HTMLButtonElement
+    act(() => {
+      toggle.click()
+    })
+    expect(
+      harness.container.querySelector('[data-testid="scenario-editor-copy"]'),
+    ).toBeNull()
+  })
+
+  it('does not render the Copy button when locked by disabledReason', () => {
+    harness = mount(
+      <ScenarioEditorPanel
+        scenarioText={SAMPLE_TEXT}
+        disabledReason="Editing disabled during replay."
+      />,
+    )
+    expect(
+      harness.container.querySelector('[data-testid="scenario-editor-copy"]'),
+    ).toBeNull()
+  })
+
+  it('does not render the Copy button when no scenario is loaded', () => {
+    harness = mount(<ScenarioEditorPanel />)
+    expect(
+      harness.container.querySelector('[data-testid="scenario-editor-copy"]'),
+    ).toBeNull()
+  })
+
+  it('clicking Copy calls navigator.clipboard.writeText with the full scenarioText', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    harness = mountWithClipboard(writeText)
+    const btn = harness.container.querySelector(
+      '[data-testid="scenario-editor-copy"]',
+    ) as HTMLButtonElement
+
+    await act(async () => {
+      btn.click()
+    })
+
+    expect(writeText).toHaveBeenCalledTimes(1)
+    expect(writeText).toHaveBeenCalledWith(SAMPLE_TEXT)
+  })
+
+  it('shows "Copied" after a successful clipboard write', async () => {
+    vi.useFakeTimers()
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    harness = mountWithClipboard(writeText)
+    const btn = harness.container.querySelector(
+      '[data-testid="scenario-editor-copy"]',
+    ) as HTMLButtonElement
+
+    await act(async () => {
+      btn.click()
+    })
+
+    expect(btn.title).toBe('Copied')
+  })
+
+  it('shows "Copy failed" after a rejected clipboard write', async () => {
+    vi.useFakeTimers()
+    const writeText = vi.fn().mockRejectedValue(new Error('denied'))
+    harness = mountWithClipboard(writeText)
+    const btn = harness.container.querySelector(
+      '[data-testid="scenario-editor-copy"]',
+    ) as HTMLButtonElement
+
+    await act(async () => {
+      btn.click()
+    })
+
+    expect(btn.title).toBe('Copy failed')
+  })
+
+  it('shows "Copy failed" when the clipboard API is unavailable', async () => {
+    vi.useFakeTimers()
+    // Explicitly remove clipboard so the fallback path is exercised.
+    Object.defineProperty(globalThis.navigator, 'clipboard', {
+      value: undefined,
+      configurable: true,
+      writable: true,
+    })
+    harness = mount(<ScenarioEditorPanel scenarioText={SAMPLE_TEXT} />)
+    const btn = harness.container.querySelector(
+      '[data-testid="scenario-editor-copy"]',
+    ) as HTMLButtonElement
+
+    await act(async () => {
+      btn.click()
+    })
+
+    expect(btn.title).toBe('Copy failed')
+  })
+
+  it('resets the label back to "Copy" after the timeout elapses', async () => {
+    vi.useFakeTimers()
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    harness = mountWithClipboard(writeText)
+    const btn = harness.container.querySelector(
+      '[data-testid="scenario-editor-copy"]',
+    ) as HTMLButtonElement
+
+    await act(async () => {
+      btn.click()
+    })
+    expect(btn.title).toBe('Copied')
+
+    act(() => {
+      vi.advanceTimersByTime(2000)
+    })
+
+    expect(btn.title).toBe('Copy')
+  })
+})
+
 describe('ScenarioEditorPanel — interaction safety', () => {
   let harness: Harness | null = null
 

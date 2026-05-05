@@ -1,4 +1,24 @@
-import { useState, type ChangeEvent } from 'react'
+import { useState, useEffect, useRef, type ChangeEvent, type ReactNode } from 'react'
+
+const ICON_COPY: ReactNode = (
+  <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+  </svg>
+)
+
+const ICON_CHECK: ReactNode = (
+  <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="20 6 9 17 4 12" />
+  </svg>
+)
+
+const ICON_X: ReactNode = (
+  <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="18" y1="6" x2="6" y2="18" />
+    <line x1="6" y1="6" x2="18" y2="18" />
+  </svg>
+)
 
 export interface ScenarioEditorPanelProps {
   /** Current scenario as JSON text. Empty string means "no scenario
@@ -53,6 +73,15 @@ export function ScenarioEditorPanel({
   onExpandedChange,
 }: Readonly<ScenarioEditorPanelProps>) {
   const [isEditing, setIsEditing] = useState(false)
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (copyTimeoutRef.current !== null) clearTimeout(copyTimeoutRef.current)
+    }
+  }, [])
+
   const hasScenario = scenarioText.length > 0
   const lockedByParent =
     typeof disabledReason === 'string' && disabledReason.length > 0
@@ -79,6 +108,24 @@ export function ScenarioEditorPanel({
   const handleDownloadClick = () => {
     if (allActionsDisabled) return
     onDownloadScenario?.(scenarioText)
+  }
+
+  const handleCopyClick = async () => {
+    if (copyTimeoutRef.current !== null) {
+      clearTimeout(copyTimeoutRef.current)
+      copyTimeoutRef.current = null
+    }
+    try {
+      if (!navigator?.clipboard?.writeText) throw new Error('Clipboard API unavailable')
+      await navigator.clipboard.writeText(scenarioText)
+      setCopyStatus('copied')
+    } catch {
+      setCopyStatus('failed')
+    }
+    copyTimeoutRef.current = setTimeout(() => {
+      setCopyStatus('idle')
+      copyTimeoutRef.current = null
+    }, 2000)
   }
 
   const handleExpandClick = () => {
@@ -132,13 +179,43 @@ export function ScenarioEditorPanel({
         </button>
       </div>
       {hasScenario ? (
-        <pre
-          className="scenario-editor-preview"
-          data-testid="scenario-editor-preview"
-          hidden={isEditing}
-        >
-          {scenarioText}
-        </pre>
+        <div className="scenario-editor-preview-shell">
+          {!isEditing && !lockedByParent && (
+            <button
+              type="button"
+              className="scenario-editor-copy-button"
+              onClick={handleCopyClick}
+              aria-label={
+                copyStatus === 'idle'
+                  ? 'Copy scenario JSON to clipboard'
+                  : copyStatus === 'copied'
+                    ? 'Copied to clipboard'
+                    : 'Copy failed'
+              }
+              title={
+                copyStatus === 'idle'
+                  ? 'Copy'
+                  : copyStatus === 'copied'
+                    ? 'Copied'
+                    : 'Copy failed'
+              }
+              data-testid="scenario-editor-copy"
+            >
+              {copyStatus === 'idle'
+                ? ICON_COPY
+                : copyStatus === 'copied'
+                  ? ICON_CHECK
+                  : ICON_X}
+            </button>
+          )}
+          <pre
+            className="scenario-editor-preview"
+            data-testid="scenario-editor-preview"
+            hidden={isEditing}
+          >
+            {scenarioText}
+          </pre>
+        </div>
       ) : (
         <p className="scenario-editor-empty">Load a scenario to edit it.</p>
       )}

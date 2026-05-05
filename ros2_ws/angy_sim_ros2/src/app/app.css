@@ -753,6 +753,42 @@ body.layout-splitter-dragging {
   color: var(--fg-muted);
 }
 
+.scenario-editor-preview-shell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Extra top padding keeps JSON text clear of the Copy button. */
+.scenario-editor-preview-shell .scenario-editor-preview {
+  padding-top: 36px;
+}
+
+.scenario-editor-copy-button {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 1;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-panel-2);
+  color: var(--fg-muted);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 120ms, color 120ms, border-color 120ms;
+}
+
+.scenario-editor-copy-button:hover {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+
 .scenario-editor-preview,
 .scenario-editor-textarea {
   background: var(--bg-panel-2);
@@ -778,6 +814,7 @@ body.layout-splitter-dragging {
   min-height: 0;
 }
 
+.scenario-editor-panel--expanded .scenario-editor-preview-shell,
 .scenario-editor-panel--expanded .scenario-editor-preview,
 .scenario-editor-panel--expanded .scenario-editor-textarea {
   /* In expanded mode, let the preview/textarea grow to fill the card
