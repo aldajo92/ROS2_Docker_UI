@@ -3,10 +3,7 @@ import { Point2D } from '../../../../math/geometry/Point2D'
 import type { SimulationState } from '../../../../simulation/core/SimulationState'
 import type { PoseArray2D } from '../../../../simulation/poses/PoseArray2D'
 import type { ThreeSceneContext } from '../core/ThreeSceneContext'
-import {
-  simPoint2DToThree,
-  simYawToThreeRotationY,
-} from '../mapping/simToThree'
+import { setSimPose2D } from '../mapping/ThreeSimTransform'
 import { createArrow } from './createArrow'
 
 /**
@@ -85,17 +82,7 @@ export class ThreePoseArrayRenderer {
         color,
         unlit: true,
       })
-      // Pose lives on the simulation ground plane (sim X/Y), so every
-      // sim→three conversion must go through the central mapping
-      // helpers. Earlier revisions hardcoded `position.set(x, y, h)`
-      // and `rotation.set(0, 0, yaw)`, which placed arrows on three's
-      // X/Y plane (vertical) and rotated them around +Z. Under the
-      // project's right-handed sim→three mapping the arrows must lie
-      // on the X/Z plane and yaw must drive `rotation.y`.
-      arrow.position.copy(
-        simPoint2DToThree(Point2D.of(pose.x, pose.y), POSE_ARROW_HEIGHT),
-      )
-      arrow.rotation.set(0, simYawToThreeRotationY(pose.yaw), 0)
+      setSimPose2D(arrow, { position: Point2D.of(pose.x, pose.y), yaw: pose.yaw }, POSE_ARROW_HEIGHT)
       group.add(arrow)
     }
 

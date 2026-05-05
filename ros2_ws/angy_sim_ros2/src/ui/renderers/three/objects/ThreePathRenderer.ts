@@ -11,7 +11,7 @@ import {
 } from '../../../../debug/RenderDebug'
 import type { SimulationState } from '../../../../simulation/core/SimulationState'
 import type { ThreeSceneContext } from '../core/ThreeSceneContext'
-import { simPoint2DToThree } from '../mapping/simToThree'
+import { simPolyline2DToThreePositions } from '../mapping/ThreeSimTransform'
 import { PATH_COLOR } from '../config/VisualStyle'
 
 const PATH_HEIGHT = 0.06
@@ -163,10 +163,8 @@ export class ThreePathRenderer {
       const prevGeomUuid = (line.geometry as LineGeometry).uuid
 
       try {
-        const projected = path.points.map((p) =>
-          simPoint2DToThree(Point2D.of(p.x, p.y), PATH_HEIGHT),
-        )
-        const targetCount = projected.length
+        const simPoints = path.points.map((p) => Point2D.of(p.x, p.y))
+        const targetCount = simPoints.length
         const sizeChanged =
           debugState !== undefined &&
           targetCount !== debugState.lastPointCount
@@ -193,13 +191,7 @@ export class ThreePathRenderer {
           // instance count so no segments are drawn this frame.
           ;(line.geometry as LineGeometry).instanceCount = 0
         } else if (sizeChanged && !created) {
-          const positions = new Float32Array(targetCount * 3)
-          for (let i = 0; i < targetCount; i++) {
-            const p = projected[i]
-            positions[i * 3] = p.x
-            positions[i * 3 + 1] = p.y
-            positions[i * 3 + 2] = p.z
-          }
+          const positions = simPolyline2DToThreePositions(simPoints, PATH_HEIGHT)
           const oldGeometry = line.geometry as LineGeometry
           const fresh = new LineGeometry()
           fresh.setPositions(positions)
@@ -208,13 +200,7 @@ export class ThreePathRenderer {
           oldGeometry.dispose()
         } else {
           const geometry = line.geometry as LineGeometry
-          const positions = new Float32Array(targetCount * 3)
-          for (let i = 0; i < targetCount; i++) {
-            const p = projected[i]
-            positions[i * 3] = p.x
-            positions[i * 3 + 1] = p.y
-            positions[i * 3 + 2] = p.z
-          }
+          const positions = simPolyline2DToThreePositions(simPoints, PATH_HEIGHT)
           geometry.setPositions(positions)
           geometry.computeBoundingSphere()
         }

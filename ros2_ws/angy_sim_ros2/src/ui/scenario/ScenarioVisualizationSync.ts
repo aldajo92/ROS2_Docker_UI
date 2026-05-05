@@ -1,5 +1,6 @@
 import {
   DEFAULT_PATH_VISUAL_CONFIG,
+  DEFAULT_POSE_ARRAY_VISUAL_CONFIG,
   type PathVisualConfig,
   type RenderableTopicSelection,
 } from '../../app/RenderableTopics'
@@ -56,11 +57,21 @@ function buildVisualizationEntry(
   config: PathVisualConfig,
 ): ScenarioVisualizationRos2Topic {
   const style: ScenarioVisualizationTopicStyle = {}
-  if (config.color !== DEFAULT_PATH_VISUAL_CONFIG.color) {
+  const defaults =
+    messageType === 'geometry_msgs/msg/PoseArray'
+      ? DEFAULT_POSE_ARRAY_VISUAL_CONFIG
+      : DEFAULT_PATH_VISUAL_CONFIG
+  if (config.color !== defaults.color) {
     style.color = config.color
   }
-  if (config.thickness !== DEFAULT_PATH_VISUAL_CONFIG.thickness) {
+  if (config.thickness !== defaults.thickness) {
     style.thickness = config.thickness
+  }
+  if (
+    config.arrowSize !== undefined &&
+    config.arrowSize !== defaults.arrowSize
+  ) {
+    style.arrowSize = config.arrowSize
   }
   const entry: ScenarioVisualizationRos2Topic = { topic, messageType }
   if (Object.keys(style).length > 0) entry.style = style

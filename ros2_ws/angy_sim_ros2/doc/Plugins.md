@@ -220,6 +220,26 @@ export const myArtifactDisplayPlugin: DisplayPlugin<MyArtifact2D, MyArtifactVisu
 **Boundary rule:** this file must not import `roslib`, `rosbridge`, `three`, `phaser`,
 or `react`. The architecture test in `architecture.display.test.ts` will catch violations.
 
+**Visual-config round-trip rule:** every field exposed by the plugin UI must round-trip
+through the scenario JSON editor and scenario loader. When adding a visual field
+such as `thickness`, `arrowSize`, `markerScale`, or `opacity`, update all of the
+following paths in the same PR:
+
+- The plugin's `defaultConfig`.
+- The artifact type if the renderer needs to read the styled value from
+  `SimulationState`.
+- The plugin's `applyConfig()` implementation.
+- `ScenarioVisualizationTopicStyle` in `src/simulation/scenarios/Scenario.ts`.
+- `ScenarioLoader.parse()` validation for `visualization.ros2Topics[].style`.
+- The scenario visualization projection helper in
+  `src/ui/scenario/ScenarioVisualizationSync.ts`, so live UI edits are written
+  back into the Scenario Editor JSON.
+- The scenario-load apply path in `App.tsx`, so scenario-declared style fields
+  are applied back into `RenderableTopicCapability`.
+
+This prevents a field from working at render time but disappearing from the
+editor JSON, which previously happened for PoseArray `arrowSize`.
+
 ### Step 5 — Register the plugin
 
 ```ts
@@ -292,38 +312,31 @@ Register them in `ThreeSimulationRenderer` / `PhaserSimulationRenderer`.
 **Renderer rule:** renderers read `state` — they never write to it, never call queues,
 and never import rosbridge or roslib.
 
-**Three.js coordinate rule:** any coordinate, vector, heading, yaw, or path sample that
-comes from simulation state must pass through the central mapping helpers in
-`src/ui/renderers/three/mapping/simToThree.ts`.
+**Three.js coordinate rule:** all simulation-frame data (positions, yaw, paths, pose arrays)
+must go through `src/ui/renderers/three/mapping/ThreeSimTransform.ts`. The mapping module
+`simToThree.ts` is the single source of truth for the formula; `ThreeSimTransform.ts` is the
+preferred call site for renderer code.
 
 ```ts
 import {
-  simPoint2DToThree,
-  simPoint3DToThree,
-  simVector2DToThree,
-  simVector3DToThree,
-  simDirection3DToThree,
-  simYawToThreeRotationY,
-} from '../mapping/simToThree'
+  setSimPosition2D,
+  setSimPose2D,
+  setSimYaw,
+  simPolyline2DToThreePositions,
+  simSegment2DToThreePoints,
+} from '../mapping/ThreeSimTransform'
 ```
 
-Do not publish simulation coordinates directly into Three.js objects:
+| Need | Helper |
+|---|---|
+| Place object at sim (x, y) | `setSimPosition2D(obj, point, height)` |
+| Set yaw on an object | `setSimYaw(obj, yaw)` |
+| Both position + yaw | `setSimPose2D(obj, pose, height)` |
+| Path / trajectory positions | `simPolyline2DToThreePositions(points, height)` |
+| Two-endpoint segment | `simSegment2DToThreePoints(start, end, height)` |
 
-```ts
-// Incorrect for simulation data: puts sim Y into three's vertical axis.
-mesh.position.set(simX, simY, height)
-const point = new THREE.Vector3(simX, simY, 0)
-arrow.rotation.set(0, 0, simYaw)
-```
-
-Use the project mapping instead:
-
-```ts
-mesh.position.copy(simPoint2DToThree(point2d, height))
-mesh.rotation.set(0, simYawToThreeRotationY(yaw), 0)
-```
-
-The documented mapping is:
+Never write `.position.set(simX, simY, z)` or `.rotation.set(0, 0, simYaw)` from
+simulation values. The documented mapping is:
 
 ```text
 sim.x -> three.x
@@ -332,11 +345,9 @@ sim.z -> three.y
 yaw   -> rotation.y
 ```
 
-Raw `THREE.Vector3(...)` and direct `position.set(...)` are only acceptable for
-Three-native data such as local mesh geometry, local basis vectors, lights, camera
-internals, or code inside the mapping module itself. When using raw Three.js
-coordinates for one of those exceptions, add a short comment explaining that the
-value is local/Three-space and not a simulation-frame coordinate.
+Raw `THREE.Vector3(...)` and direct `position.set(...)` are acceptable only for
+Three-native data: local mesh geometry, local basis vectors, lights, or camera internals.
+Add a short comment when using raw Three.js coordinates to explain they are local/Three-space.
 
 ### Step 10 — Add replay support
 
@@ -366,6 +377,18 @@ Required test categories (mirror the existing `path2d` tests as a template):
 | ROS binding | `RosTopicDisplayBindings.test.ts` (extend existing) |
 | Replay snapshot | `createSnapshotFromState.test.ts` (extend existing) |
 | Architecture boundary | `architecture.display.test.ts` catches violations automatically |
+| Scenario style parse | `ScenarioLoader.test.ts` validates every `style` field |
+| Scenario editor sync | `ScenarioVisualizationSync.test.ts` verifies UI style edits serialize into `visualization.ros2Topics[].style` |
+
+For every visual-config field exposed by the plugin UI, add tests for both
+directions of the scenario round-trip:
+
+- [ ] Loading scenario JSON applies `visualization.ros2Topics[].style.<field>` to
+      the live selected topic config.
+- [ ] Editing the UI control writes `<field>` back into the Scenario Editor JSON.
+- [ ] Defaults are omitted from JSON only when they truly match the plugin's own
+      defaults, not another plugin's defaults.
+- [ ] Invalid values are rejected by `ScenarioLoader.parse()` with a clear error.
 
 If the plugin adds a Three.js renderer for simulation geometry, also add mapping
 tests that prove the renderer respects `simToThree.ts`:
@@ -399,6 +422,9 @@ Before opening a PR for a new plugin, confirm:
 - [ ] Renderers do not mutate `SimulationState`.
 - [ ] Three.js renderers convert simulation coordinates only through
       `src/ui/renderers/three/mapping/simToThree.ts`.
+- [ ] Every plugin visual-config field exposed in the UI is represented in
+      scenario style parsing, scenario-load application, editor JSON sync, and
+      tests.
 - [ ] External callbacks enqueue updates; they do not write directly to state.
 - [ ] Replay can reproduce the rendered artifact (`SimulationFrameSnapshot` extended).
 - [ ] All existing tests still pass.

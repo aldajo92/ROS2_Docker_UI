@@ -865,6 +865,27 @@ describe('ScenarioLoader.parse — visualization', () => {
     })
   })
 
+  it('parses PoseArray visualization arrowSize style', () => {
+    const spec = ScenarioLoader.parse({
+      name: 's',
+      entities: [],
+      visualization: {
+        ros2Topics: [
+          {
+            topic: '/pose_array',
+            messageType: 'geometry_msgs/msg/PoseArray',
+            style: { color: '#00bcd4', thickness: 1, arrowSize: 0.75 },
+          },
+        ],
+      },
+    })
+    expect(spec.visualization?.ros2Topics?.[0]).toEqual({
+      topic: '/pose_array',
+      messageType: 'geometry_msgs/msg/PoseArray',
+      style: { color: '#00bcd4', thickness: 1, arrowSize: 0.75 },
+    })
+  })
+
   it('omits style when not provided', () => {
     const spec = ScenarioLoader.parse({
       name: 's',
@@ -1003,5 +1024,23 @@ describe('ScenarioLoader.parse — visualization', () => {
         },
       }),
     ).toThrow(/thickness must be a finite number > 0/)
+  })
+
+  it('rejects non-positive arrowSize', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        visualization: {
+          ros2Topics: [
+            {
+              topic: '/pose_array',
+              messageType: 'geometry_msgs/msg/PoseArray',
+              style: { arrowSize: 0 },
+            },
+          ],
+        },
+      }),
+    ).toThrow(/arrowSize must be a finite number > 0/)
   })
 })

@@ -2,10 +2,7 @@ import * as THREE from 'three'
 import type { SimulationState } from '../../../../simulation/core/SimulationState'
 import type { ThreeSceneContext } from '../core/ThreeSceneContext'
 import { disposeObject3D } from '../core/threeDisposal'
-import {
-  simPoint2DToThree,
-  simYawToThreeRotationY,
-} from '../mapping/simToThree'
+import { setSimPosition2D, setSimYaw } from '../mapping/ThreeSimTransform'
 import { Point2D } from '../../../../math/geometry/Point2D'
 import {
   VEHICLE_LENGTH_RATIO,
@@ -152,16 +149,11 @@ function positionLoop(
   loop: THREE.LineLoop,
   outline: BoundingOutline,
 ): void {
-  loop.position.copy(
-    simPoint2DToThree(
-      Point2D.of(outline.center.x, outline.center.y),
-      OUTLINE_LIFT_M,
-    ),
-  )
+  setSimPosition2D(loop, Point2D.of(outline.center.x, outline.center.y), OUTLINE_LIFT_M)
   // Circles are rotationally symmetric so their yaw is irrelevant;
   // still reset the rotation in case we swapped shape kinds.
   const yaw = outline.kind === 'rectangle' ? outline.yaw : 0
-  loop.rotation.set(0, simYawToThreeRotationY(yaw), 0)
+  setSimYaw(loop, yaw)
 }
 
 /** Points on the sim ground plane (XZ in three space, see

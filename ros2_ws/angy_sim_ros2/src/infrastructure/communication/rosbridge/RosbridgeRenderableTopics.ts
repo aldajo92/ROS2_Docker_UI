@@ -132,7 +132,6 @@ interface InternalSelection {
 
 export class RosbridgeRenderableTopics implements RenderableTopicCapability {
   private readonly subscriber: RenderableSubscriber
-  private readonly queue: ExternalPathUpdateQueue
   private readonly context: DisplayRuntimeContext
   private readonly whitelist: ReadonlyArray<RenderableTopicSupport>
   private readonly pathIdFor: (
@@ -159,7 +158,6 @@ export class RosbridgeRenderableTopics implements RenderableTopicCapability {
     options: RosbridgeRenderableTopicsOptions = {},
   ) {
     this.subscriber = subscriber
-    this.queue = queue
     this.context = {
       pathQueue: queue,
       // Fall back to a disconnected queue so tests that don't care about

@@ -719,6 +719,9 @@ function AppShell() {
             ...(entry.style.thickness !== undefined && {
               thickness: entry.style.thickness,
             }),
+            ...(entry.style.arrowSize !== undefined && {
+              arrowSize: entry.style.arrowSize,
+            }),
           })
         }
       } else if (renderableTopics.isSelected(entry.topic)) {

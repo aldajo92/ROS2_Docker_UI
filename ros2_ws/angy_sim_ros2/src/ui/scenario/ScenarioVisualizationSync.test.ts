@@ -6,6 +6,7 @@ import {
 } from './ScenarioVisualizationSync'
 import {
   DEFAULT_PATH_VISUAL_CONFIG,
+  DEFAULT_POSE_ARRAY_VISUAL_CONFIG,
   type RenderableTopicSelection,
 } from '../../app/RenderableTopics'
 import type { ScenarioSpec } from '../../simulation/scenarios/Scenario'
@@ -22,11 +23,19 @@ const selection = (
   messageType: string,
   color = DEFAULT_PATH_VISUAL_CONFIG.color,
   thickness = DEFAULT_PATH_VISUAL_CONFIG.thickness,
+  arrowSize?: number,
 ): RenderableTopicSelection => ({
   topicName: topic,
   messageType,
-  kind: 'path2d',
-  visualConfig: { color, thickness },
+  kind:
+    messageType === 'geometry_msgs/msg/PoseArray'
+      ? 'pose_array_2d'
+      : 'path2d',
+  visualConfig: {
+    color,
+    thickness,
+    ...(arrowSize !== undefined && { arrowSize }),
+  },
 })
 
 describe('buildVisualizationFromRenderableSelections', () => {
@@ -71,6 +80,42 @@ describe('buildVisualizationFromRenderableSelections', () => {
     expect(v.ros2Topics?.[0].style).toEqual({
       color: '#abcdef',
       thickness: 7,
+    })
+  })
+
+  it('serializes PoseArray thickness and arrowSize against PoseArray defaults', () => {
+    const v = buildVisualizationFromRenderableSelections([
+      selection(
+        '/pose_array',
+        'geometry_msgs/msg/PoseArray',
+        DEFAULT_POSE_ARRAY_VISUAL_CONFIG.color,
+        1,
+        0.8,
+      ),
+    ])
+    expect(v.ros2Topics?.[0]).toEqual({
+      topic: '/pose_array',
+      messageType: 'geometry_msgs/msg/PoseArray',
+      style: {
+        thickness: 1,
+        arrowSize: 0.8,
+      },
+    })
+  })
+
+  it('omits PoseArray default thickness and arrowSize from style', () => {
+    const v = buildVisualizationFromRenderableSelections([
+      selection(
+        '/pose_array',
+        'geometry_msgs/msg/PoseArray',
+        DEFAULT_POSE_ARRAY_VISUAL_CONFIG.color,
+        DEFAULT_POSE_ARRAY_VISUAL_CONFIG.thickness,
+        DEFAULT_POSE_ARRAY_VISUAL_CONFIG.arrowSize,
+      ),
+    ])
+    expect(v.ros2Topics?.[0]).toEqual({
+      topic: '/pose_array',
+      messageType: 'geometry_msgs/msg/PoseArray',
     })
   })
 })
@@ -211,6 +256,31 @@ describe('trySyncVisualizationIntoScenarioText', () => {
         topic: '/circle_path',
         messageType: 'nav_msgs/msg/Path',
         style: { color: '#ffaaff' },
+      })
+    }
+  })
+
+  it('syncs PoseArray thickness and arrowSize into scenario editor JSON', () => {
+    const visualization = buildVisualizationFromRenderableSelections([
+      selection(
+        '/pose_array',
+        'geometry_msgs/msg/PoseArray',
+        '#00bcd4',
+        1,
+        0.75,
+      ),
+    ])
+    const result = trySyncVisualizationIntoScenarioText(baseText, visualization)
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      const reparsed = JSON.parse(result.text) as ScenarioSpec
+      expect(reparsed.visualization?.ros2Topics?.[0]).toEqual({
+        topic: '/pose_array',
+        messageType: 'geometry_msgs/msg/PoseArray',
+        style: {
+          thickness: 1,
+          arrowSize: 0.75,
+        },
       })
     }
   })

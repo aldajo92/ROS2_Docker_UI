@@ -18,6 +18,7 @@ import { SimulationContext } from './SimulationContext'
 import { SimulationController } from '../simulation/core/SimulationController'
 import { VehicleCommandQueue } from '../simulation/commands/VehicleCommandQueue'
 import { ExternalPathUpdateQueue } from '../simulation/paths/ExternalPathUpdateQueue'
+import { ExternalPoseArrayUpdateQueue } from '../simulation/poses/ExternalPoseArrayUpdateQueue'
 import { useSimulationProfiler } from './useSimulationProfiler'
 import type { ProfilerSnapshot } from '../simulation/profiling/ProfilerTypes'
 
@@ -63,7 +64,8 @@ function buildContextValue() {
   const controller = new SimulationController(engine)
   const commandQueue = new VehicleCommandQueue()
   const externalPathQueue = new ExternalPathUpdateQueue()
-  return { engine, controller, commandQueue, externalPathQueue }
+  const externalPoseArrayQueue = new ExternalPoseArrayUpdateQueue()
+  return { engine, controller, commandQueue, externalPathQueue, externalPoseArrayQueue }
 }
 
 function mount(children: React.ReactNode): {

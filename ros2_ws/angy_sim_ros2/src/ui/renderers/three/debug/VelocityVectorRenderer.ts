@@ -3,7 +3,7 @@ import type { SimulationState } from '../../../../simulation/core/SimulationStat
 import type { ThreeSceneContext } from '../core/ThreeSceneContext'
 import { ThreeRenderObjectRegistry } from '../core/ThreeRenderObjectRegistry'
 import { disposeObject3D } from '../core/threeDisposal'
-import { simPoint2DToThree } from '../mapping/simToThree'
+import { simSegment2DToThreePoints } from '../mapping/ThreeSimTransform'
 import { VehicleEntity } from '../../../../simulation/entities/VehicleEntity'
 
 /**
@@ -43,11 +43,11 @@ export class VelocityVectorRenderer {
 
       const speed = Math.max(0, vehicle.v)
       const yaw = vehicle.pose.yaw
-      const tipX = vehicle.pose.position.x + Math.cos(yaw) * speed
-      const tipY = vehicle.pose.position.y + Math.sin(yaw) * speed
-
-      const a = simPoint2DToThree(vehicle.pose.position, 0.05)
-      const b = simPoint2DToThree(vehicle.pose.position.with({ x: tipX, y: tipY }), 0.05)
+      const tip = vehicle.pose.position.with({
+        x: vehicle.pose.position.x + Math.cos(yaw) * speed,
+        y: vehicle.pose.position.y + Math.sin(yaw) * speed,
+      })
+      const [a, b] = simSegment2DToThreePoints(vehicle.pose.position, tip, 0.05)
       ;(line.geometry as THREE.BufferGeometry).setFromPoints([a, b])
     }
 

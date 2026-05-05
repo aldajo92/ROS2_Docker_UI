@@ -3,7 +3,7 @@ import type { SimulationState } from '../../../../simulation/core/SimulationStat
 import type { ThreeSceneContext } from '../core/ThreeSceneContext'
 import { ThreeRenderObjectRegistry } from '../core/ThreeRenderObjectRegistry'
 import { disposeObject3D } from '../core/threeDisposal'
-import { simPoint2DToThree, simYawToThreeRotationY } from '../mapping/simToThree'
+import { setSimPose2D } from '../mapping/ThreeSimTransform'
 import { VehicleEntity } from '../../../../simulation/entities/VehicleEntity'
 import { createArrow } from '../objects/createArrow'
 import {
@@ -53,8 +53,7 @@ export class HeadingArrowRenderer {
       // already sits at `halfHeight`. We replicate that vertical
       // anchor here without parenting the renderers.
       const halfHeight = (vehicle.radius * VEHICLE_HEIGHT_RATIO) / 2
-      group.position.copy(simPoint2DToThree(vehicle.pose.position, halfHeight))
-      group.rotation.set(0, simYawToThreeRotationY(vehicle.pose.yaw), 0)
+      setSimPose2D(group, vehicle.pose, halfHeight)
     }
 
     for (const [id, group] of [...this.registry.entries()]) {

@@ -5,8 +5,7 @@ Use this prompt when adding frame-transform support to `angy_sim_ros2`.
 This prompt assumes:
 
 - `doc/Architecture.md` and `doc/Development_Guide.md` are the source of truth.
-- `doc/Other/DisplayPluginArchitectureAgentPrompt.md` defines the target display
-  plugin architecture.
+- `doc/Plugins.md` defines the current display plugin architecture.
 
 ---
 

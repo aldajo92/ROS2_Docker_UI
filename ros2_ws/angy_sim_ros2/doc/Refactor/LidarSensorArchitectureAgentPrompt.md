@@ -5,8 +5,7 @@ Use this prompt when adding a simulated 2D lidar sensor to `angy_sim_ros2`.
 This prompt assumes:
 
 - `doc/Architecture.md` and `doc/Development_Guide.md` are the source of truth.
-- `doc/Refactor/DisplayPluginArchitectureAgentPrompt.md` defines the target
-  display plugin architecture.
+- `doc/Plugins.md` defines the current display plugin architecture.
 - `doc/Refactor/FrameTransformArchitectureAgentPrompt.md` may later define
   fixed-frame / TF support.
 

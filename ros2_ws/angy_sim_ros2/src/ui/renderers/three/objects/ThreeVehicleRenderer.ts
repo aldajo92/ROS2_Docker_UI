@@ -3,7 +3,7 @@ import type { SimulationState } from '../../../../simulation/core/SimulationStat
 import type { ThreeSceneContext } from '../core/ThreeSceneContext'
 import { ThreeRenderObjectRegistry } from '../core/ThreeRenderObjectRegistry'
 import { disposeObject3D } from '../core/threeDisposal'
-import { simPoint2DToThree, simYawToThreeRotationY } from '../mapping/simToThree'
+import { setSimPose2D } from '../mapping/ThreeSimTransform'
 import { VehicleEntity } from '../../../../simulation/entities/VehicleEntity'
 import {
   VEHICLE_BODY_COLOR,
@@ -88,7 +88,6 @@ export class ThreeVehicleRenderer {
   private syncVehicleMesh(mesh: THREE.Mesh, vehicle: VehicleEntity): void {
     // Lift the mesh so its base rests on the ground plane.
     const halfHeight = (vehicle.radius * VEHICLE_HEIGHT_RATIO) / 2
-    mesh.position.copy(simPoint2DToThree(vehicle.pose.position, halfHeight))
-    mesh.rotation.set(0, simYawToThreeRotationY(vehicle.pose.yaw), 0)
+    setSimPose2D(mesh, vehicle.pose, halfHeight)
   }
 }

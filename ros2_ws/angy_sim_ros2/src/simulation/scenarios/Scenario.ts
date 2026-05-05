@@ -146,13 +146,16 @@ export interface ScenarioInteractionConfig {
  * `PathVisualConfig` (under `src/app/RenderableTopics.ts`) but is kept
  * here as a plain data shape so the simulation-side scenario loader does
  * not depend on UI/communication types. The fields are optional so a
- * scenario may carry just a color, just a thickness, or neither.
+ * scenario may carry just a color, just a thickness, plugin-specific fields,
+ * or none of them.
  */
 export interface ScenarioVisualizationTopicStyle {
   /** CSS HEX color in `#RRGGBB` form. */
   color?: string
   /** Line thickness in renderer-specific units (>= 0 finite). */
   thickness?: number
+  /** Arrow length in meters. Used by `geometry_msgs/msg/PoseArray` topics. */
+  arrowSize?: number
 }
 
 /**

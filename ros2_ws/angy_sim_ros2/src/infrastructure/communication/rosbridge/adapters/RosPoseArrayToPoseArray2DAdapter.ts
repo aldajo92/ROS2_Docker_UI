@@ -18,7 +18,11 @@ import type {
 export class RosPoseArrayToPoseArray2DAdapter
   implements MessageAdapter<unknown, PoseArray2D>
 {
-  constructor(private readonly artifactId: string) {}
+  private readonly artifactId: string
+
+  constructor(artifactId: string) {
+    this.artifactId = artifactId
+  }
 
   toInternal(message: unknown): PoseArray2D {
     const msg = message as RosPoseArrayMessage

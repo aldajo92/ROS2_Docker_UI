@@ -515,9 +515,23 @@ function parseVisualizationTopicStyle(
     }
     thickness = input.thickness
   }
+  let arrowSize: number | undefined
+  if (input.arrowSize !== undefined) {
+    if (
+      typeof input.arrowSize !== 'number' ||
+      !Number.isFinite(input.arrowSize) ||
+      input.arrowSize <= 0
+    ) {
+      throw new ScenarioParseError(
+        `${path}.arrowSize must be a finite number > 0`,
+      )
+    }
+    arrowSize = input.arrowSize
+  }
   return {
     ...(color !== undefined && { color }),
     ...(thickness !== undefined && { thickness }),
+    ...(arrowSize !== undefined && { arrowSize }),
   }
 }
 

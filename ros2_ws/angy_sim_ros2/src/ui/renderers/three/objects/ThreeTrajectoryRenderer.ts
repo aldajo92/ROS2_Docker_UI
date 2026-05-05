@@ -4,7 +4,7 @@ import type { SimulationState } from '../../../../simulation/core/SimulationStat
 import type { ThreeTrajectoryVisualizationConfig } from '../config/ThreeRendererConfig'
 import { DEFAULT_THREE_TRAJECTORY_VISUALIZATION_CONFIG } from '../config/ThreeRendererConfig'
 import type { ThreeSceneContext } from '../core/ThreeSceneContext'
-import { simPoint2DToThree } from '../mapping/simToThree'
+import { simPolyline2DToThreePositions } from '../mapping/ThreeSimTransform'
 
 export type ThreeTrajectoryEntityDebug = {
   entityId: string
@@ -118,18 +118,8 @@ export class ThreeTrajectoryRenderer {
     // size it had at first creation (typically 1 vertex → invisible
     // line). Always rebuild a fresh position attribute sized to the
     // current sample count.
-    const positions = new Float32Array(samples.length * 3)
-    const height = this.config.height
-    for (let i = 0; i < samples.length; i++) {
-      const v = simPoint2DToThree(
-        Point2D.of(samples[i].x, samples[i].y),
-        height,
-      )
-      const offset = i * 3
-      positions[offset] = v.x
-      positions[offset + 1] = v.y
-      positions[offset + 2] = v.z
-    }
+    const pts = samples.map((s) => Point2D.of(s.x, s.y))
+    const positions = simPolyline2DToThreePositions(pts, this.config.height)
     const attribute = new THREE.BufferAttribute(positions, 3)
     line.geometry.setAttribute('position', attribute)
     line.geometry.setDrawRange(0, samples.length)
