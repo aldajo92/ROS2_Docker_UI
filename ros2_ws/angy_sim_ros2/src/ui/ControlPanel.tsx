@@ -15,6 +15,10 @@ export interface ControlPanelProps {
    *  control defaults) so it's already applied when the engine emits
    *  `reset` and `scenarioLoaded` synchronously inside `loadScenario`. */
   onScenarioLoaded?: (spec: ScenarioSpec) => void
+  /** Notified with the original `File.name` when a scenario is
+   *  successfully uploaded from a local file. App uses this to seed
+   *  the Scenario Editor toolbar filename. */
+  onUploadedFileName?: (fileName: string) => void
   /**
    * When `true` the "Record while simulation runs" checkbox is
    * checked. The panel is fully controlled — all recording wiring
@@ -69,6 +73,7 @@ const SCENARIO_OPTIONS: readonly ScenarioOption[] = [
 
 export function ControlPanel({
   onScenarioLoaded,
+  onUploadedFileName,
   recordWhileRunning = false,
   onRecordWhileRunningChange,
   onSaveRecording,
@@ -122,6 +127,7 @@ export function ControlPanel({
       const result = await readScenarioFromFile(file)
       if (result.ok) {
         applyScenario(result.spec)
+        onUploadedFileName?.(file.name)
       } else {
         setError(result.error)
       }

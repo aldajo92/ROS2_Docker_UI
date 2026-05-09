@@ -711,6 +711,245 @@ describe('ScenarioLoader.parse — interaction.keyboardControl', () => {
   })
 })
 
+describe('ScenarioLoader.parse — interaction.ros2TwistControls', () => {
+  it('parses a full Twist binding with scale, limits, and timeout', () => {
+    const spec = ScenarioLoader.parse({
+      name: 's',
+      entities: [],
+      interaction: {
+        ros2TwistControls: [
+          {
+            topic: '/cmd_vel',
+            vehicleId: 'ego',
+            enabled: true,
+            scale: { v: 0.5, w: 1.5 },
+            limits: {
+              maxForwardSpeed: 2.0,
+              maxReverseSpeed: 1.0,
+              maxAngularSpeed: 2.5,
+            },
+            timeoutSec: 0.5,
+            onTimeout: 'stop',
+          },
+        ],
+      },
+    })
+    expect(spec.interaction?.ros2TwistControls).toEqual([
+      {
+        topic: '/cmd_vel',
+        vehicleId: 'ego',
+        enabled: true,
+        scale: { v: 0.5, w: 1.5 },
+        limits: {
+          maxForwardSpeed: 2.0,
+          maxReverseSpeed: 1.0,
+          maxAngularSpeed: 2.5,
+        },
+        timeoutSec: 0.5,
+        onTimeout: 'stop',
+      },
+    ])
+  })
+
+  it('parses a minimal binding (just topic + vehicleId)', () => {
+    const spec = ScenarioLoader.parse({
+      name: 's',
+      entities: [],
+      interaction: {
+        ros2TwistControls: [{ topic: '/cmd_vel', vehicleId: 'ego' }],
+      },
+    })
+    expect(spec.interaction?.ros2TwistControls).toEqual([
+      { topic: '/cmd_vel', vehicleId: 'ego' },
+    ])
+  })
+
+  it('accepts an empty array (still parses, no bindings)', () => {
+    const spec = ScenarioLoader.parse({
+      name: 's',
+      entities: [],
+      interaction: { ros2TwistControls: [] },
+    })
+    expect(spec.interaction?.ros2TwistControls).toEqual([])
+  })
+
+  it('accepts a missing ros2TwistControls field (backward compat)', () => {
+    const spec = ScenarioLoader.parse({
+      name: 's',
+      entities: [],
+      interaction: { keyboardControl: { enabled: true } },
+    })
+    expect(spec.interaction?.ros2TwistControls).toBeUndefined()
+  })
+
+  it('does NOT require messageType — schema is implicit', () => {
+    // Per the schema decision: the field name `ros2TwistControls`
+    // already defines the message contract, so messageType is not
+    // part of the schema. A binding without messageType must parse.
+    const spec = ScenarioLoader.parse({
+      name: 's',
+      entities: [],
+      interaction: {
+        ros2TwistControls: [{ topic: '/cmd_vel', vehicleId: 'ego' }],
+      },
+    })
+    expect(spec.interaction?.ros2TwistControls).toBeDefined()
+  })
+
+  it('throws on non-array ros2TwistControls', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        interaction: { ros2TwistControls: 'oops' },
+      }),
+    ).toThrow(/ros2TwistControls must be an array/)
+  })
+
+  it('throws on empty topic string', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        interaction: {
+          ros2TwistControls: [{ topic: '', vehicleId: 'ego' }],
+        },
+      }),
+    ).toThrow(/topic must be a non-empty string/)
+  })
+
+  it('throws on missing topic', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        interaction: {
+          ros2TwistControls: [{ vehicleId: 'ego' }],
+        },
+      }),
+    ).toThrow(/topic must be a non-empty string/)
+  })
+
+  it('throws on empty vehicleId string', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        interaction: {
+          ros2TwistControls: [{ topic: '/cmd_vel', vehicleId: '' }],
+        },
+      }),
+    ).toThrow(/vehicleId must be a non-empty string/)
+  })
+
+  it('throws on non-boolean enabled', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        interaction: {
+          ros2TwistControls: [
+            { topic: '/cmd_vel', vehicleId: 'ego', enabled: 'yes' },
+          ],
+        },
+      }),
+    ).toThrow(/enabled must be a boolean/)
+  })
+
+  it('throws on non-finite scale.v', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        interaction: {
+          ros2TwistControls: [
+            { topic: '/cmd_vel', vehicleId: 'ego', scale: { v: NaN } },
+          ],
+        },
+      }),
+    ).toThrow(/scale\.v/)
+  })
+
+  it('throws on non-positive limits.maxForwardSpeed', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        interaction: {
+          ros2TwistControls: [
+            {
+              topic: '/cmd_vel',
+              vehicleId: 'ego',
+              limits: { maxForwardSpeed: 0 },
+            },
+          ],
+        },
+      }),
+    ).toThrow(/maxForwardSpeed/)
+  })
+
+  it('throws on non-positive timeoutSec', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        interaction: {
+          ros2TwistControls: [
+            { topic: '/cmd_vel', vehicleId: 'ego', timeoutSec: -1 },
+          ],
+        },
+      }),
+    ).toThrow(/timeoutSec/)
+  })
+
+  it('throws on unsupported onTimeout value', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        interaction: {
+          ros2TwistControls: [
+            {
+              topic: '/cmd_vel',
+              vehicleId: 'ego',
+              timeoutSec: 0.5,
+              onTimeout: 'panic',
+            },
+          ],
+        },
+      }),
+    ).toThrow(/onTimeout must be "stop"/)
+  })
+
+  it('reports the array index in error messages', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        interaction: {
+          ros2TwistControls: [
+            { topic: '/cmd_vel', vehicleId: 'ego' },
+            { topic: '/foo', vehicleId: '' },
+          ],
+        },
+      }),
+    ).toThrow(/ros2TwistControls\[1\]\.vehicleId/)
+  })
+
+  it('does not require vehicleId to exist among entities', () => {
+    // Same liberal-parsing policy as keyboardControl: validation of
+    // vehicle existence is the runtime's job, not the loader's.
+    const spec = ScenarioLoader.parse({
+      name: 's',
+      entities: [],
+      interaction: {
+        ros2TwistControls: [{ topic: '/cmd_vel', vehicleId: 'ghost' }],
+      },
+    })
+    expect(spec.interaction?.ros2TwistControls?.[0].vehicleId).toBe('ghost')
+  })
+})
+
 describe('ScenarioLoader.parse — trajectoryTracking', () => {
   it('accepts missing trajectoryTracking', () => {
     const spec = ScenarioLoader.parse({ name: 's', entities: [] })

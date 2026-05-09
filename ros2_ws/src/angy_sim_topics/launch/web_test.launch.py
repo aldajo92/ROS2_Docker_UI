@@ -15,11 +15,13 @@ The browser then connects with:
     VITE_TRANSPORT_KIND=rosbridge
     VITE_ROSBRIDGE_URL=ws://localhost:9090
 
-The launch file spawns two things:
+The launch file spawns three things:
 
     1. The `demo_publisher` node from this package (publishes the
        canonical /demo/string_message and /demo/counter topics).
-    2. The standard `rosbridge_websocket_launch.xml` shipped by
+    2. The `cmd_vel_sine_clock_publisher` node from this package
+       (publishes /cmd_vel Twist commands driven by /clock).
+    3. The standard `rosbridge_websocket_launch.xml` shipped by
        `rosbridge_server` (no SSL, no compression, defaults
        otherwise) plus its companion `rosapi` node. We include the
        upstream XML file rather than hand-rolling the websocket node
@@ -34,6 +36,15 @@ Configurable arguments (all optional):
     node_name        Name to register the demo_publisher node under.
     namespace        Optional ROS namespace for demo_publisher.
     log_level        rclcpp log level for demo_publisher.
+    cmd_vel_node_name
+                     Name to register the cmd_vel sine publisher under.
+    linear_velocity_mps
+                     Constant linear.x command in meters per second.
+    angular_amplitude_radps
+                     Sinusoidal angular.z amplitude in radians per second.
+    frequency_hz     Sine-wave frequency in hertz.
+    cmd_vel_topic    Twist command topic. Default: cmd_vel.
+    clock_topic      Clock topic used as the simulation-time source.
 """
 
 from launch import LaunchDescription
@@ -82,6 +93,39 @@ def generate_launch_description() -> LaunchDescription:
             "(debug | info | warn | error | fatal)."
         ),
     )
+    cmd_vel_node_name_arg = DeclareLaunchArgument(
+        "cmd_vel_node_name",
+        default_value="cmd_vel_sine_clock_publisher",
+        description="Name to register the cmd_vel sine publisher node under.",
+    )
+    linear_velocity_arg = DeclareLaunchArgument(
+        "linear_velocity_mps",
+        default_value="0.5",
+        description="Constant linear.x velocity in meters per second.",
+    )
+    angular_amplitude_arg = DeclareLaunchArgument(
+        "angular_amplitude_radps",
+        default_value="1.0",
+        description="Sinusoidal angular.z amplitude in radians per second.",
+    )
+    frequency_arg = DeclareLaunchArgument(
+        "frequency_hz",
+        default_value="0.2",
+        description="Sine-wave frequency in hertz.",
+    )
+    cmd_vel_topic_arg = DeclareLaunchArgument(
+        "cmd_vel_topic",
+        default_value="cmd_vel",
+        description=(
+            "Twist command topic. Relative by default so namespaces compose "
+            "cleanly."
+        ),
+    )
+    clock_topic_arg = DeclareLaunchArgument(
+        "clock_topic",
+        default_value="/clock",
+        description="Clock topic used as the simulation-time source.",
+    )
 
     # ----- Include rosbridge_websocket_launch.xml --------------------------
     # We resolve the upstream launch file via FindPackageShare so this
@@ -120,6 +164,32 @@ def generate_launch_description() -> LaunchDescription:
         ],
     )
 
+    # ----- /clock-driven cmd_vel publisher node ----------------------------
+    cmd_vel_sine_node = Node(
+        package="angy_sim_topics",
+        executable="cmd_vel_sine_clock_publisher",
+        name=LaunchConfiguration("cmd_vel_node_name"),
+        namespace=LaunchConfiguration("namespace"),
+        output="screen",
+        emulate_tty=True,
+        parameters=[
+            {
+                "linear_velocity_mps": LaunchConfiguration("linear_velocity_mps"),
+                "angular_amplitude_radps": LaunchConfiguration(
+                    "angular_amplitude_radps"
+                ),
+                "frequency_hz": LaunchConfiguration("frequency_hz"),
+                "cmd_vel_topic": LaunchConfiguration("cmd_vel_topic"),
+                "clock_topic": LaunchConfiguration("clock_topic"),
+            }
+        ],
+        arguments=[
+            "--ros-args",
+            "--log-level",
+            LaunchConfiguration("log_level"),
+        ],
+    )
+
     return LaunchDescription(
         [
             port_arg,
@@ -127,7 +197,14 @@ def generate_launch_description() -> LaunchDescription:
             node_name_arg,
             namespace_arg,
             log_level_arg,
+            cmd_vel_node_name_arg,
+            linear_velocity_arg,
+            angular_amplitude_arg,
+            frequency_arg,
+            cmd_vel_topic_arg,
+            clock_topic_arg,
             rosbridge_include,
             demo_publisher_node,
+            cmd_vel_sine_node,
         ]
     )

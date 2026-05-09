@@ -1520,6 +1520,52 @@ scenario events, Python planners, joysticks, UI buttons — pushes a
 `vehicle.setCommand(...)`. This is what makes the simulator
 deterministic, replayable, and renderer/transport-agnostic.
 
+### Scenario-declared ROS 2 Twist control
+
+`scenario.interaction.ros2TwistControls` declares which ROS 2
+`geometry_msgs/msg/Twist` topics drive which vehicles. It is a list of
+`{ topic, vehicleId, enabled?, scale?, limits?, timeoutSec?, onTimeout? }`
+entries. Architectural notes:
+
+- The block is **control config**, not visualization. It does not
+  belong under `visualization` and does not affect rendering.
+- The message contract is implicit. The block is named
+  `ros2TwistControls`, so individual entries do **not** carry a
+  `messageType` field. The wire format is always
+  `geometry_msgs/msg/Twist` and the runtime conversion is fixed:
+  `Twist.linear.x → linearVelocity`, `Twist.angular.z → angularVelocity`.
+  Adding richer message types is a future schema change with its own
+  block name.
+- Wire-shape parsing and `scale` / `limits` clamping live in the
+  rosbridge adapter (`RosTwistToVehicleCommandAdapter`) under
+  `src/infrastructure/communication/rosbridge/`. The simulation core
+  receives transport-agnostic `VehicleCommand`s through the shared
+  `VehicleCommandQueue`. Switching to a different transport (DDS,
+  MQTT, …) reuses the same scenario field — only the adapter changes.
+- The React shell turns each enabled binding into one
+  `VehicleCommandTopicBridge`. `CommunicationProvider` re-runs its
+  setup effect when the (content-keyed) binding list changes, so a
+  new scenario or a UI dropdown choice rewires subscriptions
+  automatically.
+- The Inspector exposes a per-row vehicle dropdown for
+  `geometry_msgs/msg/Twist` rows in `Ros2TopicsPanel`. The dropdown
+  reads from the same lifted state. **Dropdown changes are not synced
+  back into the Scenario Editor JSON in this iteration** — the editor
+  shows what was loaded, and changing the dropdown updates the live
+  bridges only. This is intentional: it keeps the editor's textarea
+  free of click-driven mutations and lets the user explicitly persist
+  bindings via JSON edits + Apply.
+- `timeoutSec` and `onTimeout: "stop"` are parsed and stored for
+  forward compatibility but are not yet wired into the runtime; a
+  binding with a configured timeout behaves like one without it. This
+  deferral is documented here so on-disk JSON stays honest about what
+  the runtime actually honors today.
+- Precedence: keyboard control and ROS Twist control feed the same
+  `VehicleCommandQueue`. Within a single tick, the *last* command for
+  a given vehicle wins (`setCommand` is "last write wins"). There is
+  no cross-source arbitration — both sources are first-class and
+  compose cleanly because they share the queue.
+
 ## Extension points
 
 - **New entity** — extend `BaseEntity`, implement `update(dt, state)`,

@@ -311,6 +311,42 @@ describe('ControlPanel — scenario upload', () => {
     )
   })
 
+  it('calls onUploadedFileName with the file name on a successful upload', async () => {
+    const onUploadedFileName = vi.fn()
+    mount(
+      <ControlPanel
+        onScenarioLoaded={vi.fn()}
+        onUploadedFileName={onUploadedFileName}
+      />,
+    )
+    const input = container.querySelector(
+      '[data-testid="control-panel-upload-input"]',
+    ) as HTMLInputElement
+    const file = new File(
+      [JSON.stringify({ name: 'test', entities: [{ kind: 'vehicle', id: 'ego', pose: { x: 0, y: 0, yaw: 0 } }] })],
+      'custom-map.json',
+      { type: 'application/json' },
+    )
+
+    await triggerFileSelection(input, file)
+
+    expect(onUploadedFileName).toHaveBeenCalledTimes(1)
+    expect(onUploadedFileName).toHaveBeenCalledWith('custom-map.json')
+  })
+
+  it('does NOT call onUploadedFileName when the file fails to parse', async () => {
+    const onUploadedFileName = vi.fn()
+    mount(<ControlPanel onUploadedFileName={onUploadedFileName} />)
+    const input = container.querySelector(
+      '[data-testid="control-panel-upload-input"]',
+    ) as HTMLInputElement
+    const file = new File(['{ bad json'], 'broken.json', { type: 'application/json' })
+
+    await triggerFileSelection(input, file)
+
+    expect(onUploadedFileName).not.toHaveBeenCalled()
+  })
+
   it('keeps the existing dropdown Load button (no regression)', () => {
     mount(<ControlPanel />)
     const buttons = [...container.querySelectorAll('button')].map(

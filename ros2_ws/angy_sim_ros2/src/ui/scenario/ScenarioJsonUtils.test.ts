@@ -6,6 +6,7 @@ import {
   buildScenarioFileName,
   downloadScenarioJsonText,
   formatScenarioJson,
+  normalizeScenarioFileName,
 } from './ScenarioJsonUtils'
 
 const SAMPLE_SPEC: ScenarioSpec = {
@@ -31,6 +32,32 @@ describe('formatScenarioJson', () => {
     const text = formatScenarioJson(SAMPLE_SPEC)
     const reparsed = JSON.parse(text) as ScenarioSpec
     expect(reparsed).toEqual(SAMPLE_SPEC)
+  })
+})
+
+describe('normalizeScenarioFileName', () => {
+  it('appends .json when the input has no extension', () => {
+    expect(normalizeScenarioFileName('demo')).toBe('demo.json')
+  })
+
+  it('preserves .json when already present', () => {
+    expect(normalizeScenarioFileName('demo.json')).toBe('demo.json')
+  })
+
+  it('returns undefined for an empty string', () => {
+    expect(normalizeScenarioFileName('')).toBeUndefined()
+  })
+
+  it('returns undefined for a whitespace-only string', () => {
+    expect(normalizeScenarioFileName('   ')).toBeUndefined()
+  })
+
+  it('trims surrounding whitespace before normalizing', () => {
+    expect(normalizeScenarioFileName('  my-map  ')).toBe('my-map.json')
+  })
+
+  it('does not double-append .json', () => {
+    expect(normalizeScenarioFileName('warehouse-v2.json')).toBe('warehouse-v2.json')
   })
 })
 

@@ -8,6 +8,22 @@ import type { ScenarioSpec } from '../../simulation/scenarios/Scenario'
  * `ScenarioSpec` *type* — there is no runtime coupling.
  */
 
+/**
+ * Normalize a user-supplied scenario filename.
+ *
+ * - Trims whitespace.
+ * - Rejects empty strings (returns `undefined`).
+ * - Ensures the result ends with `.json`.
+ *
+ * Returns `undefined` for empty/blank input so callers can fall back
+ * to a previous value rather than overwriting it with an empty string.
+ */
+export function normalizeScenarioFileName(raw: string): string | undefined {
+  const trimmed = raw.trim()
+  if (trimmed.length === 0) return undefined
+  return trimmed.endsWith('.json') ? trimmed : `${trimmed}.json`
+}
+
 export interface DownloadScenarioOptions {
   /** Base name without extension. Falls back to `"scenario"`. */
   baseName?: string

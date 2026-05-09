@@ -278,6 +278,35 @@ describe('ScenarioEditorPanel — copy to clipboard', () => {
     expect(btn?.title).toBe('Copy')
   })
 
+  it('places the Copy button before Edit scenario in the actions row', () => {
+    harness = mountWithClipboard(vi.fn().mockResolvedValue(undefined))
+    const buttons = [
+      ...harness.container.querySelectorAll('.scenario-editor-actions button'),
+    ]
+    expect(buttons).toHaveLength(4)
+    expect(buttons[0].getAttribute('data-testid')).toBe('scenario-editor-copy')
+    expect(buttons[1].getAttribute('data-testid')).toBe('scenario-editor-toggle')
+  })
+
+  it('shows the scenario file name in the preview toolbar', () => {
+    harness = mountWithClipboard(vi.fn().mockResolvedValue(undefined))
+    const fileName = harness.container.querySelector(
+      '[data-testid="scenario-editor-preview-file-name"]',
+    ) as HTMLElement | null
+    expect(fileName).not.toBeNull()
+    expect(fileName?.textContent).toBe('demo.json')
+    expect(fileName?.title).toBe('demo.json')
+  })
+
+  it('falls back to scenario.json when the preview name cannot be read', () => {
+    harness = mount(<ScenarioEditorPanel scenarioText="{ invalid json" />)
+    const fileName = harness.container.querySelector(
+      '[data-testid="scenario-editor-preview-file-name"]',
+    ) as HTMLElement | null
+    expect(fileName).not.toBeNull()
+    expect(fileName?.textContent).toBe('scenario.json')
+  })
+
   it('does not render the Copy button when the editor is in edit mode', () => {
     harness = mountWithClipboard(vi.fn().mockResolvedValue(undefined))
     const toggle = harness.container.querySelector(
@@ -445,7 +474,7 @@ describe('ScenarioEditorPanel — expand/collapse', () => {
     // The button lives inside the header, NOT inside the actions row.
     expect(
       harness.container.querySelectorAll('.scenario-editor-actions button'),
-    ).toHaveLength(3)
+    ).toHaveLength(4)
     expect(
       harness.container.querySelector('.scenario-editor-header'),
     ).not.toBeNull()
@@ -574,5 +603,256 @@ describe('ScenarioEditorPanel — expand/collapse', () => {
       button.click()
     })
     expect(onExpandedChange).toHaveBeenCalledWith(true)
+  })
+})
+
+describe('ScenarioEditorPanel — filename toolbar', () => {
+  let harness: Harness | null = null
+
+  afterEach(() => {
+    unmount(harness)
+    harness = null
+    vi.clearAllMocks()
+  })
+
+  it('shows filename derived from scenarioText when scenarioFileName prop is absent', () => {
+    harness = mount(<ScenarioEditorPanel scenarioText={SAMPLE_TEXT} />)
+    const el = harness.container.querySelector(
+      '[data-testid="scenario-editor-preview-file-name"]',
+    ) as HTMLElement
+    expect(el.textContent).toBe('demo.json')
+    expect(el.title).toBe('demo.json')
+  })
+
+  it('shows the scenarioFileName prop when provided', () => {
+    harness = mount(
+      <ScenarioEditorPanel
+        scenarioText={SAMPLE_TEXT}
+        scenarioFileName="custom-file.json"
+      />,
+    )
+    const el = harness.container.querySelector(
+      '[data-testid="scenario-editor-preview-file-name"]',
+    ) as HTMLElement
+    expect(el.textContent).toBe('custom-file.json')
+  })
+
+  it('falls back to scenario.json when the JSON text cannot be parsed', () => {
+    harness = mount(<ScenarioEditorPanel scenarioText="{ invalid" />)
+    const el = harness.container.querySelector(
+      '[data-testid="scenario-editor-preview-file-name"]',
+    ) as HTMLElement
+    expect(el.textContent).toBe('scenario.json')
+  })
+
+  it('renders the edit icon button next to the filename', () => {
+    harness = mount(<ScenarioEditorPanel scenarioText={SAMPLE_TEXT} />)
+    expect(
+      harness.container.querySelector('[data-testid="scenario-editor-file-name-edit"]'),
+    ).not.toBeNull()
+  })
+
+  it('clicking the edit button shows the filename input pre-filled', () => {
+    harness = mount(
+      <ScenarioEditorPanel
+        scenarioText={SAMPLE_TEXT}
+        scenarioFileName="warehouse.json"
+      />,
+    )
+    const editBtn = harness.container.querySelector(
+      '[data-testid="scenario-editor-file-name-edit"]',
+    ) as HTMLButtonElement
+    act(() => { editBtn.click() })
+
+    const input = harness.container.querySelector(
+      '[data-testid="scenario-editor-file-name-input"]',
+    ) as HTMLInputElement
+    expect(input).not.toBeNull()
+    expect(input.value).toBe('warehouse.json')
+    // Span and edit button are gone while the input is shown.
+    expect(
+      harness.container.querySelector('[data-testid="scenario-editor-preview-file-name"]'),
+    ).toBeNull()
+  })
+
+  it('pressing Enter commits and calls onScenarioFileNameChange with normalized name', () => {
+    const onChange = vi.fn()
+    harness = mount(
+      <ScenarioEditorPanel
+        scenarioText={SAMPLE_TEXT}
+        scenarioFileName="old.json"
+        onScenarioFileNameChange={onChange}
+      />,
+    )
+    const editBtn = harness.container.querySelector(
+      '[data-testid="scenario-editor-file-name-edit"]',
+    ) as HTMLButtonElement
+    act(() => { editBtn.click() })
+
+    const input = harness.container.querySelector(
+      '[data-testid="scenario-editor-file-name-input"]',
+    ) as HTMLInputElement
+
+    const nativeSetter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype, 'value',
+    )?.set
+    act(() => {
+      nativeSetter?.call(input, 'renamed')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    act(() => {
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+
+    expect(onChange).toHaveBeenCalledWith('renamed.json')
+    // Input is gone, span is back.
+    expect(
+      harness.container.querySelector('[data-testid="scenario-editor-file-name-input"]'),
+    ).toBeNull()
+  })
+
+  it('pressing Enter with .json already present does not double-append', () => {
+    const onChange = vi.fn()
+    harness = mount(
+      <ScenarioEditorPanel
+        scenarioText={SAMPLE_TEXT}
+        onScenarioFileNameChange={onChange}
+      />,
+    )
+    act(() => {
+      harness!.container
+        .querySelector<HTMLButtonElement>('[data-testid="scenario-editor-file-name-edit"]')
+        ?.click()
+    })
+    const input = harness.container.querySelector(
+      '[data-testid="scenario-editor-file-name-input"]',
+    ) as HTMLInputElement
+    const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    act(() => {
+      nativeSetter?.call(input, 'demo.json')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+    expect(onChange).toHaveBeenCalledWith('demo.json')
+  })
+
+  it('pressing Escape cancels without calling onScenarioFileNameChange', () => {
+    const onChange = vi.fn()
+    harness = mount(
+      <ScenarioEditorPanel
+        scenarioText={SAMPLE_TEXT}
+        onScenarioFileNameChange={onChange}
+      />,
+    )
+    act(() => {
+      harness!.container
+        .querySelector<HTMLButtonElement>('[data-testid="scenario-editor-file-name-edit"]')
+        ?.click()
+    })
+    const input = harness.container.querySelector(
+      '[data-testid="scenario-editor-file-name-input"]',
+    ) as HTMLInputElement
+    act(() => {
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    expect(onChange).not.toHaveBeenCalled()
+    expect(
+      harness.container.querySelector('[data-testid="scenario-editor-file-name-input"]'),
+    ).toBeNull()
+  })
+
+  it('blurring the input commits a non-empty value', () => {
+    const onChange = vi.fn()
+    harness = mount(
+      <ScenarioEditorPanel
+        scenarioText={SAMPLE_TEXT}
+        onScenarioFileNameChange={onChange}
+      />,
+    )
+    act(() => {
+      harness!.container
+        .querySelector<HTMLButtonElement>('[data-testid="scenario-editor-file-name-edit"]')
+        ?.click()
+    })
+    const input = harness.container.querySelector(
+      '[data-testid="scenario-editor-file-name-input"]',
+    ) as HTMLInputElement
+    const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    // Set DOM value first, then fire focusout (which bubbles and is
+    // what React 18 uses for onBlur delegation). The handler reads
+    // e.currentTarget.value so state-flush order doesn't matter.
+    nativeSetter?.call(input, 'blurred')
+    act(() => {
+      input.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: null }))
+    })
+    expect(onChange).toHaveBeenCalledWith('blurred.json')
+  })
+
+  it('blurring with an empty value does not call onScenarioFileNameChange', () => {
+    const onChange = vi.fn()
+    harness = mount(
+      <ScenarioEditorPanel
+        scenarioText={SAMPLE_TEXT}
+        onScenarioFileNameChange={onChange}
+      />,
+    )
+    act(() => {
+      harness!.container
+        .querySelector<HTMLButtonElement>('[data-testid="scenario-editor-file-name-edit"]')
+        ?.click()
+    })
+    const input = harness.container.querySelector(
+      '[data-testid="scenario-editor-file-name-input"]',
+    ) as HTMLInputElement
+    const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    nativeSetter?.call(input, '   ')
+    act(() => {
+      input.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: null }))
+    })
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('editing the filename does not mutate the scenarioText', () => {
+    const onChange = vi.fn()
+    harness = mount(
+      <ScenarioEditorPanel
+        scenarioText={SAMPLE_TEXT}
+        onScenarioFileNameChange={onChange}
+      />,
+    )
+    act(() => {
+      harness!.container
+        .querySelector<HTMLButtonElement>('[data-testid="scenario-editor-file-name-edit"]')
+        ?.click()
+    })
+    const input = harness.container.querySelector(
+      '[data-testid="scenario-editor-file-name-input"]',
+    ) as HTMLInputElement
+    const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    act(() => {
+      nativeSetter?.call(input, 'newname')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+    // The pre element should still contain the original JSON text unchanged.
+    const preview = harness.container.querySelector(
+      '[data-testid="scenario-editor-preview"]',
+    ) as HTMLPreElement
+    expect(preview.textContent).toBe(SAMPLE_TEXT)
+  })
+
+  it('filename toolbar is hidden while editing the JSON textarea', () => {
+    harness = mount(<ScenarioEditorPanel scenarioText={SAMPLE_TEXT} />)
+    act(() => {
+      harness!.container
+        .querySelector<HTMLButtonElement>('[data-testid="scenario-editor-toggle"]')
+        ?.click()
+    })
+    expect(
+      harness.container.querySelector('[data-testid="scenario-editor-preview-file-name"]'),
+    ).toBeNull()
+    expect(
+      harness.container.querySelector('[data-testid="scenario-editor-file-name-edit"]'),
+    ).toBeNull()
   })
 })

@@ -1,4 +1,12 @@
-import { useState, useEffect, useRef, type ChangeEvent, type ReactNode } from 'react'
+import { useState, useEffect, useRef, type ChangeEvent, type KeyboardEvent, type ReactNode } from 'react'
+import { normalizeScenarioFileName } from './ScenarioJsonUtils'
+
+const ICON_PENCIL: ReactNode = (
+  <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+  </svg>
+)
 
 const ICON_COPY: ReactNode = (
   <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -46,6 +54,12 @@ export interface ScenarioEditorPanelProps {
   expanded?: boolean
   /** Notified when the user toggles the expand/collapse button. */
   onExpandedChange?: (expanded: boolean) => void
+  /** Filename shown in the preview toolbar (e.g. `my-map.json`).
+   *  When absent the panel derives a name from `scenarioText`. */
+  scenarioFileName?: string
+  /** Notified when the user commits an inline filename rename.
+   *  The value is always normalized (trimmed, `.json` ensured). */
+  onScenarioFileNameChange?: (next: string) => void
 }
 
 /**
@@ -71,10 +85,15 @@ export function ScenarioEditorPanel({
   errorMessage,
   expanded = false,
   onExpandedChange,
+  scenarioFileName,
+  onScenarioFileNameChange,
 }: Readonly<ScenarioEditorPanelProps>) {
   const [isEditing, setIsEditing] = useState(false)
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'failed'>('idle')
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [isEditingFileName, setIsEditingFileName] = useState(false)
+  const [fileNameDraft, setFileNameDraft] = useState('')
+  const fileNameInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     return () => {
@@ -153,10 +172,41 @@ export function ScenarioEditorPanel({
     disabledReason,
     enabledTitle: 'Download the current editor contents as a .json file',
   })
+  const previewFileName =
+    scenarioFileName ?? deriveScenarioPreviewFileName(scenarioText)
+
+  const commitFileName = (draft: string) => {
+    const normalized = normalizeScenarioFileName(draft)
+    if (normalized) onScenarioFileNameChange?.(normalized)
+    setIsEditingFileName(false)
+  }
+
+  const handleFileNameEditClick = () => {
+    setFileNameDraft(previewFileName)
+    setIsEditingFileName(true)
+    // Focus the input after React renders it.
+    requestAnimationFrame(() => fileNameInputRef.current?.select())
+  }
+
+  const handleFileNameKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') { e.preventDefault(); commitFileName(fileNameDraft) }
+    if (e.key === 'Escape') { e.preventDefault(); setIsEditingFileName(false) }
+  }
+
+  const handleFileNameBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    commitFileName(e.currentTarget.value)
+  }
 
   const sectionClassName = expanded
     ? 'panel scenario-editor-panel scenario-editor-panel--expanded'
     : 'panel scenario-editor-panel'
+  const previewShellClassName = [
+    'scenario-editor-preview-shell',
+    isEditing ? 'scenario-editor-preview-shell--hidden' : '',
+    !isEditing ? 'scenario-editor-preview-shell--with-toolbar' : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
 
   return (
     <section
@@ -179,34 +229,42 @@ export function ScenarioEditorPanel({
         </button>
       </div>
       {hasScenario ? (
-        <div className="scenario-editor-preview-shell">
-          {!isEditing && !lockedByParent && (
-            <button
-              type="button"
-              className="scenario-editor-copy-button"
-              onClick={handleCopyClick}
-              aria-label={
-                copyStatus === 'idle'
-                  ? 'Copy scenario JSON to clipboard'
-                  : copyStatus === 'copied'
-                    ? 'Copied to clipboard'
-                    : 'Copy failed'
-              }
-              title={
-                copyStatus === 'idle'
-                  ? 'Copy'
-                  : copyStatus === 'copied'
-                    ? 'Copied'
-                    : 'Copy failed'
-              }
-              data-testid="scenario-editor-copy"
-            >
-              {copyStatus === 'idle'
-                ? ICON_COPY
-                : copyStatus === 'copied'
-                  ? ICON_CHECK
-                  : ICON_X}
-            </button>
+        <div className={previewShellClassName}>
+          {!isEditing && (
+            <div className="scenario-editor-preview-toolbar">
+              {isEditingFileName ? (
+                <input
+                  ref={fileNameInputRef}
+                  className="scenario-editor-file-name-input"
+                  type="text"
+                  value={fileNameDraft}
+                  onChange={(e) => setFileNameDraft(e.target.value)}
+                  onKeyDown={handleFileNameKeyDown}
+                  onBlur={handleFileNameBlur}
+                  aria-label="Scenario file name"
+                  data-testid="scenario-editor-file-name-input"
+                />
+              ) : (
+                <>
+                  <span
+                    className="scenario-editor-preview-file-name"
+                    title={previewFileName}
+                    data-testid="scenario-editor-preview-file-name"
+                  >
+                    {previewFileName}
+                  </span>
+                  <button
+                    type="button"
+                    className="scenario-editor-file-name-edit-button"
+                    onClick={handleFileNameEditClick}
+                    aria-label="Edit scenario file name"
+                    data-testid="scenario-editor-file-name-edit"
+                  >
+                    {ICON_PENCIL}
+                  </button>
+                </>
+              )}
+            </div>
           )}
           <pre
             className="scenario-editor-preview"
@@ -231,6 +289,34 @@ export function ScenarioEditorPanel({
         />
       )}
       <div className="scenario-editor-actions">
+        {!isEditing && !lockedByParent && hasScenario && (
+          <button
+            type="button"
+            className="scenario-editor-copy-button"
+            onClick={handleCopyClick}
+            aria-label={
+              copyStatus === 'idle'
+                ? 'Copy scenario JSON to clipboard'
+                : copyStatus === 'copied'
+                  ? 'Copied to clipboard'
+                  : 'Copy failed'
+            }
+            title={
+              copyStatus === 'idle'
+                ? 'Copy'
+                : copyStatus === 'copied'
+                  ? 'Copied'
+                  : 'Copy failed'
+            }
+            data-testid="scenario-editor-copy"
+          >
+            {copyStatus === 'idle'
+              ? ICON_COPY
+              : copyStatus === 'copied'
+                ? ICON_CHECK
+                : ICON_X}
+          </button>
+        )}
         <button
           type="button"
           onClick={handleEditClick}
@@ -285,4 +371,17 @@ function pickButtonTitle({
   if (lockedByParent) return disabledReason ?? ''
   if (!hasScenario) return 'Load a scenario first'
   return enabledTitle
+}
+
+function deriveScenarioPreviewFileName(text: string): string {
+  try {
+    const parsed = JSON.parse(text) as { name?: unknown }
+    if (typeof parsed.name === 'string' && parsed.name.trim().length > 0) {
+      return `${parsed.name.trim()}.json`
+    }
+  } catch {
+    // The preview normally receives valid formatted JSON, but falling back keeps
+    // the toolbar useful if the parent ever renders draft text here.
+  }
+  return 'scenario.json'
 }

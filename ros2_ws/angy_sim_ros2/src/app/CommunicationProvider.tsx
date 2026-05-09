@@ -78,16 +78,47 @@ import { RosbridgeRenderableTopics } from '../infrastructure/communication/rosbr
  *     → rosbridge_server → ROS 2 /clock
  */
 
+/**
+ * One enabled scenario / UI binding "Twist topic → vehicle". Mirrors
+ * the JSON-safe `Ros2TwistControlBinding` carried by scenarios but
+ * lives at the React/communication layer so the provider doesn't have
+ * to import simulation-side scenario types.
+ */
+export interface Ros2TwistTopicBindingState {
+  topic: string
+  vehicleId: string
+  enabled?: boolean
+  scale?: {
+    v?: number
+    w?: number
+  }
+  limits?: {
+    maxForwardSpeed?: number
+    maxReverseSpeed?: number
+    maxAngularSpeed?: number
+  }
+  /** Forward-compat; not yet honored by the runtime. */
+  timeoutSec?: number
+  /** Forward-compat; not yet honored by the runtime. */
+  onTimeout?: 'stop'
+}
+
+const FALLBACK_TWIST_BINDINGS: ReadonlyArray<Ros2TwistTopicBindingState> = [
+  { topic: '/cmd_vel', vehicleId: 'ego', enabled: true },
+]
+
 export interface CommunicationProviderProps {
   children: ReactNode
   /** Override env-derived config. Mostly useful for tests / Storybook. */
   config?: TransportConfig
   /**
-   * Vehicle id for inbound `/cmd_vel` Twist messages. Twist carries no
-   * addressing info, so we choose the target at composition time.
-   * Defaults to `'ego'` (matches the canonical scenario vehicle).
+   * ROS 2 Twist topic → vehicle bindings. The provider creates one
+   * `VehicleCommandTopicBridge` per enabled entry. When omitted (or
+   * empty), a single fallback `/cmd_vel → 'ego'` binding is created
+   * so the historical behavior is preserved for users who don't
+   * declare bindings in their scenario or UI.
    */
-  vehicleId?: string
+  twistControlBindings?: ReadonlyArray<Ros2TwistTopicBindingState>
   /**
    * Outbound clock publish rate, in seconds. The default 50 Hz mirrors
    * `Topics.clock.frequencyHz` in `TopicRegistry.ts`.
@@ -97,13 +128,52 @@ export interface CommunicationProviderProps {
 
 const COMMUNICATION_SYSTEM_NAME = 'CommunicationSystem'
 
+/**
+ * Stable JSON key for a list of bindings. Used as a `useEffect`
+ * dependency so the rosbridge wiring re-runs only when the *content*
+ * of the bindings changes — array identity changes alone would force
+ * a full reconnect on every parent re-render.
+ */
+function twistBindingsKey(
+  bindings: ReadonlyArray<Ros2TwistTopicBindingState>,
+): string {
+  return JSON.stringify(
+    bindings.map((b) => ({
+      topic: b.topic,
+      vehicleId: b.vehicleId,
+      enabled: b.enabled !== false,
+      scale: b.scale ?? null,
+      limits: b.limits ?? null,
+    })),
+  )
+}
+
 export function CommunicationProvider({
   children,
   config: configOverride,
-  vehicleId = 'ego',
+  twistControlBindings,
   clockPeriodSec = 1 / 50,
 }: CommunicationProviderProps) {
   const { engine, commandQueue, externalPathQueue, externalPoseArrayQueue } = useSimulation()
+
+  // Resolve the active list of bindings. An empty / undefined input
+  // means "use the historical fallback" so users that haven't migrated
+  // their scenarios still get `/cmd_vel → ego` for free. The dependency
+  // array below uses `twistBindingsKey(...)` to compare *content* — the
+  // parent re-render cadence shouldn't churn the rosbridge wiring.
+  const resolvedBindings: ReadonlyArray<Ros2TwistTopicBindingState> =
+    twistControlBindings && twistControlBindings.length > 0
+      ? twistControlBindings
+      : FALLBACK_TWIST_BINDINGS
+  const enabledBindings = useMemo(
+    () => resolvedBindings.filter((b) => b.enabled !== false),
+    // Stringify so identity stays stable when content matches. The
+    // hook-deps lint can't see through the JSON key, but the cost is
+    // negligible compared to a transport reconnect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [twistBindingsKey(resolvedBindings)],
+  )
+  const bindingsKey = twistBindingsKey(resolvedBindings)
 
   // The active transport config is stateful so the UI picker can swap
   // transports at runtime without a page reload. The initializer runs
@@ -177,6 +247,10 @@ export function CommunicationProvider({
     let transport: Transport | null = null
     let unsubscribeStatus: (() => void) | undefined
     const cleanups: Array<() => void | Promise<void>> = []
+    // Bridges that subscribe to a topic must wait for `transport.connect()`
+    // before starting. Collect them here and start in series after the
+    // transport is up so individual errors stay attributable.
+    const bridgesToStart: VehicleCommandTopicBridge[] = []
 
     const onStatus = (s: TransportConnectionStatus, err?: string) => {
       if (cancelled) return
@@ -357,16 +431,49 @@ export function CommunicationProvider({
         })
       }
 
-      // ----- Inbound: /cmd_vel → VehicleCommandQueue ----------------
-      const cmdAdapter = new RosTwistToVehicleCommandAdapter({ vehicleId })
-      const cmdBridge = new VehicleCommandTopicBridge(
-        transport,
-        '/cmd_vel',
-        commandQueue,
-        cmdAdapter,
-        engine.logger,
-      )
-      cleanups.push(() => cmdBridge.stop())
+      // ----- Inbound: Twist topic(s) → VehicleCommandQueue -------------
+      //
+      // One bridge per enabled `(topic, vehicleId)` binding. Disabled
+      // bindings are kept in the snapshot but skipped here so the user
+      // can flip them back on without re-loading the scenario.
+      const activeBindings = enabledBindings.length > 0 ? enabledBindings : []
+      for (const binding of activeBindings) {
+        // rosbridge needs the wire type for each subscribed topic;
+        // bindings declared at runtime won't be in the constructor
+        // map for `RoslibRosbridgeTransport`, so we register them
+        // dynamically. Mock / memory transports don't use this method
+        // (it's optional on the generic Transport interface).
+        if (transport instanceof RoslibRosbridgeTransport) {
+          transport.setTopicType(binding.topic, ROS_MESSAGE_TYPES.twist)
+        }
+        let bindingAdapter: RosTwistToVehicleCommandAdapter
+        try {
+          bindingAdapter = new RosTwistToVehicleCommandAdapter({
+            vehicleId: binding.vehicleId,
+            ...(binding.scale !== undefined && { scale: binding.scale }),
+            ...(binding.limits !== undefined && { limits: binding.limits }),
+          })
+        } catch (err) {
+          // Surface the configuration error in the engine logger but
+          // don't tear down the whole transport — other bindings may
+          // be valid.
+          engine.logger?.warn(
+            `[CommunicationProvider] dropping invalid Twist binding for "${binding.topic}" -> "${binding.vehicleId}": ${(err as Error).message}`,
+          )
+          continue
+        }
+        const bindingBridge = new VehicleCommandTopicBridge(
+          transport,
+          binding.topic,
+          commandQueue,
+          bindingAdapter,
+          engine.logger,
+        )
+        cleanups.push(() => bindingBridge.stop())
+        // Bridges that subscribe require an open transport; collect
+        // them now and start after `transport.connect()` resolves.
+        bridgesToStart.push(bindingBridge)
+      }
 
       // ----- Outbound: SimulationClock → /clock ---------------------
       const clockAdapter = new SimClockToRosClockAdapter()
@@ -410,7 +517,9 @@ export function CommunicationProvider({
             await transport!.disconnect()
             return
           }
-          await cmdBridge.start()
+          for (const bridge of bridgesToStart) {
+            await bridge.start()
+          }
           await clockBridge.start()
           // For mock/memory transports there is no live status feed;
           // mark connected explicitly so the UI doesn't get stuck on
@@ -499,8 +608,9 @@ export function CommunicationProvider({
     commandQueue,
     externalPathQueue,
     externalPoseArrayQueue,
-    vehicleId,
+    bindingsKey,
     clockPeriodSec,
+    enabledBindings,
   ])
 
   // Guard the context value so callers never see rosbridge-specific
@@ -580,8 +690,12 @@ function buildTransport(
     case 'rosbridge':
       return new RoslibRosbridgeTransport({
         url: config.rosbridgeUrl || DEFAULT_TRANSPORT_CONFIG.rosbridgeUrl,
+        // `/clock` is the only outbound topic owned by this provider.
+        // Inbound Twist topics are registered dynamically through
+        // `transport.setTopicType()` once `twistControlBindings` resolve;
+        // this keeps the hardcoded list short and in sync with the
+        // single bridge created here.
         topicTypes: {
-          '/cmd_vel': ROS_MESSAGE_TYPES.twist,
           '/clock': ROS_MESSAGE_TYPES.clock,
         },
         rosFactory: defaultRosFactory,

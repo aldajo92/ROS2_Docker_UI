@@ -7,6 +7,22 @@ import { isSystemTopic, type TopicInfo } from '../app/TopicDiscovery'
 import { DEFAULT_PATH_VISUAL_CONFIG } from '../app/RenderableTopics'
 
 const POSE_ARRAY_MESSAGE_TYPE = 'geometry_msgs/msg/PoseArray'
+const TWIST_MESSAGE_TYPE = 'geometry_msgs/msg/Twist'
+
+/**
+ * Compact descriptor for a vehicle entity that the panel offers as a
+ * Twist-binding target. Kept renderer- and simulation-agnostic so the
+ * panel never reaches into `EntityManager`.
+ */
+export interface TwistControlVehicleOption {
+  id: string
+  label: string
+}
+
+export interface TwistControlBindingSelection {
+  vehicleId: string
+  enabled: boolean
+}
 
 /**
  * Inspector card that surfaces the active transport's topic-discovery
@@ -40,7 +56,35 @@ export interface Ros2TopicsPanelProps {
   expanded?: boolean
   /** Notified when the user clicks the maximize / restore button. */
   onExpandedChange?: (expanded: boolean) => void
+  /**
+   * Vehicle entities the user can bind a `geometry_msgs/msg/Twist`
+   * topic to. Derived from the active scenario in `App.tsx`. Empty /
+   * undefined disables the dropdown with a "No vehicles" hint.
+   */
+  twistControlVehicles?: ReadonlyArray<TwistControlVehicleOption>
+  /**
+   * Map of `topic.name` → selected vehicle + enabled state for
+   * `geometry_msgs/msg/Twist` topics. App.tsx owns the canonical state
+   * so the binding survives panel collapse / expand / refresh cycles.
+   */
+  twistControlBindings?: Readonly<Record<string, TwistControlBindingSelection>>
+  /**
+   * Called when the user changes the vehicle dropdown for a Twist
+   * topic. The empty-string value (`''`) means "unbind" — the parent
+   * removes the entry from its binding map.
+   */
+  onTwistControlBindingChange?: (topic: string, vehicleId: string) => void
+  /**
+   * Called when the user toggles the checkbox for a Twist topic. This
+   * is deliberately separate from renderable-topic selection: Twist is
+   * control/interaction, not visualization.
+   */
+  onTwistControlEnabledChange?: (topic: string, enabled: boolean) => void
 }
+
+const TWIST_DROPDOWN_NO_VEHICLES_LABEL = 'No vehicles'
+const TWIST_DROPDOWN_UNBOUND_VALUE = ''
+const TWIST_DROPDOWN_UNBOUND_LABEL = 'Select vehicle'
 
 const ECHO_DISABLED_TOOLTIP_COMPACT = 'Maximize ROS2 Topics to echo topics.'
 const ECHO_DISABLED_TOOLTIP_NO_ECHO = 'Echo capability is unavailable.'
@@ -49,6 +93,10 @@ const RENDER_UNAVAILABLE_TITLE = 'Topic rendering is unavailable.'
 export function Ros2TopicsPanel({
   expanded = false,
   onExpandedChange,
+  twistControlVehicles,
+  twistControlBindings,
+  onTwistControlBindingChange,
+  onTwistControlEnabledChange,
 }: Readonly<Ros2TopicsPanelProps> = {}) {
   const { config, status } = useTransportStatus()
   const discovery = useTopicDiscovery()
@@ -208,15 +256,21 @@ export function Ros2TopicsPanel({
             </li>
           )}
           {visibleTopics.map((topic) => {
-            // Per-row render-checkbox state. We treat a missing
-            // `renderable` capability as "render selection unavailable"
-            // — the checkbox stays disabled but visible so the affordance
-            // is consistent across the matrix (rosbridge-disconnected
-            // never gets here; this guards mock context in tests).
+            // A row can expose either a visualization capability
+            // (Path/PoseArray) or a control capability (Twist). Keep
+            // those meanings separate: Twist is not renderable, but it
+            // still gets an enabled checkbox and expandable settings.
+            const isTwistControl = topic.type === TWIST_MESSAGE_TYPE
             const isRenderable =
               renderable?.isRenderable(topic) ?? false
             const isSelected =
               isRenderable && (renderable?.isSelected(topic.name) ?? false)
+            const twistBinding = twistControlBindings?.[topic.name]
+            const twistEnabled = twistBinding?.enabled ?? false
+            const twistSelectedVehicleId = twistBinding?.vehicleId ?? ''
+            const hasTwistVehicles = (twistControlVehicles?.length ?? 0) > 0
+            const twistCheckboxDisabled =
+              !onTwistControlEnabledChange || (!hasTwistVehicles && !twistBinding)
             const renderDisabledReason = renderable
               ? renderable.getUnsupportedReason(topic)
               : RENDER_UNAVAILABLE_TITLE
@@ -229,6 +283,33 @@ export function Ros2TopicsPanel({
               if (!renderable || !isRenderable) return
               if (isSelected) renderable.deselectTopic(topic.name)
               else renderable.selectTopic(topic)
+            }
+            const canExpand = isRenderable || isTwistControl
+            const rowChecked = isTwistControl ? twistEnabled : isSelected
+            const rowCheckboxDisabled = isTwistControl
+              ? twistCheckboxDisabled
+              : !isRenderable
+            const rowCheckboxTitle = isTwistControl
+              ? twistEnabled
+                ? `Disconnect ${topic.name} from vehicle control`
+                : hasTwistVehicles
+                  ? `Connect ${topic.name} to vehicle control`
+                  : 'No controllable vehicles in this scenario'
+              : renderTitle
+            const rowCheckboxAriaLabel = isTwistControl
+              ? twistEnabled
+                ? `Disconnect ${topic.name} from vehicle control`
+                : `Connect ${topic.name} to vehicle control`
+              : isRenderable
+                ? `Render ${topic.name}`
+                : `${topic.name} cannot be rendered`
+            const handleRowCheckboxToggle = () => {
+              if (isTwistControl) {
+                if (twistCheckboxDisabled) return
+                onTwistControlEnabledChange?.(topic.name, !twistEnabled)
+                return
+              }
+              handleRenderToggle()
             }
             const isExpanded = expandedTopics.has(topic.name)
             const visualConfig =
@@ -253,40 +334,36 @@ export function Ros2TopicsPanel({
                   type="button"
                   className={
                     'ros2-topics-chevron' +
-                    (!isRenderable ? ' ros2-topics-chevron--disabled' : '')
+                    (!canExpand ? ' ros2-topics-chevron--disabled' : '')
                   }
-                  onClick={() => isRenderable && toggleExpanded(topic.name)}
-                  disabled={!isRenderable}
-                  aria-expanded={isRenderable ? isExpanded : undefined}
+                  onClick={() => canExpand && toggleExpanded(topic.name)}
+                  disabled={!canExpand}
+                  aria-expanded={canExpand ? isExpanded : undefined}
                   aria-label={
-                    isRenderable
+                    canExpand
                       ? isExpanded
                         ? `Collapse settings for ${topic.name}`
                         : `Expand settings for ${topic.name}`
                       : 'No settings available'
                   }
                   title={
-                    isRenderable
+                    canExpand
                       ? isExpanded ? 'Collapse settings' : 'Expand settings'
                       : 'No settings available'
                   }
                   data-testid={`ros2-topics-chevron-${topic.name}`}
                 >
-                  {isRenderable && isExpanded ? '\u25BC' : '\u25B6'}
+                  {canExpand && isExpanded ? '\u25BC' : '\u25B6'}
                 </button>
                 <input
                   type="checkbox"
                   className="ros2-topics-render-checkbox"
                   data-testid={`ros2-topics-render-${topic.name}`}
-                  checked={isSelected}
-                  disabled={!isRenderable}
-                  onChange={handleRenderToggle}
-                  aria-label={
-                    isRenderable
-                      ? `Render ${topic.name}`
-                      : `${topic.name} cannot be rendered`
-                  }
-                  title={renderTitle}
+                  checked={rowChecked}
+                  disabled={rowCheckboxDisabled}
+                  onChange={handleRowCheckboxToggle}
+                  aria-label={rowCheckboxAriaLabel}
+                  title={rowCheckboxTitle}
                 />
                 <span className="ros2-topics-name" title={topic.name}>
                   {topic.name}
@@ -307,71 +384,97 @@ export function Ros2TopicsPanel({
                 </button>
                 {isExpanded && (
                   <div
-                    className={`ros2-topics-settings${!isSelected ? ' ros2-topics-settings--inactive' : ''}`}
+                    className={`ros2-topics-settings${!rowChecked ? ' ros2-topics-settings--inactive' : ''}`}
                   >
-                    <div className="ros2-topics-settings-row">
-                      <label>Color:</label>
-                      <div className="ros2-topics-color-group">
-                        <input
-                          type="color"
-                          className="ros2-topics-color-picker"
-                          value={hexValid ? hexValue : visualConfig.color}
-                          onChange={(e) => handleColorPicker(e.target.value)}
-                        />
-                        <input
-                          type="text"
-                          className={`ros2-topics-color-hex${!hexValid ? ' ros2-topics-color-hex--invalid' : ''}`}
-                          value={hexValue}
-                          onChange={(e) => handleHexInput(e.target.value)}
-                          spellCheck={false}
-                        />
-                      </div>
-                    </div>
-                    <div className="ros2-topics-settings-row">
-                      <label>Thickness:</label>
-                      <div className="ros2-topics-thickness-group">
-                        <input
-                          type="number"
-                          className="ros2-topics-thickness-input"
-                          min={0.5}
-                          max={10}
-                          step={0.5}
-                          value={visualConfig.thickness}
-                          onChange={(e) => {
-                            const raw = Number(e.target.value)
-                            if (!Number.isFinite(raw)) return
-                            const clamped = Math.min(10, Math.max(0.5, raw))
-                            renderable?.setVisualConfig?.(topic.name, {
-                              thickness: clamped,
-                            })
-                          }}
-                          aria-label={`Thickness for ${topic.name}`}
-                        />
-                      </div>
-                    </div>
-                    {topic.type === POSE_ARRAY_MESSAGE_TYPE && (
-                      <div className="ros2-topics-settings-row">
-                        <label>Arrow size (m):</label>
-                        <div className="ros2-topics-thickness-group">
-                          <input
-                            type="number"
-                            className="ros2-topics-thickness-input"
-                            min={0.1}
-                            max={10}
-                            step={0.1}
-                            value={visualConfig.arrowSize ?? 0.5}
-                            onChange={(e) => {
-                              const raw = Number(e.target.value)
-                              if (!Number.isFinite(raw)) return
-                              const clamped = Math.min(10, Math.max(0.1, raw))
-                              renderable?.setVisualConfig?.(topic.name, {
-                                arrowSize: clamped,
-                              })
-                            }}
-                            aria-label={`Arrow size for ${topic.name}`}
-                          />
+                    {isTwistControl ? (
+                      !hasTwistVehicles ? (
+                        <p className="ros2-topics-settings-hint">
+                          No vehicles
+                        </p>
+                      ) : twistEnabled ? (
+                          <div className="ros2-topics-settings-row">
+                            <label>Vehicle:</label>
+                            <div className="ros2-topics-vehicle-group">
+                              <TwistVehicleDropdown
+                                topicName={topic.name}
+                                vehicles={twistControlVehicles ?? []}
+                                selectedVehicleId={twistSelectedVehicleId}
+                                onChange={onTwistControlBindingChange}
+                              />
+                            </div>
+                          </div>
+                      ) : (
+                        <p className="ros2-topics-settings-hint">
+                          Enable this topic to select a vehicle.
+                        </p>
+                      )
+                    ) : (
+                      <>
+                        <div className="ros2-topics-settings-row">
+                          <label>Color:</label>
+                          <div className="ros2-topics-color-group">
+                            <input
+                              type="color"
+                              className="ros2-topics-color-picker"
+                              value={hexValid ? hexValue : visualConfig.color}
+                              onChange={(e) => handleColorPicker(e.target.value)}
+                            />
+                            <input
+                              type="text"
+                              className={`ros2-topics-color-hex${!hexValid ? ' ros2-topics-color-hex--invalid' : ''}`}
+                              value={hexValue}
+                              onChange={(e) => handleHexInput(e.target.value)}
+                              spellCheck={false}
+                            />
+                          </div>
                         </div>
-                      </div>
+                        <div className="ros2-topics-settings-row">
+                          <label>Thickness:</label>
+                          <div className="ros2-topics-thickness-group">
+                            <input
+                              type="number"
+                              className="ros2-topics-thickness-input"
+                              min={0.5}
+                              max={10}
+                              step={0.5}
+                              value={visualConfig.thickness}
+                              onChange={(e) => {
+                                const raw = Number(e.target.value)
+                                if (!Number.isFinite(raw)) return
+                                const clamped = Math.min(10, Math.max(0.5, raw))
+                                renderable?.setVisualConfig?.(topic.name, {
+                                  thickness: clamped,
+                                })
+                              }}
+                              aria-label={`Thickness for ${topic.name}`}
+                            />
+                          </div>
+                        </div>
+                        {topic.type === POSE_ARRAY_MESSAGE_TYPE && (
+                          <div className="ros2-topics-settings-row">
+                            <label>Arrow size (m):</label>
+                            <div className="ros2-topics-thickness-group">
+                              <input
+                                type="number"
+                                className="ros2-topics-thickness-input"
+                                min={0.1}
+                                max={10}
+                                step={0.1}
+                                value={visualConfig.arrowSize ?? 0.5}
+                                onChange={(e) => {
+                                  const raw = Number(e.target.value)
+                                  if (!Number.isFinite(raw)) return
+                                  const clamped = Math.min(10, Math.max(0.1, raw))
+                                  renderable?.setVisualConfig?.(topic.name, {
+                                    arrowSize: clamped,
+                                  })
+                                }}
+                                aria-label={`Arrow size for ${topic.name}`}
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 )}
@@ -392,4 +495,63 @@ export function Ros2TopicsPanel({
 function formatLastUpdated(epochMs: number): string {
   const d = new Date(epochMs)
   return d.toLocaleTimeString()
+}
+
+/* -- TwistVehicleDropdown -------------------------------------------- */
+
+interface TwistVehicleDropdownProps {
+  topicName: string
+  vehicles: ReadonlyArray<TwistControlVehicleOption>
+  selectedVehicleId: string
+  onChange?: (topic: string, vehicleId: string) => void
+}
+
+/**
+ * Per-row vehicle binding selector for `geometry_msgs/msg/Twist`
+ * topics. Lives in this file (not extracted) because it consumes the
+ * panel-local props and the visual contract is tightly coupled to the
+ * row layout. Disabled with a clear hint when no vehicles or no parent
+ * `onChange` callback is supplied — the affordance is still visible so
+ * the user knows the slot exists.
+ */
+function TwistVehicleDropdown({
+  topicName,
+  vehicles,
+  selectedVehicleId,
+  onChange,
+}: TwistVehicleDropdownProps) {
+  const hasVehicles = vehicles.length > 0
+  const disabled = !hasVehicles || !onChange
+  const title = !hasVehicles
+    ? 'No controllable vehicles in this scenario'
+    : !onChange
+      ? 'Twist control bindings are unavailable'
+      : `Vehicle bound to ${topicName}`
+  return (
+    <select
+      className="ros2-topics-twist-vehicle"
+      data-testid={`ros2-topics-twist-vehicle-${topicName}`}
+      aria-label={`Vehicle bound to ${topicName}`}
+      title={title}
+      disabled={disabled}
+      value={selectedVehicleId}
+      onChange={(e) => onChange?.(topicName, e.target.value)}
+    >
+      {!hasVehicles && (
+        <option value={TWIST_DROPDOWN_UNBOUND_VALUE}>
+          {TWIST_DROPDOWN_NO_VEHICLES_LABEL}
+        </option>
+      )}
+      {hasVehicles && (
+        <option value={TWIST_DROPDOWN_UNBOUND_VALUE}>
+          {TWIST_DROPDOWN_UNBOUND_LABEL}
+        </option>
+      )}
+      {vehicles.map((v) => (
+        <option key={v.id} value={v.id}>
+          {v.label}
+        </option>
+      ))}
+    </select>
+  )
 }

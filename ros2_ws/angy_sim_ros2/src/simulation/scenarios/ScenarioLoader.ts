@@ -14,6 +14,7 @@ import type {
   PathPointSpec,
   PathSpec,
   RectangleObstacleSpec,
+  Ros2TwistControlBinding,
   ScenarioInteractionConfig,
   ScenarioSpec,
   ScenarioVisualizationConfig,
@@ -219,7 +220,122 @@ function parseInteraction(input: unknown): ScenarioInteractionConfig {
     input.keyboardControl !== undefined
       ? parseKeyboardControl(input.keyboardControl)
       : undefined
-  return { keyboardControl }
+  const ros2TwistControls =
+    input.ros2TwistControls !== undefined
+      ? parseRos2TwistControls(
+          input.ros2TwistControls,
+          'scenario.interaction.ros2TwistControls',
+        )
+      : undefined
+  return {
+    ...(keyboardControl !== undefined && { keyboardControl }),
+    ...(ros2TwistControls !== undefined && { ros2TwistControls }),
+  }
+}
+
+function parseRos2TwistControls(
+  input: unknown,
+  path: string,
+): Ros2TwistControlBinding[] {
+  if (!Array.isArray(input)) {
+    throw new ScenarioParseError(`${path} must be an array`)
+  }
+  return input.map((entry, i) =>
+    parseRos2TwistControlBinding(entry, `${path}[${i}]`),
+  )
+}
+
+function parseRos2TwistControlBinding(
+  input: unknown,
+  path: string,
+): Ros2TwistControlBinding {
+  if (!isObj(input)) {
+    throw new ScenarioParseError(`${path} must be an object`)
+  }
+  if (typeof input.topic !== 'string' || input.topic.length === 0) {
+    throw new ScenarioParseError(`${path}.topic must be a non-empty string`)
+  }
+  if (typeof input.vehicleId !== 'string' || input.vehicleId.length === 0) {
+    throw new ScenarioParseError(
+      `${path}.vehicleId must be a non-empty string`,
+    )
+  }
+  if (input.enabled !== undefined && typeof input.enabled !== 'boolean') {
+    throw new ScenarioParseError(`${path}.enabled must be a boolean`)
+  }
+  const scale =
+    input.scale !== undefined
+      ? parseRos2TwistScale(input.scale, `${path}.scale`)
+      : undefined
+  const limits =
+    input.limits !== undefined
+      ? parseRos2TwistLimits(input.limits, `${path}.limits`)
+      : undefined
+  const timeoutSec =
+    input.timeoutSec !== undefined
+      ? requirePositiveFinite(input.timeoutSec, `${path}.timeoutSec`)
+      : undefined
+  let onTimeout: 'stop' | undefined
+  if (input.onTimeout !== undefined) {
+    if (input.onTimeout !== 'stop') {
+      throw new ScenarioParseError(`${path}.onTimeout must be "stop"`)
+    }
+    onTimeout = 'stop'
+  }
+  return {
+    topic: input.topic,
+    vehicleId: input.vehicleId,
+    ...(typeof input.enabled === 'boolean' && { enabled: input.enabled }),
+    ...(scale !== undefined && { scale }),
+    ...(limits !== undefined && { limits }),
+    ...(timeoutSec !== undefined && { timeoutSec }),
+    ...(onTimeout !== undefined && { onTimeout }),
+  }
+}
+
+function parseRos2TwistScale(
+  input: unknown,
+  path: string,
+): { v?: number; w?: number } {
+  if (!isObj(input)) {
+    throw new ScenarioParseError(`${path} must be an object`)
+  }
+  const v = optionalNumber(input.v, `${path}.v`)
+  const w = optionalNumber(input.w, `${path}.w`)
+  return {
+    ...(v !== undefined && { v }),
+    ...(w !== undefined && { w }),
+  }
+}
+
+function parseRos2TwistLimits(
+  input: unknown,
+  path: string,
+): {
+  maxForwardSpeed?: number
+  maxReverseSpeed?: number
+  maxAngularSpeed?: number
+} {
+  if (!isObj(input)) {
+    throw new ScenarioParseError(`${path} must be an object`)
+  }
+  const maxForwardSpeed =
+    input.maxForwardSpeed !== undefined
+      ? requirePositiveFinite(input.maxForwardSpeed, `${path}.maxForwardSpeed`)
+      : undefined
+  const maxReverseSpeed =
+    input.maxReverseSpeed !== undefined
+      ? requirePositiveFinite(input.maxReverseSpeed, `${path}.maxReverseSpeed`)
+      : undefined
+  const maxAngularSpeed =
+    input.maxAngularSpeed !== undefined
+      ? requirePositiveFinite(input.maxAngularSpeed, `${path}.maxAngularSpeed`)
+      : undefined
+  return {
+    ...(maxForwardSpeed !== undefined && { maxForwardSpeed }),
+    ...(maxReverseSpeed !== undefined && { maxReverseSpeed }),
+    ...(maxAngularSpeed !== undefined && { maxAngularSpeed }),
+  }
 }
 
 function parseKeyboardControl(input: unknown): KeyboardControlScenarioConfig {

@@ -12,6 +12,28 @@ export interface RosTwistToVehicleCommandAdapterOptions {
    * Defaults to `'ego'` to match the canonical scenario-vehicle id.
    */
   vehicleId?: string
+  /**
+   * Per-axis multipliers applied before the wire value reaches the
+   * `VehicleCommand`. `v *= scale.v ?? 1`, `w *= scale.w ?? 1`. Useful
+   * when the upstream publisher uses different units / sign
+   * conventions (e.g. "stick units" → m/s).
+   */
+  scale?: {
+    v?: number
+    w?: number
+  }
+  /**
+   * Optional clamps applied AFTER scaling, so a misbehaving publisher
+   * can't drive a vehicle past its scenario-declared safe envelope.
+   * Each value is a positive magnitude; positive `v` is clamped to
+   * `maxForwardSpeed`, negative `v` to `-maxReverseSpeed`, and `|w|`
+   * to `maxAngularSpeed`.
+   */
+  limits?: {
+    maxForwardSpeed?: number
+    maxReverseSpeed?: number
+    maxAngularSpeed?: number
+  }
 }
 
 const DEFAULT_VEHICLE_ID = 'ego'
@@ -48,6 +70,11 @@ export class RosTwistToVehicleCommandAdapter
   implements MessageAdapter<unknown, VehicleCommand>
 {
   private readonly vehicleId: string
+  private readonly scaleV: number
+  private readonly scaleW: number
+  private readonly maxForwardSpeed?: number
+  private readonly maxReverseSpeed?: number
+  private readonly maxAngularSpeed?: number
 
   constructor(options: RosTwistToVehicleCommandAdapterOptions = {}) {
     const requested = options.vehicleId
@@ -60,15 +87,50 @@ export class RosTwistToVehicleCommandAdapter
       )
     }
     this.vehicleId = requested ?? DEFAULT_VEHICLE_ID
+    this.scaleV = validateFiniteNumber(
+      options.scale?.v,
+      'scale.v',
+      1,
+    )
+    this.scaleW = validateFiniteNumber(
+      options.scale?.w,
+      'scale.w',
+      1,
+    )
+    this.maxForwardSpeed = validatePositiveLimit(
+      options.limits?.maxForwardSpeed,
+      'limits.maxForwardSpeed',
+    )
+    this.maxReverseSpeed = validatePositiveLimit(
+      options.limits?.maxReverseSpeed,
+      'limits.maxReverseSpeed',
+    )
+    this.maxAngularSpeed = validatePositiveLimit(
+      options.limits?.maxAngularSpeed,
+      'limits.maxAngularSpeed',
+    )
   }
 
   toInternal(message: unknown): VehicleCommand {
     const twist = assertTwist(message)
 
+    let v = twist.linear.x * this.scaleV
+    let w = twist.angular.z * this.scaleW
+    if (this.maxForwardSpeed !== undefined && v > this.maxForwardSpeed) {
+      v = this.maxForwardSpeed
+    }
+    if (this.maxReverseSpeed !== undefined && v < -this.maxReverseSpeed) {
+      v = -this.maxReverseSpeed
+    }
+    if (this.maxAngularSpeed !== undefined) {
+      if (w > this.maxAngularSpeed) w = this.maxAngularSpeed
+      else if (w < -this.maxAngularSpeed) w = -this.maxAngularSpeed
+    }
+
     return {
       vehicleId: this.vehicleId,
-      linearVelocity: twist.linear.x,
-      angularVelocity: twist.angular.z,
+      linearVelocity: v,
+      angularVelocity: w,
       source: 'external',
     }
   }
@@ -123,6 +185,33 @@ function assertVector3(
 function requireFiniteNumber(value: unknown, fieldName: string): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     throw new Error(`${fieldName} must be a finite number`)
+  }
+  return value
+}
+
+function validateFiniteNumber(
+  value: unknown,
+  fieldName: string,
+  fallback: number,
+): number {
+  if (value === undefined) return fallback
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new Error(
+      `RosTwistToVehicleCommandAdapter: ${fieldName} must be a finite number`,
+    )
+  }
+  return value
+}
+
+function validatePositiveLimit(
+  value: unknown,
+  fieldName: string,
+): number | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    throw new Error(
+      `RosTwistToVehicleCommandAdapter: ${fieldName} must be a finite number > 0`,
+    )
   }
   return value
 }

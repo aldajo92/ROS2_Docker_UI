@@ -754,21 +754,39 @@ body.layout-splitter-dragging {
 }
 
 .scenario-editor-preview-shell {
-  position: relative;
   display: flex;
   flex-direction: column;
+  height: 240px;
 }
 
-/* Extra top padding keeps JSON text clear of the Copy button. */
-.scenario-editor-preview-shell .scenario-editor-preview {
-  padding-top: 36px;
+.scenario-editor-preview-shell--hidden {
+  display: none;
+}
+
+.scenario-editor-preview-toolbar {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: 6px 6px 0 0;
+}
+
+.scenario-editor-preview-file-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-family: ui-monospace, "SFMono-Regular", monospace;
 }
 
 .scenario-editor-copy-button {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  z-index: 1;
+  flex: 0 0 auto;
   width: 26px;
   height: 26px;
   padding: 0;
@@ -787,6 +805,16 @@ body.layout-splitter-dragging {
   background: var(--accent);
   color: var(--accent-fg);
   border-color: var(--accent);
+}
+
+.scenario-editor-preview-shell .scenario-editor-preview {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+}
+
+.scenario-editor-preview-shell--with-toolbar .scenario-editor-preview {
+  border-radius: 0 0 6px 6px;
 }
 
 .scenario-editor-preview,
@@ -872,6 +900,15 @@ body.layout-splitter-dragging {
 .scenario-editor-actions button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+.scenario-editor-actions .scenario-editor-copy-button {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
 }
 
 .scenario-editor-hint {
@@ -1580,6 +1617,22 @@ body.layout-splitter-dragging {
   white-space: nowrap;
 }
 
+.ros2-topics-twist-vehicle {
+  background: transparent;
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
+  max-width: 110px;
+  cursor: pointer;
+}
+
+.ros2-topics-twist-vehicle:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .ros2-topics-action {
   background: transparent;
   color: var(--fg-muted);
@@ -1667,6 +1720,12 @@ body.layout-splitter-dragging {
   gap: 6px;
 }
 
+.ros2-topics-settings-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
 .ros2-topics-settings-row > label {
   font-size: 11px;
   color: var(--fg);
@@ -1715,6 +1774,12 @@ body.layout-splitter-dragging {
 }
 
 .ros2-topics-thickness-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ros2-topics-vehicle-group {
   display: inline-flex;
   align-items: center;
   gap: 6px;

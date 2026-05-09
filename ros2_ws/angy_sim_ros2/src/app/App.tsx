@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { SimulationProvider } from './SimulationProvider'
-import { CommunicationProvider } from './CommunicationProvider'
+import {
+  CommunicationProvider,
+  type Ros2TwistTopicBindingState,
+} from './CommunicationProvider'
 import { useSimulation, useSimulationRunning } from './useSimulation'
 import { ConnectionStatusPanel } from '../ui/ConnectionStatusPanel'
-import { Ros2TopicsPanel } from '../ui/Ros2TopicsPanel'
+import {
+  Ros2TopicsPanel,
+  type TwistControlBindingSelection,
+} from '../ui/Ros2TopicsPanel'
 import { EchoCard } from '../ui/EchoCard'
 import { useTopicEcho } from './useTopicEcho'
 import { useRenderableTopics } from './useRenderableTopics'
@@ -33,6 +39,7 @@ import {
 import {
   downloadScenarioJsonText,
   formatScenarioJson,
+  normalizeScenarioFileName,
 } from '../ui/scenario/ScenarioJsonUtils'
 import { parseScenarioJson } from '../ui/scenario/ScenarioFileLoader'
 import {
@@ -85,6 +92,7 @@ import { createReplayStateFromFrame } from '../simulation/recording/createReplay
 import type { ReplayFileFormat } from '../simulation/recording/ReplayFormat'
 import type { SimulationState } from '../simulation/core/SimulationState'
 import type {
+  Ros2TwistControlBinding,
   ScenarioInteractionConfig,
   ScenarioSpec,
 } from '../simulation/scenarios/Scenario'
@@ -99,17 +107,44 @@ export type SimulationRunMode = 'live' | 'replay'
 const REPLAY_DISABLED_REASON =
   'Recording is paused while a replay is loaded.'
 
+/**
+ * Top-level state container that lives ABOVE `CommunicationProvider`
+ * so scenario / UI-driven Twist bindings can be passed in as a prop.
+ * Why a wrapper instead of pushing the state into `AppShell`?
+ *   - `CommunicationProvider` consumes the bindings to build runtime
+ *     `VehicleCommandTopicBridge` instances.
+ *   - The Ros2 Topics dropdown lives below `CommunicationProvider` and
+ *     also needs the binding map.
+ *   - Lifting the state to a shared parent keeps both consumers in
+ *     lock-step without resorting to a third React context.
+ */
 export default function App() {
+  const [twistControlBindings, setTwistControlBindings] = useState<
+    Ros2TwistTopicBindingState[]
+  >([])
   return (
     <SimulationProvider>
-      <CommunicationProvider>
-        <AppShell />
+      <CommunicationProvider twistControlBindings={twistControlBindings}>
+        <AppShell
+          twistControlBindings={twistControlBindings}
+          onTwistControlBindingsChange={setTwistControlBindings}
+        />
       </CommunicationProvider>
     </SimulationProvider>
   )
 }
 
-function AppShell() {
+interface AppShellProps {
+  twistControlBindings: Ros2TwistTopicBindingState[]
+  onTwistControlBindingsChange: (
+    next: Ros2TwistTopicBindingState[],
+  ) => void
+}
+
+function AppShell({
+  twistControlBindings,
+  onTwistControlBindingsChange,
+}: AppShellProps) {
   const { engine, controller } = useSimulation()
   const isRunning = useSimulationRunning()
 
@@ -585,6 +620,9 @@ function AppShell() {
     ScenarioSpec | undefined
   >(undefined)
   const [currentScenarioText, setCurrentScenarioText] = useState('')
+  const [currentScenarioFileName, setCurrentScenarioFileName] = useState<
+    string | undefined
+  >(undefined)
   const [scenarioEditorError, setScenarioEditorError] = useState<
     string | undefined
   >(undefined)
@@ -646,6 +684,16 @@ function AppShell() {
       setKeyboardControlState(deriveKeyboardControlState(spec.interaction))
       setScenarioEditorError(undefined)
 
+      // Replace the live Twist topic → vehicle bindings with whatever
+      // the scenario declares. Empty / missing maps to "no scenario
+      // bindings" — the CommunicationProvider then falls back to its
+      // historical `/cmd_vel → ego` bridge so existing scenarios keep
+      // working.
+      const declaredBindings = spec.interaction?.ros2TwistControls ?? []
+      onTwistControlBindingsChange(
+        declaredBindings.map(toRos2TwistTopicBindingState),
+      )
+
       // Compute the editor text. Two cases matter:
       //
       //   1. The loaded spec brings its own `visualization` block —
@@ -682,6 +730,9 @@ function AppShell() {
       }
       setCurrentScenarioSpec(editorSpec)
       setCurrentScenarioText(editorText)
+      setCurrentScenarioFileName(
+        normalizeScenarioFileName(spec.name) ?? 'scenario.json',
+      )
 
       // Stash the scenario's declared visualization for the next-run
       // apply effect. We don't apply directly here because the
@@ -692,7 +743,7 @@ function AppShell() {
       // replay mode so the renderer stops painting stale frames.
       if (replaySessionRef.current) handleExitReplay()
     },
-    [handleExitReplay],
+    [handleExitReplay, onTwistControlBindingsChange],
   )
 
   // Apply scenario-declared visualization once the capability is
@@ -780,16 +831,27 @@ function AppShell() {
     [controller, handleScenarioLoaded],
   )
 
+  const handleUploadedFileName = useCallback((name: string) => {
+    setCurrentScenarioFileName(name)
+  }, [])
+
+  const handleScenarioFileNameChange = useCallback((next: string) => {
+    setCurrentScenarioFileName(next)
+  }, [])
+
   const handleDownloadScenario = useCallback(
     (text: string) => {
       // Download whatever the user typed — even if it hasn't been
       // applied yet — so they can save WIP edits without having to
       // first commit them to the running simulation.
       downloadScenarioJsonText(text, {
-        baseName: currentScenarioSpec?.name ?? 'scenario',
+        fileName:
+          currentScenarioFileName ??
+          normalizeScenarioFileName(currentScenarioSpec?.name ?? '') ??
+          'scenario.json',
       })
     },
-    [currentScenarioSpec],
+    [currentScenarioFileName, currentScenarioSpec],
   )
 
   useEffect(() => {
@@ -799,6 +861,78 @@ function AppShell() {
       )
     })
   }, [engine])
+
+  // ----- ROS2 Twist control plumbing ----------------------------------
+  //
+  // The dropdown in `Ros2TopicsPanel` and the runtime
+  // `CommunicationProvider` both read from the same lifted state. We
+  // derive a memoized topic→vehicle map for the panel and the option
+  // list from the active scenario. UI changes update the lifted state
+  // directly; we deliberately do NOT sync those changes back into the
+  // Scenario Editor JSON in this iteration. Documented in
+  // `doc/Architecture.md` so the on-disk schema can't surprise users
+  // who expect their dropdown choice to round-trip.
+
+  const twistControlVehicleOptions = useMemo(
+    () =>
+      (currentScenarioSpec?.entities ?? [])
+        .filter((e) => e.kind === 'vehicle')
+        .map((e) => ({ id: e.id, label: e.id })),
+    [currentScenarioSpec],
+  )
+
+  const twistControlBindingsMap = useMemo<
+    Record<string, TwistControlBindingSelection>
+  >(() => {
+    const map: Record<string, TwistControlBindingSelection> = {}
+    for (const b of twistControlBindings) {
+      map[b.topic] = {
+        vehicleId: b.vehicleId,
+        enabled: b.enabled !== false,
+      }
+    }
+    return map
+  }, [twistControlBindings])
+
+  const handleTwistControlBindingChange = useCallback(
+    (topic: string, vehicleId: string) => {
+      const next = [...twistControlBindings]
+      const index = next.findIndex((b) => b.topic === topic)
+      if (vehicleId === '') {
+        // Empty value means "clear the selected vehicle". A binding
+        // without a vehicle cannot drive anything, so dropping it is
+        // still appropriate for the dropdown's explicit placeholder.
+        if (index !== -1) next.splice(index, 1)
+      } else if (index === -1) {
+        next.push({ topic, vehicleId, enabled: true })
+      } else {
+        next[index] = { ...next[index], vehicleId, enabled: true }
+      }
+      onTwistControlBindingsChange(next)
+    },
+    [twistControlBindings, onTwistControlBindingsChange],
+  )
+
+  const handleTwistControlEnabledChange = useCallback(
+    (topic: string, enabled: boolean) => {
+      const next = [...twistControlBindings]
+      const index = next.findIndex((b) => b.topic === topic)
+      if (index === -1) {
+        if (!enabled) return
+        const vehicleId = twistControlVehicleOptions[0]?.id
+        if (!vehicleId) return
+        next.push({ topic, vehicleId, enabled: true })
+      } else {
+        next[index] = { ...next[index], enabled }
+      }
+      onTwistControlBindingsChange(next)
+    },
+    [
+      twistControlBindings,
+      twistControlVehicleOptions,
+      onTwistControlBindingsChange,
+    ],
+  )
 
   // ----- inspector resizer --------------------------------------------
   //
@@ -902,6 +1036,10 @@ function AppShell() {
               <Ros2TopicsPanel
                 expanded={ros2TopicsExpanded}
                 onExpandedChange={handleRos2TopicsExpandedChange}
+                twistControlVehicles={twistControlVehicleOptions}
+                twistControlBindings={twistControlBindingsMap}
+                onTwistControlBindingChange={handleTwistControlBindingChange}
+                onTwistControlEnabledChange={handleTwistControlEnabledChange}
               />
             )}
             {/*
@@ -931,6 +1069,7 @@ function AppShell() {
             {!scenarioEditorExpanded && !ros2TopicsExpanded && (
               <ControlPanel
                 onScenarioLoaded={handleScenarioLoaded}
+                onUploadedFileName={handleUploadedFileName}
                 recordWhileRunning={recordWhileRunning}
                 onRecordWhileRunningChange={handleRecordWhileRunningChange}
                 onSaveRecording={handleDownloadRecording}
@@ -952,6 +1091,8 @@ function AppShell() {
                 errorMessage={scenarioEditorError}
                 expanded={scenarioEditorExpanded}
                 onExpandedChange={handleScenarioEditorExpandedChange}
+                scenarioFileName={currentScenarioFileName}
+                onScenarioFileNameChange={handleScenarioFileNameChange}
               />
             )}
             {/*
@@ -1071,4 +1212,24 @@ function computeSaveRecordingDisabledReason({
   if (isReplayMode) return 'Exit replay mode before saving a new recording.'
   if (frameCount === 0) return 'No recorded frames yet — start recording first.'
   return undefined
+}
+
+/**
+ * Translate a JSON-safe `Ros2TwistControlBinding` (scenario layer)
+ * into the runtime `Ros2TwistTopicBindingState` (communication layer).
+ * The shapes are nearly identical; the indirection lets each layer
+ * own its own type without one importing the other.
+ */
+function toRos2TwistTopicBindingState(
+  binding: Ros2TwistControlBinding,
+): Ros2TwistTopicBindingState {
+  return {
+    topic: binding.topic,
+    vehicleId: binding.vehicleId,
+    ...(binding.enabled !== undefined && { enabled: binding.enabled }),
+    ...(binding.scale !== undefined && { scale: binding.scale }),
+    ...(binding.limits !== undefined && { limits: binding.limits }),
+    ...(binding.timeoutSec !== undefined && { timeoutSec: binding.timeoutSec }),
+    ...(binding.onTimeout !== undefined && { onTimeout: binding.onTimeout }),
+  }
 }

@@ -1047,6 +1047,300 @@ describe('Ros2TopicsPanel — render-topic checkbox', () => {
   })
 })
 
+describe('Ros2TopicsPanel — Twist vehicle control', () => {
+  let harness: Harness | null = null
+  afterEach(() => {
+    unmount(harness)
+    harness = null
+  })
+
+  function makeTwistContext(
+    overrides: Partial<CommunicationContextValue> = {},
+  ): CommunicationContextValue {
+    return makeContext({
+      topicDiscovery: makeDiscovery({
+        status: 'ready',
+        topics: [
+          { name: '/cmd_vel', type: 'geometry_msgs/msg/Twist' },
+          { name: '/circle_path', type: 'nav_msgs/msg/Path' },
+          { name: '/demo/counter', type: 'std_msgs/msg/Int32' },
+        ],
+        lastUpdated: Date.now(),
+      }),
+      ...overrides,
+    })
+  }
+
+  function getTwistDropdown(
+    container: HTMLDivElement,
+    topic: string,
+  ): HTMLSelectElement | null {
+    return queryByTestId<HTMLSelectElement>(
+      container,
+      `ros2-topics-twist-vehicle-${topic}`,
+    )
+  }
+
+  function queryByTestId<T extends HTMLElement>(
+    container: HTMLDivElement,
+    testId: string,
+  ): T | null {
+    return (
+      Array.from(container.querySelectorAll<T>('[data-testid]')).find(
+        (el) => el.dataset.testid === testId,
+      ) ?? null
+    )
+  }
+
+  function getChevron(
+    container: HTMLDivElement,
+    topic: string,
+  ): HTMLButtonElement {
+    const btn = queryByTestId<HTMLButtonElement>(
+      container,
+      `ros2-topics-chevron-${topic}`,
+    )
+    if (!btn) throw new Error(`Chevron for ${topic} not found`)
+    return btn
+  }
+
+  function getTopicCheckbox(
+    container: HTMLDivElement,
+    topic: string,
+  ): HTMLInputElement {
+    const input = queryByTestId<HTMLInputElement>(
+      container,
+      `ros2-topics-render-${topic}`,
+    )
+    if (!input) throw new Error(`Checkbox for ${topic} not found`)
+    return input
+  }
+
+  function getTopicRow(container: HTMLDivElement, topic: string): HTMLElement {
+    const row = Array.from(
+      container.querySelectorAll<HTMLElement>('.ros2-topics-row'),
+    ).find((el) => el.textContent?.includes(topic))
+    if (!row) throw new Error(`Row for ${topic} not found`)
+    return row
+  }
+
+  it('does not render the Twist vehicle dropdown in the main row', () => {
+    harness = mountPanel(makeTwistContext(), {
+      twistControlVehicles: [{ id: 'ego', label: 'ego' }],
+    })
+    act(() => {
+      getToggleButton(harness!.container).click()
+    })
+    expect(getTwistDropdown(harness.container, '/cmd_vel')).toBeNull()
+    expect(getTopicRow(harness.container, '/cmd_vel').textContent).not.toContain(
+      'No vehicles',
+    )
+  })
+
+  it('does not render a vehicle dropdown for non-Twist rows', () => {
+    harness = mountPanel(makeTwistContext(), {
+      twistControlVehicles: [{ id: 'ego', label: 'ego' }],
+      twistControlBindings: {
+        '/cmd_vel': { vehicleId: 'ego', enabled: true },
+      },
+    })
+    act(() => {
+      getToggleButton(harness!.container).click()
+    })
+    act(() => {
+      getChevron(harness!.container, '/circle_path').click()
+    })
+    expect(getTwistDropdown(harness.container, '/circle_path')).toBeNull()
+    expect(getTwistDropdown(harness.container, '/demo/counter')).toBeNull()
+  })
+
+  it('enables the Twist checkbox and chevron even when the topic is not renderable', () => {
+    const onTwistControlEnabledChange = vi.fn()
+    harness = mountPanel(
+      makeTwistContext({
+        renderableTopics: makeRenderable({ renderableNames: [] }),
+      }),
+      {
+        twistControlVehicles: [{ id: 'ego', label: 'ego' }],
+        onTwistControlEnabledChange,
+      },
+    )
+    act(() => {
+      getToggleButton(harness!.container).click()
+    })
+
+    const checkbox = getTopicCheckbox(harness.container, '/cmd_vel')
+    const chevron = getChevron(harness.container, '/cmd_vel')
+    expect(checkbox.disabled).toBe(false)
+    expect(chevron.disabled).toBe(false)
+    expect(checkbox.title).toBe('Connect /cmd_vel to vehicle control')
+  })
+
+  it('checking a Twist checkbox calls the enabled-change callback', () => {
+    const onTwistControlEnabledChange = vi.fn()
+    harness = mountPanel(makeTwistContext(), {
+      twistControlVehicles: [{ id: 'ego', label: 'ego' }],
+      onTwistControlEnabledChange,
+    })
+    act(() => {
+      getToggleButton(harness!.container).click()
+    })
+    act(() => {
+      getTopicCheckbox(harness!.container, '/cmd_vel').click()
+    })
+    expect(onTwistControlEnabledChange).toHaveBeenCalledWith('/cmd_vel', true)
+  })
+
+  it('unchecking a Twist checkbox calls the enabled-change callback with false', () => {
+    const onTwistControlEnabledChange = vi.fn()
+    harness = mountPanel(makeTwistContext(), {
+      twistControlVehicles: [{ id: 'ego', label: 'ego' }],
+      twistControlBindings: {
+        '/cmd_vel': { vehicleId: 'ego', enabled: true },
+      },
+      onTwistControlEnabledChange,
+    })
+    act(() => {
+      getToggleButton(harness!.container).click()
+    })
+    act(() => {
+      getTopicCheckbox(harness!.container, '/cmd_vel').click()
+    })
+    expect(onTwistControlEnabledChange).toHaveBeenCalledWith('/cmd_vel', false)
+  })
+
+  it('expanding an unchecked Twist row shows a hint, not the dropdown', () => {
+    harness = mountPanel(makeTwistContext(), {
+      twistControlVehicles: [{ id: 'ego', label: 'ego' }],
+    })
+    act(() => {
+      getToggleButton(harness!.container).click()
+    })
+    act(() => {
+      getChevron(harness!.container, '/cmd_vel').click()
+    })
+    expect(getTwistDropdown(harness.container, '/cmd_vel')).toBeNull()
+    expect(harness.container.textContent).toContain(
+      'Enable this topic to select a vehicle.',
+    )
+    expect(
+      harness.container.querySelector('.ros2-topics-settings--inactive'),
+    ).not.toBeNull()
+  })
+
+  it('checking and expanding a Twist row shows Vehicle dropdown settings', () => {
+    harness = mountPanel(makeTwistContext(), {
+      twistControlVehicles: [
+        { id: 'ego', label: 'ego' },
+        { id: 'rover-2', label: 'rover-2' },
+      ],
+      twistControlBindings: {
+        '/cmd_vel': { vehicleId: 'rover-2', enabled: true },
+      },
+    })
+    act(() => {
+      getToggleButton(harness!.container).click()
+    })
+    act(() => {
+      getChevron(harness!.container, '/cmd_vel').click()
+    })
+    const select = getTwistDropdown(harness.container, '/cmd_vel')!
+    expect(select).not.toBeNull()
+    expect(select.value).toBe('rover-2')
+    const optionValues = Array.from(select.options).map((o) => o.value)
+    expect(optionValues).toEqual(['', 'ego', 'rover-2'])
+    const settingsRow = select.closest('.ros2-topics-settings-row')
+    expect(settingsRow?.textContent).toContain('Vehicle:')
+  })
+
+  it('shows No vehicles inside expanded settings, never in the main row', () => {
+    harness = mountPanel(makeTwistContext(), {
+      twistControlVehicles: [],
+    })
+    act(() => {
+      getToggleButton(harness!.container).click()
+    })
+    expect(getTopicRow(harness.container, '/cmd_vel').textContent).not.toContain(
+      'No vehicles',
+    )
+    act(() => {
+      getChevron(harness!.container, '/cmd_vel').click()
+    })
+    expect(getTwistDropdown(harness.container, '/cmd_vel')).toBeNull()
+    expect(harness.container.textContent).toContain('No vehicles')
+    expect(getTopicCheckbox(harness.container, '/cmd_vel').disabled).toBe(true)
+  })
+
+  it('calls onTwistControlBindingChange with topic + new vehicleId from expanded settings', () => {
+    const onTwistControlBindingChange = vi.fn()
+    harness = mountPanel(makeTwistContext(), {
+      twistControlVehicles: [
+        { id: 'ego', label: 'ego' },
+        { id: 'rover-2', label: 'rover-2' },
+      ],
+      twistControlBindings: {
+        '/cmd_vel': { vehicleId: 'ego', enabled: true },
+      },
+      onTwistControlBindingChange,
+    })
+    act(() => {
+      getToggleButton(harness!.container).click()
+    })
+    act(() => {
+      getChevron(harness!.container, '/cmd_vel').click()
+    })
+    const select = getTwistDropdown(harness.container, '/cmd_vel')!
+    act(() => {
+      select.value = 'rover-2'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(onTwistControlBindingChange).toHaveBeenCalledWith(
+      '/cmd_vel',
+      'rover-2',
+    )
+  })
+
+  it('passing the empty placeholder calls onChange with an empty string (unbind)', () => {
+    const onTwistControlBindingChange = vi.fn()
+    harness = mountPanel(makeTwistContext(), {
+      twistControlVehicles: [{ id: 'ego', label: 'ego' }],
+      twistControlBindings: {
+        '/cmd_vel': { vehicleId: 'ego', enabled: true },
+      },
+      onTwistControlBindingChange,
+    })
+    act(() => {
+      getToggleButton(harness!.container).click()
+    })
+    act(() => {
+      getChevron(harness!.container, '/cmd_vel').click()
+    })
+    const select = getTwistDropdown(harness.container, '/cmd_vel')!
+    act(() => {
+      select.value = ''
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(onTwistControlBindingChange).toHaveBeenCalledWith('/cmd_vel', '')
+  })
+
+  it('omitting onTwistControlBindingChange disables the expanded dropdown gracefully', () => {
+    harness = mountPanel(makeTwistContext(), {
+      twistControlVehicles: [{ id: 'ego', label: 'ego' }],
+      twistControlBindings: {
+        '/cmd_vel': { vehicleId: 'ego', enabled: true },
+      },
+    })
+    act(() => {
+      getToggleButton(harness!.container).click()
+    })
+    act(() => {
+      getChevron(harness!.container, '/cmd_vel').click()
+    })
+    const select = getTwistDropdown(harness.container, '/cmd_vel')!
+    expect(select.disabled).toBe(true)
+  })
+})
+
 describe('Architecture: Ros2TopicsPanel does not import roslib', () => {
   // The roslib-isolation rule is exhaustively enforced by
   // `architecture.rosbridge.test.ts` (it scans every src/**/*.ts(x)

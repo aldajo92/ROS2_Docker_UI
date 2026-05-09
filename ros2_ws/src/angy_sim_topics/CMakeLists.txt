@@ -14,6 +14,8 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(rosgraph_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 
 add_executable(demo_publisher src/demo_publisher.cpp)
@@ -22,8 +24,17 @@ ament_target_dependencies(demo_publisher
   std_msgs
 )
 
+add_executable(cmd_vel_sine_clock_publisher src/cmd_vel_sine_clock_publisher.cpp)
+ament_target_dependencies(cmd_vel_sine_clock_publisher
+  rclcpp
+  geometry_msgs
+  rosgraph_msgs
+)
+
 # Install the executable into `lib/<project>` so `ros2 run` can find it.
-install(TARGETS demo_publisher
+install(TARGETS
+  demo_publisher
+  cmd_vel_sine_clock_publisher
   DESTINATION lib/${PROJECT_NAME}
 )
 

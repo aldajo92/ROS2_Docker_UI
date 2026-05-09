@@ -135,3 +135,140 @@ describe('RosTwistToVehicleCommandAdapter', () => {
     ).toThrow(/angularVelocity/)
   })
 })
+
+describe('RosTwistToVehicleCommandAdapter — scale', () => {
+  it('multiplies linear.x by scale.v', () => {
+    const adapter = new RosTwistToVehicleCommandAdapter({
+      vehicleId: 'ego',
+      scale: { v: 2 },
+    })
+    const cmd = adapter.toInternal({
+      linear: { x: 1, y: 0, z: 0 },
+      angular: { x: 0, y: 0, z: 0 },
+    })
+    expect(cmd.linearVelocity).toBe(2)
+    expect(cmd.angularVelocity).toBe(0)
+  })
+
+  it('multiplies angular.z by scale.w', () => {
+    const adapter = new RosTwistToVehicleCommandAdapter({
+      vehicleId: 'ego',
+      scale: { w: 0.5 },
+    })
+    const cmd = adapter.toInternal({
+      linear: { x: 0, y: 0, z: 0 },
+      angular: { x: 0, y: 0, z: 1 },
+    })
+    expect(cmd.angularVelocity).toBe(0.5)
+  })
+
+  it('defaults to scale 1 when no scale option is provided', () => {
+    const adapter = new RosTwistToVehicleCommandAdapter({ vehicleId: 'ego' })
+    const cmd = adapter.toInternal({
+      linear: { x: 1.5, y: 0, z: 0 },
+      angular: { x: 0, y: 0, z: -0.25 },
+    })
+    expect(cmd.linearVelocity).toBe(1.5)
+    expect(cmd.angularVelocity).toBe(-0.25)
+  })
+
+  it('rejects non-finite scale at construction', () => {
+    expect(
+      () =>
+        new RosTwistToVehicleCommandAdapter({
+          vehicleId: 'ego',
+          scale: { v: Number.NaN },
+        }),
+    ).toThrow(/scale\.v/)
+  })
+})
+
+describe('RosTwistToVehicleCommandAdapter — limits', () => {
+  it('clamps positive linear velocity to maxForwardSpeed', () => {
+    const adapter = new RosTwistToVehicleCommandAdapter({
+      vehicleId: 'ego',
+      limits: { maxForwardSpeed: 1.5 },
+    })
+    const cmd = adapter.toInternal({
+      linear: { x: 5, y: 0, z: 0 },
+      angular: { x: 0, y: 0, z: 0 },
+    })
+    expect(cmd.linearVelocity).toBe(1.5)
+  })
+
+  it('clamps negative linear velocity to -maxReverseSpeed', () => {
+    const adapter = new RosTwistToVehicleCommandAdapter({
+      vehicleId: 'ego',
+      limits: { maxReverseSpeed: 0.8 },
+    })
+    const cmd = adapter.toInternal({
+      linear: { x: -3, y: 0, z: 0 },
+      angular: { x: 0, y: 0, z: 0 },
+    })
+    expect(cmd.linearVelocity).toBe(-0.8)
+  })
+
+  it('clamps |w| to maxAngularSpeed in both directions', () => {
+    const adapter = new RosTwistToVehicleCommandAdapter({
+      vehicleId: 'ego',
+      limits: { maxAngularSpeed: 0.5 },
+    })
+    expect(
+      adapter.toInternal({
+        linear: { x: 0, y: 0, z: 0 },
+        angular: { x: 0, y: 0, z: 5 },
+      }).angularVelocity,
+    ).toBe(0.5)
+    expect(
+      adapter.toInternal({
+        linear: { x: 0, y: 0, z: 0 },
+        angular: { x: 0, y: 0, z: -5 },
+      }).angularVelocity,
+    ).toBe(-0.5)
+  })
+
+  it('applies limits AFTER scale (so scaled values can still get clamped)', () => {
+    const adapter = new RosTwistToVehicleCommandAdapter({
+      vehicleId: 'ego',
+      scale: { v: 10 },
+      limits: { maxForwardSpeed: 2 },
+    })
+    const cmd = adapter.toInternal({
+      linear: { x: 1, y: 0, z: 0 },
+      angular: { x: 0, y: 0, z: 0 },
+    })
+    // Without clamping: 1 * 10 = 10. Clamped: 2.
+    expect(cmd.linearVelocity).toBe(2)
+  })
+
+  it('rejects non-positive limits at construction', () => {
+    expect(
+      () =>
+        new RosTwistToVehicleCommandAdapter({
+          vehicleId: 'ego',
+          limits: { maxForwardSpeed: 0 },
+        }),
+    ).toThrow(/maxForwardSpeed/)
+    expect(
+      () =>
+        new RosTwistToVehicleCommandAdapter({
+          vehicleId: 'ego',
+          limits: { maxAngularSpeed: -1 },
+        }),
+    ).toThrow(/maxAngularSpeed/)
+  })
+
+  it('skips clamping for axes with no limit configured', () => {
+    const adapter = new RosTwistToVehicleCommandAdapter({
+      vehicleId: 'ego',
+      limits: { maxAngularSpeed: 1 },
+    })
+    const cmd = adapter.toInternal({
+      linear: { x: 100, y: 0, z: 0 },
+      angular: { x: 0, y: 0, z: 0.5 },
+    })
+    // No linear clamp configured → passes through unchanged.
+    expect(cmd.linearVelocity).toBe(100)
+    expect(cmd.angularVelocity).toBe(0.5)
+  })
+})

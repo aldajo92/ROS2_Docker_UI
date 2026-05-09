@@ -134,11 +134,64 @@ export interface KeyboardControlScenarioConfig {
   angularSpeed?: number
 }
 
+/**
+ * Scenario-declared binding that says "ROS 2 Twist messages on `topic`
+ * drive vehicle `vehicleId`". The struct is intentionally JSON-safe
+ * and carries no `messageType` field — the family `ros2TwistControls`
+ * already defines the wire contract (`geometry_msgs/msg/Twist`), so
+ * encoding it again would falsely imply other message types are
+ * supported. The simulation core never reads this struct; the
+ * communication layer (rosbridge / DDS / …) consumes it via the React
+ * shell to construct `VehicleCommandTopicBridge` instances.
+ *
+ * Field semantics:
+ *   - `topic`: ROS 2 topic name to subscribe to, e.g. `/cmd_vel`.
+ *   - `vehicleId`: id of the scenario `vehicle` entity that receives
+ *     commands decoded from the topic.
+ *   - `enabled`: when `false`, the binding is parsed and stored but
+ *     no subscription is created. Defaults to `true`.
+ *   - `scale.v` / `scale.w`: optional multipliers applied to
+ *     `Twist.linear.x` / `Twist.angular.z` before emitting a
+ *     `VehicleCommand` (`v = linear.x * scale.v ?? 1`).
+ *   - `limits.maxForwardSpeed` / `maxReverseSpeed`: positive clamp
+ *     applied to positive / negative `v` after scaling.
+ *   - `limits.maxAngularSpeed`: positive clamp applied to `|w|` after
+ *     scaling.
+ *   - `timeoutSec` + `onTimeout`: parsed and stored for forward
+ *     compatibility, but the runtime timeout-stop scheduler is not
+ *     wired in this iteration. Today it is a no-op; documenting the
+ *     deferral keeps the on-disk schema honest.
+ */
+export interface Ros2TwistControlBinding {
+  topic: string
+  vehicleId: string
+  enabled?: boolean
+  scale?: {
+    v?: number
+    w?: number
+  }
+  limits?: {
+    maxForwardSpeed?: number
+    maxReverseSpeed?: number
+    maxAngularSpeed?: number
+  }
+  timeoutSec?: number
+  onTimeout?: 'stop'
+}
+
 /** Container for any future scenario-declared interaction defaults
  *  (keyboard, gamepad, touch, etc.). Optional everywhere so old
  *  scenarios keep parsing unchanged. */
 export interface ScenarioInteractionConfig {
   keyboardControl?: KeyboardControlScenarioConfig
+  /**
+   * ROS 2 Twist topic → vehicle bindings. When present, the React
+   * shell creates one `VehicleCommandTopicBridge` per enabled entry
+   * so external `geometry_msgs/msg/Twist` publishers can drive the
+   * named vehicles. Absent / empty array preserves the previous
+   * "single hardcoded `/cmd_vel → ego`" behavior as a fallback.
+   */
+  ros2TwistControls?: Ros2TwistControlBinding[]
 }
 
 /**
