@@ -30,3 +30,18 @@ npm install
 npm run dev
 ```
 
+## 4. Open the web application
+Open your web browser and navigate to `http://localhost:5173` to access the web application.
+
+## 5. Run the ROS2 nodes
+In another terminal, open a bash session in the container:
+```
+./scripts/bash.sh
+```
+
+Then, run the ROS2 nodes:
+```
+cd ~/ros2_ws/
+bros2
+```
+
