@@ -67,5 +67,6 @@ ros2_ws/log/
 # React app
 ros2_ws/angelos_sim_ros2/node_modules/
 ros2_ws/three.js/
+package-lock.json
 
 # End of https://www.toptal.com/developers/gitignore/api/ros
