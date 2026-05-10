@@ -38,6 +38,17 @@ install(TARGETS
   DESTINATION lib/${PROJECT_NAME}
 )
 
+# Install Python visualization nodes (originally from rviz2_visuals).
+# Installed under `lib/<project>` with shebang-driven execution; runnable
+# as `ros2 run angy_sim_topics arrow_random.py` etc.
+install(PROGRAMS
+  scripts/arrow_random.py
+  scripts/circle_wave.py
+  scripts/circle_path.py
+  scripts/image_publisher.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 # Install launch files into `share/<project>/launch` so `ros2 launch`
 # can discover them.
 install(DIRECTORY launch

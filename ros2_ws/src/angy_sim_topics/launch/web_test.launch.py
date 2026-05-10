@@ -15,7 +15,7 @@ The browser then connects with:
     VITE_TRANSPORT_KIND=rosbridge
     VITE_ROSBRIDGE_URL=ws://localhost:9090
 
-The launch file spawns three things:
+The launch file spawns:
 
     1. The `demo_publisher` node from this package (publishes the
        canonical /demo/string_message and /demo/counter topics).
@@ -26,6 +26,14 @@ The launch file spawns three things:
        otherwise) plus its companion `rosapi` node. We include the
        upstream XML file rather than hand-rolling the websocket node
        so behavior tracks `rosbridge_server` releases automatically.
+    4. A static `world -> map` transform so visualization nodes
+       publishing in `frame_id="map"` render correctly.
+    5. Four Python visualization nodes (originally from
+       `rviz2_visuals`):
+         - `arrow_random.py`   -> /pose_array     (PoseArray)
+         - `circle_wave.py`    -> /circle_wave    (Path)
+         - `circle_path.py`    -> /circle_path    (Path)
+         - `image_publisher.py`-> /random_image   (Image)
 
 Configurable arguments (all optional):
 
@@ -190,6 +198,45 @@ def generate_launch_description() -> LaunchDescription:
         ],
     )
 
+    # ----- Visualization helpers (ported from rviz2_visuals) ---------------
+    # Static `world -> map` transform so the visualization nodes below,
+    # which publish in `frame_id="map"`, render correctly in RViz/web UI.
+    world_to_map_tf = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="map_transform",
+        output="screen",
+        arguments=["0", "0", "0", "0", "0", "0", "world", "map"],
+    )
+
+    arrow_random_node = Node(
+        package="angy_sim_topics",
+        executable="arrow_random.py",
+        name="arrow_random_node",
+        output="screen",
+    )
+
+    circle_wave_node = Node(
+        package="angy_sim_topics",
+        executable="circle_wave.py",
+        name="circle_wave_node",
+        output="screen",
+    )
+
+    circle_path_node = Node(
+        package="angy_sim_topics",
+        executable="circle_path.py",
+        name="circle_path_node",
+        output="screen",
+    )
+
+    image_publisher_node = Node(
+        package="angy_sim_topics",
+        executable="image_publisher.py",
+        name="image_publisher_node",
+        output="screen",
+    )
+
     return LaunchDescription(
         [
             port_arg,
@@ -206,5 +253,10 @@ def generate_launch_description() -> LaunchDescription:
             rosbridge_include,
             demo_publisher_node,
             cmd_vel_sine_node,
+            world_to_map_tf,
+            arrow_random_node,
+            circle_wave_node,
+            circle_path_node,
+            image_publisher_node,
         ]
     )

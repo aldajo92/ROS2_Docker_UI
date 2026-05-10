@@ -110,6 +110,7 @@ export class SimulationEngine {
     this.entities.clear()
     this.state.resetMetrics()
     this.state.paths.clear()
+    this.state.poseArrays.clear()
     this.state.trajectories.clear()
     this.state.scenarioName = null
     this.systems.reset()

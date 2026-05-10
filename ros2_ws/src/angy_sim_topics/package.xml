@@ -20,6 +20,16 @@
   <depend>rosgraph_msgs</depend>
   <depend>std_msgs</depend>
 
+  <!-- Runtime deps for the Python visualization nodes copied from
+       rviz2_visuals (arrow_random, circle_wave, circle_path,
+       image_publisher). -->
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>cv_bridge</exec_depend>
+  <exec_depend>tf_transformations</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+
   <!-- Runtime-only deps for the Python launch files under launch/. -->
   <exec_depend>ros2launch</exec_depend>
   <exec_depend>launch</exec_depend>
