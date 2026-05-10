@@ -4,6 +4,7 @@ import {
   CommunicationProvider,
   type Ros2TwistTopicBindingState,
 } from './CommunicationProvider'
+import { buildBaselineVehicleCommand } from './restoreVehicleBaseline'
 import { useSimulation, useSimulationRunning } from './useSimulation'
 import { ConnectionStatusPanel } from '../ui/ConnectionStatusPanel'
 import {
@@ -43,7 +44,9 @@ import {
 } from '../ui/scenario/ScenarioJsonUtils'
 import { parseScenarioJson } from '../ui/scenario/ScenarioFileLoader'
 import {
+  buildRos2TwistControlsFromBindings,
   buildVisualizationFromRenderableSelections,
+  trySyncRos2TwistControlsIntoScenarioText,
   trySyncVisualizationIntoScenarioText,
 } from '../ui/scenario/ScenarioVisualizationSync'
 import { downloadReplay } from '../ui/replay/ReplayFileDownloader'
@@ -145,7 +148,7 @@ function AppShell({
   twistControlBindings,
   onTwistControlBindingsChange,
 }: AppShellProps) {
-  const { engine, controller } = useSimulation()
+  const { engine, controller, commandQueue } = useSimulation()
   const isRunning = useSimulationRunning()
 
   const [trajectoryVisualization, setTrajectoryVisualization] =
@@ -685,10 +688,11 @@ function AppShell({
       setScenarioEditorError(undefined)
 
       // Replace the live Twist topic → vehicle bindings with whatever
-      // the scenario declares. Empty / missing maps to "no scenario
-      // bindings" — the CommunicationProvider then falls back to its
-      // historical `/cmd_vel → ego` bridge so existing scenarios keep
-      // working.
+      // the scenario declares. Empty / missing maps to "no bindings"
+      // and the CommunicationProvider creates zero bridges in that
+      // case — the user must explicitly select a Twist topic in the
+      // Ros2 Topics panel (or declare one in the scenario JSON) to
+      // expose vehicle control.
       const declaredBindings = spec.interaction?.ros2TwistControls ?? []
       onTwistControlBindingsChange(
         declaredBindings.map(toRos2TwistTopicBindingState),
@@ -810,6 +814,27 @@ function AppShell({
     setCurrentScenarioText(result.text)
   }, [selectedRenderableTopics])
 
+  // Mirror of the visualization sync above: project the live Twist
+  // control bindings into `interaction.ros2TwistControls` in the
+  // editor text. Selecting a Twist topic in the Ros2 Topics panel
+  // therefore appears as an enabled scenario entry; toggling it off
+  // persists as `enabled: false` rather than silently disappearing.
+  useEffect(() => {
+    const text = currentScenarioTextRef.current
+    if (text.length === 0) return
+    const ros2TwistControls = buildRos2TwistControlsFromBindings(
+      twistControlBindings,
+    )
+    const result = trySyncRos2TwistControlsIntoScenarioText(
+      text,
+      ros2TwistControls,
+    )
+    if (!result.ok) return
+    if (!result.changed) return
+    setCurrentScenarioSpec(result.spec)
+    setCurrentScenarioText(result.text)
+  }, [twistControlBindings])
+
   const handleScenarioTextChange = useCallback((text: string) => {
     setCurrentScenarioText(text)
     setScenarioEditorError(undefined)
@@ -894,10 +919,39 @@ function AppShell({
     return map
   }, [twistControlBindings])
 
+  // When an external Twist binding stops driving a vehicle (checkbox
+  // off, vehicle dropdown cleared, or vehicleId reassigned to another
+  // vehicle), the previously-driven vehicle still has the last Twist
+  // values stuck on it — `VehicleEntity.setCommand` is sticky. Push a
+  // baseline command into the canonical `VehicleCommandQueue` so the
+  // next tick restores the scenario's `controls.v / controls.w` (or
+  // zeroes if the scenario didn't declare any). We never mutate
+  // `VehicleEntity` directly from this layer; the queue is the only
+  // sanctioned write path.
+  const restoreVehicleBaseline = useCallback(
+    (topic: string, vehicleId: string): void => {
+      const { command, fromScenarioControls } = buildBaselineVehicleCommand(
+        currentScenarioSpec,
+        vehicleId,
+      )
+      commandQueue.push(command)
+      engine.logger?.debug(
+        `[App] twist deselect → baseline restore: topic="${topic}" ` +
+          `vehicleId="${vehicleId}" ` +
+          `linearVelocity=${command.linearVelocity} ` +
+          `angularVelocity=${command.angularVelocity} ` +
+          `fromScenarioControls=${fromScenarioControls}`,
+      )
+    },
+    [currentScenarioSpec, commandQueue, engine.logger],
+  )
+
   const handleTwistControlBindingChange = useCallback(
     (topic: string, vehicleId: string) => {
       const next = [...twistControlBindings]
       const index = next.findIndex((b) => b.topic === topic)
+      const previous = index !== -1 ? next[index] : undefined
+      const wasEnabled = previous !== undefined && previous.enabled !== false
       if (vehicleId === '') {
         // Empty value means "clear the selected vehicle". A binding
         // without a vehicle cannot drive anything, so dropping it is
@@ -908,9 +962,20 @@ function AppShell({
       } else {
         next[index] = { ...next[index], vehicleId, enabled: true }
       }
+      // If we were actively driving a vehicle through this topic, and
+      // we're either dropping the binding or pointing it at a
+      // different vehicle, restore the previously-driven vehicle so it
+      // doesn't keep applying the last Twist command.
+      if (
+        wasEnabled &&
+        previous !== undefined &&
+        (vehicleId === '' || vehicleId !== previous.vehicleId)
+      ) {
+        restoreVehicleBaseline(topic, previous.vehicleId)
+      }
       onTwistControlBindingsChange(next)
     },
-    [twistControlBindings, onTwistControlBindingsChange],
+    [twistControlBindings, onTwistControlBindingsChange, restoreVehicleBaseline],
   )
 
   const handleTwistControlEnabledChange = useCallback(
@@ -923,7 +988,14 @@ function AppShell({
         if (!vehicleId) return
         next.push({ topic, vehicleId, enabled: true })
       } else {
-        next[index] = { ...next[index], enabled }
+        const previous = next[index]
+        next[index] = { ...previous, enabled }
+        // Transition from enabled to disabled: the bridge will be torn
+        // down, but `VehicleEntity` keeps the last commanded velocity.
+        // Restore the scenario baseline for that vehicle.
+        if (previous.enabled !== false && !enabled) {
+          restoreVehicleBaseline(topic, previous.vehicleId)
+        }
       }
       onTwistControlBindingsChange(next)
     },
@@ -931,6 +1003,7 @@ function AppShell({
       twistControlBindings,
       twistControlVehicleOptions,
       onTwistControlBindingsChange,
+      restoreVehicleBaseline,
     ],
   )
 

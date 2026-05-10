@@ -4,7 +4,10 @@ import {
   type PathVisualConfig,
   type RenderableTopicSelection,
 } from '../../app/RenderableTopics'
+import type { Ros2TwistTopicBindingState } from '../../app/CommunicationProvider'
 import type {
+  Ros2TwistControlBinding,
+  ScenarioInteractionConfig,
   ScenarioSpec,
   ScenarioVisualizationConfig,
   ScenarioVisualizationRos2Topic,
@@ -134,6 +137,108 @@ export function trySyncVisualizationIntoScenarioText(
     return { ok: false, reason: parseResult.error }
   }
   const merged = mergeVisualizationIntoScenario(parseResult.spec, visualization)
+  const nextText = formatScenarioJson(merged)
+  return {
+    ok: true,
+    text: nextText,
+    spec: merged,
+    changed: nextText !== text,
+  }
+}
+
+/* -- Twist control bindings → scenario projection --------------------- */
+
+/**
+ * Project the live `twistControlBindings` array (React shell state)
+ * into the JSON-safe `Ros2TwistControlBinding[]` shape carried by
+ * `ScenarioSpec.interaction.ros2TwistControls`.
+ *
+ * `enabled` is *always* serialized (true or false) so the resulting
+ * JSON is lossless: a user who toggles a binding off in the UI sees
+ * the entry persist with `enabled: false` rather than silently
+ * disappearing. `scale`, `limits`, `timeoutSec`, and `onTimeout` are
+ * only emitted when explicitly set.
+ */
+export function buildRos2TwistControlsFromBindings(
+  bindings: ReadonlyArray<Ros2TwistTopicBindingState>,
+): Ros2TwistControlBinding[] {
+  return bindings.map(buildRos2TwistControlEntry)
+}
+
+function buildRos2TwistControlEntry(
+  binding: Ros2TwistTopicBindingState,
+): Ros2TwistControlBinding {
+  return {
+    topic: binding.topic,
+    vehicleId: binding.vehicleId,
+    enabled: binding.enabled !== false,
+    ...(binding.scale !== undefined && { scale: binding.scale }),
+    ...(binding.limits !== undefined && { limits: binding.limits }),
+    ...(binding.timeoutSec !== undefined && { timeoutSec: binding.timeoutSec }),
+    ...(binding.onTimeout !== undefined && { onTimeout: binding.onTimeout }),
+  }
+}
+
+/* -- Twist control scenario merging ----------------------------------- */
+
+/**
+ * Replace `spec.interaction.ros2TwistControls` with the supplied
+ * snapshot while preserving every sibling field of `interaction`
+ * (notably `keyboardControl`). When the supplied list is empty, the
+ * `ros2TwistControls` field is dropped; if `interaction` then has no
+ * remaining fields, the whole `interaction` block is dropped from
+ * the spec. The input spec is never mutated.
+ */
+export function mergeRos2TwistControlsIntoScenario(
+  spec: ScenarioSpec,
+  ros2TwistControls: ReadonlyArray<Ros2TwistControlBinding>,
+): ScenarioSpec {
+  const next = { ...spec }
+  const existingInteraction: ScenarioInteractionConfig = next.interaction ?? {}
+  const nextInteraction: ScenarioInteractionConfig = { ...existingInteraction }
+  if (ros2TwistControls.length === 0) {
+    delete nextInteraction.ros2TwistControls
+  } else {
+    nextInteraction.ros2TwistControls = [...ros2TwistControls]
+  }
+  if (Object.keys(nextInteraction).length === 0) {
+    delete next.interaction
+  } else {
+    next.interaction = nextInteraction
+  }
+  return next
+}
+
+/* -- Twist control scenario text round-trip --------------------------- */
+
+export type SyncRos2TwistControlsResult =
+  | { ok: true; text: string; spec: ScenarioSpec; changed: boolean }
+  | { ok: false; reason: string }
+
+/**
+ * Best-effort projection of the live Twist control bindings into the
+ * editor text. Mirrors {@link trySyncVisualizationIntoScenarioText}:
+ * we parse the user's current textarea, replace only
+ * `interaction.ros2TwistControls`, and return the re-serialized text.
+ * When the text is empty or invalid JSON we return `ok: false` so the
+ * caller leaves the textarea alone — the same contract that keeps
+ * auto-sync from clobbering manual edits.
+ */
+export function trySyncRos2TwistControlsIntoScenarioText(
+  text: string,
+  ros2TwistControls: ReadonlyArray<Ros2TwistControlBinding>,
+): SyncRos2TwistControlsResult {
+  if (typeof text !== 'string' || text.length === 0) {
+    return { ok: false, reason: 'editor is empty' }
+  }
+  const parseResult = parseScenarioJson(text)
+  if (!parseResult.ok) {
+    return { ok: false, reason: parseResult.error }
+  }
+  const merged = mergeRos2TwistControlsIntoScenario(
+    parseResult.spec,
+    ros2TwistControls,
+  )
   const nextText = formatScenarioJson(merged)
   return {
     ok: true,

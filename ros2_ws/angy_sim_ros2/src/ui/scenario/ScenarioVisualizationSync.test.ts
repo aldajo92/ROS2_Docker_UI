@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildRos2TwistControlsFromBindings,
   buildVisualizationFromRenderableSelections,
+  mergeRos2TwistControlsIntoScenario,
   mergeVisualizationIntoScenario,
+  trySyncRos2TwistControlsIntoScenarioText,
   trySyncVisualizationIntoScenarioText,
 } from './ScenarioVisualizationSync'
 import {
@@ -9,6 +12,7 @@ import {
   DEFAULT_POSE_ARRAY_VISUAL_CONFIG,
   type RenderableTopicSelection,
 } from '../../app/RenderableTopics'
+import type { Ros2TwistTopicBindingState } from '../../app/CommunicationProvider'
 import type { ScenarioSpec } from '../../simulation/scenarios/Scenario'
 
 const baseScenario: ScenarioSpec = {
@@ -282,6 +286,291 @@ describe('trySyncVisualizationIntoScenarioText', () => {
           arrowSize: 0.75,
         },
       })
+    }
+  })
+})
+
+const binding = (
+  topic: string,
+  vehicleId: string,
+  enabled: boolean | undefined = true,
+  extra: Partial<Ros2TwistTopicBindingState> = {},
+): Ros2TwistTopicBindingState => ({
+  topic,
+  vehicleId,
+  ...(enabled !== undefined && { enabled }),
+  ...extra,
+})
+
+describe('buildRos2TwistControlsFromBindings', () => {
+  it('returns an empty array when no bindings are present', () => {
+    expect(buildRos2TwistControlsFromBindings([])).toEqual([])
+  })
+
+  it('emits an enabled entry with topic + vehicleId for the spec scenario', () => {
+    const result = buildRos2TwistControlsFromBindings([
+      binding('/cmd_vel', 'ego'),
+    ])
+    expect(result).toEqual([
+      { topic: '/cmd_vel', vehicleId: 'ego', enabled: true },
+    ])
+  })
+
+  it('preserves enabled: false (lossless)', () => {
+    const result = buildRos2TwistControlsFromBindings([
+      binding('/cmd_vel', 'ego', false),
+    ])
+    expect(result).toEqual([
+      { topic: '/cmd_vel', vehicleId: 'ego', enabled: false },
+    ])
+  })
+
+  it('treats undefined enabled as enabled: true', () => {
+    // The runtime convention is `enabled !== false ⇒ enabled`. Mirror
+    // it so an unspecified flag from older state still serializes as
+    // enabled rather than confusing readers with omitted-field semantics.
+    const result = buildRos2TwistControlsFromBindings([
+      binding('/cmd_vel', 'ego', undefined),
+    ])
+    expect(result[0].enabled).toBe(true)
+  })
+
+  it('only emits scale / limits / timeoutSec / onTimeout when set', () => {
+    const result = buildRos2TwistControlsFromBindings([
+      binding('/cmd_vel', 'ego', true, {
+        scale: { v: 0.5 },
+        limits: { maxForwardSpeed: 1.0 },
+        timeoutSec: 0.5,
+        onTimeout: 'stop',
+      }),
+    ])
+    expect(result).toEqual([
+      {
+        topic: '/cmd_vel',
+        vehicleId: 'ego',
+        enabled: true,
+        scale: { v: 0.5 },
+        limits: { maxForwardSpeed: 1.0 },
+        timeoutSec: 0.5,
+        onTimeout: 'stop',
+      },
+    ])
+  })
+})
+
+describe('mergeRos2TwistControlsIntoScenario', () => {
+  it('drops interaction when bindings are empty and spec had no interaction', () => {
+    const merged = mergeRos2TwistControlsIntoScenario(baseScenario, [])
+    expect(merged.interaction).toBeUndefined()
+  })
+
+  it('adds interaction.ros2TwistControls when spec had no interaction', () => {
+    const merged = mergeRos2TwistControlsIntoScenario(baseScenario, [
+      { topic: '/cmd_vel', vehicleId: 'ego', enabled: true },
+    ])
+    expect(merged.interaction).toEqual({
+      ros2TwistControls: [
+        { topic: '/cmd_vel', vehicleId: 'ego', enabled: true },
+      ],
+    })
+  })
+
+  it('preserves sibling fields like keyboardControl when adding ros2TwistControls', () => {
+    const spec: ScenarioSpec = {
+      ...baseScenario,
+      interaction: {
+        keyboardControl: { vehicleId: 'ego', forwardSpeed: 0.5, angularSpeed: 0.4 },
+      },
+    }
+    const merged = mergeRos2TwistControlsIntoScenario(spec, [
+      { topic: '/cmd_vel', vehicleId: 'ego', enabled: true },
+    ])
+    expect(merged.interaction).toEqual({
+      keyboardControl: { vehicleId: 'ego', forwardSpeed: 0.5, angularSpeed: 0.4 },
+      ros2TwistControls: [
+        { topic: '/cmd_vel', vehicleId: 'ego', enabled: true },
+      ],
+    })
+  })
+
+  it('drops only ros2TwistControls when bindings empty but keyboardControl exists', () => {
+    const spec: ScenarioSpec = {
+      ...baseScenario,
+      interaction: {
+        keyboardControl: { vehicleId: 'ego', forwardSpeed: 0.5, angularSpeed: 0.4 },
+        ros2TwistControls: [
+          { topic: '/cmd_vel', vehicleId: 'ego', enabled: true },
+        ],
+      },
+    }
+    const merged = mergeRos2TwistControlsIntoScenario(spec, [])
+    expect(merged.interaction).toEqual({
+      keyboardControl: { vehicleId: 'ego', forwardSpeed: 0.5, angularSpeed: 0.4 },
+    })
+  })
+
+  it('drops the whole interaction block when its only field becomes empty', () => {
+    const spec: ScenarioSpec = {
+      ...baseScenario,
+      interaction: {
+        ros2TwistControls: [
+          { topic: '/cmd_vel', vehicleId: 'ego', enabled: true },
+        ],
+      },
+    }
+    const merged = mergeRos2TwistControlsIntoScenario(spec, [])
+    expect(merged.interaction).toBeUndefined()
+  })
+
+  it('does not mutate the input spec', () => {
+    const spec: ScenarioSpec = {
+      ...baseScenario,
+      interaction: {
+        ros2TwistControls: [
+          { topic: '/old', vehicleId: 'ego', enabled: true },
+        ],
+      },
+    }
+    const before = JSON.stringify(spec)
+    mergeRos2TwistControlsIntoScenario(spec, [
+      { topic: '/new', vehicleId: 'ego', enabled: true },
+    ])
+    expect(JSON.stringify(spec)).toBe(before)
+  })
+})
+
+describe('trySyncRos2TwistControlsIntoScenarioText', () => {
+  const baseText = JSON.stringify(baseScenario, null, 2)
+
+  it('returns ok: false when the editor text is empty', () => {
+    const result = trySyncRos2TwistControlsIntoScenarioText('', [
+      { topic: '/cmd_vel', vehicleId: 'ego', enabled: true },
+    ])
+    expect(result.ok).toBe(false)
+  })
+
+  it('returns ok: false when the editor JSON is invalid', () => {
+    const result = trySyncRos2TwistControlsIntoScenarioText('{ not: json', [
+      { topic: '/cmd_vel', vehicleId: 'ego', enabled: true },
+    ])
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.reason).toMatch(/Invalid JSON/)
+    }
+  })
+
+  // The acceptance scenario from the feature spec: selecting /cmd_vel
+  // for vehicle "ego" must show up under interaction.ros2TwistControls
+  // with vehicleId "ego" and enabled.
+  it('writes a /cmd_vel → ego entry into valid JSON text (S1)', () => {
+    const ros2TwistControls = buildRos2TwistControlsFromBindings([
+      binding('/cmd_vel', 'ego'),
+    ])
+    const result = trySyncRos2TwistControlsIntoScenarioText(
+      baseText,
+      ros2TwistControls,
+    )
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.changed).toBe(true)
+      const reparsed = JSON.parse(result.text) as ScenarioSpec
+      expect(reparsed.interaction?.ros2TwistControls).toEqual([
+        { topic: '/cmd_vel', vehicleId: 'ego', enabled: true },
+      ])
+    }
+  })
+
+  it('reports changed=false when the projected JSON matches the input', () => {
+    const withBinding: ScenarioSpec = {
+      ...baseScenario,
+      interaction: {
+        ros2TwistControls: [
+          { topic: '/cmd_vel', vehicleId: 'ego', enabled: true },
+        ],
+      },
+    }
+    const text = JSON.stringify(withBinding, null, 2)
+    const result = trySyncRos2TwistControlsIntoScenarioText(text, [
+      { topic: '/cmd_vel', vehicleId: 'ego', enabled: true },
+    ])
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.changed).toBe(false)
+    }
+  })
+
+  it('removes ros2TwistControls when no bindings remain', () => {
+    const withBinding: ScenarioSpec = {
+      ...baseScenario,
+      interaction: {
+        ros2TwistControls: [
+          { topic: '/cmd_vel', vehicleId: 'ego', enabled: true },
+        ],
+      },
+    }
+    const text = JSON.stringify(withBinding, null, 2)
+    const result = trySyncRos2TwistControlsIntoScenarioText(text, [])
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.changed).toBe(true)
+      const reparsed = JSON.parse(result.text) as ScenarioSpec
+      expect(reparsed.interaction).toBeUndefined()
+    }
+  })
+
+  it('preserves keyboardControl when toggling Twist bindings', () => {
+    const withBoth: ScenarioSpec = {
+      ...baseScenario,
+      interaction: {
+        keyboardControl: { vehicleId: 'ego', forwardSpeed: 0.5, angularSpeed: 0.4 },
+      },
+    }
+    const text = JSON.stringify(withBoth, null, 2)
+    const result = trySyncRos2TwistControlsIntoScenarioText(text, [
+      { topic: '/cmd_vel', vehicleId: 'ego', enabled: true },
+    ])
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      const reparsed = JSON.parse(result.text) as ScenarioSpec
+      expect(reparsed.interaction?.keyboardControl).toEqual({
+        vehicleId: 'ego',
+        forwardSpeed: 0.5,
+        angularSpeed: 0.4,
+      })
+      expect(reparsed.interaction?.ros2TwistControls).toEqual([
+        { topic: '/cmd_vel', vehicleId: 'ego', enabled: true },
+      ])
+    }
+  })
+
+  // S2 from the feature spec: rosbridge transport alone must NOT add
+  // entries to either visualization.ros2Topics or interaction.ros2TwistControls.
+  // This sync helper is what would be wired to topic selection — verify
+  // that with empty bindings (the state when only the transport changes)
+  // it produces no entries.
+  it('does not add interaction when bindings are empty (S2)', () => {
+    const result = trySyncRos2TwistControlsIntoScenarioText(baseText, [])
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      const reparsed = JSON.parse(result.text) as ScenarioSpec
+      expect(reparsed.interaction).toBeUndefined()
+    }
+  })
+
+  it('persists enabled: false when a binding is toggled off', () => {
+    const ros2TwistControls = buildRos2TwistControlsFromBindings([
+      binding('/cmd_vel', 'ego', false),
+    ])
+    const result = trySyncRos2TwistControlsIntoScenarioText(
+      baseText,
+      ros2TwistControls,
+    )
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      const reparsed = JSON.parse(result.text) as ScenarioSpec
+      expect(reparsed.interaction?.ros2TwistControls).toEqual([
+        { topic: '/cmd_vel', vehicleId: 'ego', enabled: false },
+      ])
     }
   })
 })

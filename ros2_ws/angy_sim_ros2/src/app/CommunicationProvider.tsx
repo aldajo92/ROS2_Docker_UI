@@ -103,9 +103,28 @@ export interface Ros2TwistTopicBindingState {
   onTimeout?: 'stop'
 }
 
-const FALLBACK_TWIST_BINDINGS: ReadonlyArray<Ros2TwistTopicBindingState> = [
-  { topic: '/cmd_vel', vehicleId: 'ego', enabled: true },
-]
+/**
+ * Filter a list of Twist bindings down to the ones that should
+ * actually create a `VehicleCommandTopicBridge`. Exported so tests
+ * can pin the contract:
+ *   - undefined / empty input → no bridges
+ *   - `enabled === false` is excluded
+ *   - missing `enabled` is treated as enabled (matches the
+ *     `enabled !== false` convention used by App.tsx and the JSON
+ *     scenario projection)
+ *
+ * Note the deliberate absence of any fallback. Selecting the
+ * rosbridge transport alone must NOT enable a default vehicle
+ * binding; the only way `/cmd_vel → ego` becomes active is when
+ * the user explicitly selects it in the topics panel or declares
+ * it under `interaction.ros2TwistControls` in the scenario.
+ */
+export function resolveEnabledTwistBindings(
+  bindings: ReadonlyArray<Ros2TwistTopicBindingState> | undefined,
+): Ros2TwistTopicBindingState[] {
+  if (!bindings || bindings.length === 0) return []
+  return bindings.filter((b) => b.enabled !== false)
+}
 
 export interface CommunicationProviderProps {
   children: ReactNode
@@ -113,10 +132,12 @@ export interface CommunicationProviderProps {
   config?: TransportConfig
   /**
    * ROS 2 Twist topic → vehicle bindings. The provider creates one
-   * `VehicleCommandTopicBridge` per enabled entry. When omitted (or
-   * empty), a single fallback `/cmd_vel → 'ego'` binding is created
-   * so the historical behavior is preserved for users who don't
-   * declare bindings in their scenario or UI.
+   * `VehicleCommandTopicBridge` per *enabled* entry. When omitted or
+   * empty, no bridges are created — selecting the rosbridge transport
+   * alone is not enough to start driving a vehicle. Bindings flow in
+   * from either the Ros2 Topics panel (user picks a Twist topic →
+   * vehicle pair) or the loaded scenario's
+   * `interaction.ros2TwistControls`.
    */
   twistControlBindings?: ReadonlyArray<Ros2TwistTopicBindingState>
   /**
@@ -156,24 +177,24 @@ export function CommunicationProvider({
 }: CommunicationProviderProps) {
   const { engine, commandQueue, externalPathQueue, externalPoseArrayQueue } = useSimulation()
 
-  // Resolve the active list of bindings. An empty / undefined input
-  // means "use the historical fallback" so users that haven't migrated
-  // their scenarios still get `/cmd_vel → ego` for free. The dependency
-  // array below uses `twistBindingsKey(...)` to compare *content* — the
-  // parent re-render cadence shouldn't churn the rosbridge wiring.
-  const resolvedBindings: ReadonlyArray<Ros2TwistTopicBindingState> =
-    twistControlBindings && twistControlBindings.length > 0
-      ? twistControlBindings
-      : FALLBACK_TWIST_BINDINGS
+  // Resolve the active list of bindings. The previous implementation
+  // injected a `/cmd_vel → ego` fallback whenever the prop was empty,
+  // which silently turned every rosbridge connection into a vehicle
+  // controller. The product rule is now: no binding, no bridge — the
+  // user must explicitly opt in via the topics panel or a scenario.
+  // The dependency array below uses `twistBindingsKey(...)` to compare
+  // *content* so parent re-renders alone don't churn rosbridge wiring.
+  const requestedBindings: ReadonlyArray<Ros2TwistTopicBindingState> =
+    twistControlBindings ?? []
   const enabledBindings = useMemo(
-    () => resolvedBindings.filter((b) => b.enabled !== false),
+    () => resolveEnabledTwistBindings(requestedBindings),
     // Stringify so identity stays stable when content matches. The
     // hook-deps lint can't see through the JSON key, but the cost is
     // negligible compared to a transport reconnect.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [twistBindingsKey(resolvedBindings)],
+    [twistBindingsKey(requestedBindings)],
   )
-  const bindingsKey = twistBindingsKey(resolvedBindings)
+  const bindingsKey = twistBindingsKey(requestedBindings)
 
   // The active transport config is stateful so the UI picker can swap
   // transports at runtime without a page reload. The initializer runs
@@ -436,8 +457,28 @@ export function CommunicationProvider({
       // One bridge per enabled `(topic, vehicleId)` binding. Disabled
       // bindings are kept in the snapshot but skipped here so the user
       // can flip them back on without re-loading the scenario.
-      const activeBindings = enabledBindings.length > 0 ? enabledBindings : []
-      for (const binding of activeBindings) {
+      //
+      // Audit logs for the "no implicit binding" guarantee:
+      //   - raw input from the prop
+      //   - resolved enabled bindings
+      //   - one line per bridge actually created (topic + vehicleId)
+      //   - explicit "zero bridges" line when the loop creates none
+      // Logged at info so they're visible by default; trim or move to
+      // `debug` if they get noisy.
+      engine.logger?.info(
+        `[CommunicationProvider] twist bindings (raw, count=${requestedBindings.length}):`,
+        requestedBindings,
+      )
+      engine.logger?.info(
+        `[CommunicationProvider] twist bindings (enabled, count=${enabledBindings.length}):`,
+        enabledBindings,
+      )
+      if (enabledBindings.length === 0) {
+        engine.logger?.info(
+          '[CommunicationProvider] no enabled twist bindings; skipping VehicleCommandTopicBridge setup',
+        )
+      }
+      for (const binding of enabledBindings) {
         // rosbridge needs the wire type for each subscribed topic;
         // bindings declared at runtime won't be in the constructor
         // map for `RoslibRosbridgeTransport`, so we register them
@@ -468,6 +509,9 @@ export function CommunicationProvider({
           commandQueue,
           bindingAdapter,
           engine.logger,
+        )
+        engine.logger?.info(
+          `[CommunicationProvider] created VehicleCommandTopicBridge: topic="${binding.topic}" vehicleId="${binding.vehicleId}"`,
         )
         cleanups.push(() => bindingBridge.stop())
         // Bridges that subscribe require an open transport; collect
