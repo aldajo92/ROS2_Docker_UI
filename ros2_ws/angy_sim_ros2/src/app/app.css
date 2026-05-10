@@ -785,6 +785,48 @@ body.layout-splitter-dragging {
   font-family: ui-monospace, "SFMono-Regular", monospace;
 }
 
+.scenario-editor-file-name-editor {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  font-family: ui-monospace, "SFMono-Regular", monospace;
+}
+
+.scenario-editor-file-name-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 24px;
+  padding: 0 6px;
+  background: var(--bg-panel);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px 0 0 6px;
+  font: inherit;
+  font-size: 12px;
+}
+
+.scenario-editor-file-name-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.scenario-editor-file-name-extension {
+  flex: 0 0 auto;
+  height: 24px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--fg-muted);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-left: 0;
+  border-radius: 0 6px 6px 0;
+  font-size: 12px;
+}
+
+.scenario-editor-download-button,
 .scenario-editor-file-name-edit-button,
 .scenario-editor-copy-button {
   flex: 0 0 auto;
@@ -806,6 +848,13 @@ body.layout-splitter-dragging {
   margin-left: auto;
 }
 
+.scenario-editor-download-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.scenario-editor-download-button:hover:not(:disabled),
+.scenario-editor-download-button:focus-visible:not(:disabled),
 .scenario-editor-file-name-edit-button:hover,
 .scenario-editor-file-name-edit-button:focus-visible,
 .scenario-editor-copy-button:hover {

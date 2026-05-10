@@ -63,7 +63,7 @@ describe('ScenarioEditorPanel', () => {
     const buttons = container.querySelectorAll(
       '.scenario-editor-actions button',
     )
-    expect(buttons).toHaveLength(3)
+    expect(buttons).toHaveLength(2)
     for (const btn of buttons) {
       expect((btn as HTMLButtonElement).disabled).toBe(true)
       expect((btn as HTMLButtonElement).title).toBe('Load a scenario first')
@@ -220,7 +220,7 @@ describe('ScenarioEditorPanel', () => {
     )
 
     const buttons = harness.container.querySelectorAll(
-      '.scenario-editor-actions button',
+      '.scenario-editor-actions button, [data-testid="scenario-editor-download"]',
     )
     for (const btn of buttons) {
       expect((btn as HTMLButtonElement).disabled).toBe(true)
@@ -283,7 +283,7 @@ describe('ScenarioEditorPanel — copy to clipboard', () => {
     const buttons = [
       ...harness.container.querySelectorAll('.scenario-editor-actions button'),
     ]
-    expect(buttons).toHaveLength(4)
+    expect(buttons).toHaveLength(3)
     expect(buttons[0].getAttribute('data-testid')).toBe('scenario-editor-copy')
     expect(buttons[1].getAttribute('data-testid')).toBe('scenario-editor-toggle')
   })
@@ -474,7 +474,7 @@ describe('ScenarioEditorPanel — expand/collapse', () => {
     // The button lives inside the header, NOT inside the actions row.
     expect(
       harness.container.querySelectorAll('.scenario-editor-actions button'),
-    ).toHaveLength(4)
+    ).toHaveLength(3)
     expect(
       harness.container.querySelector('.scenario-editor-header'),
     ).not.toBeNull()
@@ -542,15 +542,13 @@ describe('ScenarioEditorPanel — expand/collapse', () => {
     expect(button.getAttribute('aria-label')).toBe('Collapse scenario editor')
   })
 
-  it('keeps Edit / Apply / Download functional while expanded', () => {
+  it('keeps Edit / Apply functional while expanded', () => {
     const onApplyScenario = vi.fn()
-    const onDownloadScenario = vi.fn()
     harness = mount(
       <ScenarioEditorPanel
         scenarioText={SAMPLE_TEXT}
         expanded
         onApplyScenario={onApplyScenario}
-        onDownloadScenario={onDownloadScenario}
       />,
     )
 
@@ -573,14 +571,6 @@ describe('ScenarioEditorPanel — expand/collapse', () => {
       apply.click()
     })
     expect(onApplyScenario).toHaveBeenCalledWith(SAMPLE_TEXT)
-
-    const download = harness.container.querySelector(
-      '[data-testid="scenario-editor-download"]',
-    ) as HTMLButtonElement
-    act(() => {
-      download.click()
-    })
-    expect(onDownloadScenario).toHaveBeenCalledWith(SAMPLE_TEXT)
   })
 
   it('keeps the expand button enabled even when locked by parent', () => {
@@ -652,7 +642,7 @@ describe('ScenarioEditorPanel — filename toolbar', () => {
     ).not.toBeNull()
   })
 
-  it('clicking the edit button shows the filename input pre-filled', () => {
+  it('clicking the edit button shows the filename stem input pre-filled', () => {
     harness = mount(
       <ScenarioEditorPanel
         scenarioText={SAMPLE_TEXT}
@@ -668,7 +658,11 @@ describe('ScenarioEditorPanel — filename toolbar', () => {
       '[data-testid="scenario-editor-file-name-input"]',
     ) as HTMLInputElement
     expect(input).not.toBeNull()
-    expect(input.value).toBe('warehouse.json')
+    expect(input.value).toBe('warehouse')
+    expect(
+      harness.container.querySelector('.scenario-editor-file-name-extension')
+        ?.textContent,
+    ).toBe('.json')
     // Span and edit button are gone while the input is shown.
     expect(
       harness.container.querySelector('[data-testid="scenario-editor-preview-file-name"]'),
