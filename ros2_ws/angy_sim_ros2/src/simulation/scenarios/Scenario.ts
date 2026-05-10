@@ -134,37 +134,69 @@ export interface KeyboardControlScenarioConfig {
   angularSpeed?: number
 }
 
+/** Container for any future scenario-declared interaction defaults
+ *  (keyboard, gamepad, touch, etc.). Optional everywhere so old
+ *  scenarios keep parsing unchanged. */
+export interface ScenarioInteractionConfig {
+  keyboardControl?: KeyboardControlScenarioConfig
+}
+
 /**
- * Scenario-declared binding that says "ROS 2 Twist messages on `topic`
- * drive vehicle `vehicleId`". The struct is intentionally JSON-safe
- * and carries no `messageType` field — the family `ros2TwistControls`
- * already defines the wire contract (`geometry_msgs/msg/Twist`), so
- * encoding it again would falsely imply other message types are
- * supported. The simulation core never reads this struct; the
- * communication layer (rosbridge / DDS / …) consumes it via the React
- * shell to construct `VehicleCommandTopicBridge` instances.
+ * A named external connection. The first (and currently only) supported
+ * kind is `rosbridge`. The `url` field is optional; when absent the
+ * runtime uses the transport default configured by the UI.
+ */
+export interface ScenarioConnectionSpec {
+  kind: 'rosbridge'
+  url?: string
+}
+
+/**
+ * Map of user-chosen connection ids to their specs. Connection ids must
+ * be non-empty strings and are referenced by `ScenarioTopicSource.connection`.
+ * Example: `{ "rosbridge": { "kind": "rosbridge", "url": "ws://localhost:9090" } }`.
+ */
+export type ScenarioConnectionsConfig = Record<string, ScenarioConnectionSpec>
+
+/**
+ * Identifies an external topic carried over a named connection.
+ * `messageType` is required so the runtime can decide which adapter to
+ * instantiate without inspecting the live topic list.
+ */
+export interface ScenarioTopicSource {
+  /** Key into `ScenarioSpec.connections`. */
+  connection: string
+  /** ROS 2 topic name, e.g. `/cmd_vel`. Non-empty. */
+  topic: string
+  /** ROS 2 message type, e.g. `geometry_msgs/msg/Twist`. Non-empty. */
+  messageType: string
+}
+
+/**
+ * Scenario-declared action: an external topic that drives simulation
+ * behavior. The first supported combination is
+ * `messageType: 'geometry_msgs/msg/Twist'` with `target.kind: 'vehicle'`,
+ * which routes Twist commands to the named vehicle via
+ * `VehicleCommandTopicBridge`. Other message types in `actions[]` are
+ * rejected by the parser.
  *
  * Field semantics:
- *   - `topic`: ROS 2 topic name to subscribe to, e.g. `/cmd_vel`.
- *   - `vehicleId`: id of the scenario `vehicle` entity that receives
- *     commands decoded from the topic.
- *   - `enabled`: when `false`, the binding is parsed and stored but
- *     no subscription is created. Defaults to `true`.
- *   - `scale.v` / `scale.w`: optional multipliers applied to
- *     `Twist.linear.x` / `Twist.angular.z` before emitting a
- *     `VehicleCommand` (`v = linear.x * scale.v ?? 1`).
- *   - `limits.maxForwardSpeed` / `maxReverseSpeed`: positive clamp
- *     applied to positive / negative `v` after scaling.
- *   - `limits.maxAngularSpeed`: positive clamp applied to `|w|` after
- *     scaling.
- *   - `timeoutSec` + `onTimeout`: parsed and stored for forward
- *     compatibility, but the runtime timeout-stop scheduler is not
- *     wired in this iteration. Today it is a no-op; documenting the
- *     deferral keeps the on-disk schema honest.
+ *   - `source.connection`: key into `connections`.
+ *   - `source.topic`: ROS 2 topic to subscribe to.
+ *   - `source.messageType`: `geometry_msgs/msg/Twist` (only valid value now).
+ *   - `target.kind`: `'vehicle'` (required for Twist).
+ *   - `target.id`: scenario vehicle entity id.
+ *   - `enabled`: when `false`, the entry is stored but no bridge is created.
+ *   - `scale.v` / `scale.w`: multipliers for `Twist.linear.x` / `Twist.angular.z`.
+ *   - `limits.*`: positive speed clamps applied after scaling.
+ *   - `timeoutSec` / `onTimeout`: parsed for forward compat; not yet wired.
  */
-export interface Ros2TwistControlBinding {
-  topic: string
-  vehicleId: string
+export interface ScenarioActionSpec {
+  source: ScenarioTopicSource
+  target?: {
+    kind: 'vehicle'
+    id: string
+  }
   enabled?: boolean
   scale?: {
     v?: number
@@ -179,66 +211,26 @@ export interface Ros2TwistControlBinding {
   onTimeout?: 'stop'
 }
 
-/** Container for any future scenario-declared interaction defaults
- *  (keyboard, gamepad, touch, etc.). Optional everywhere so old
- *  scenarios keep parsing unchanged. */
-export interface ScenarioInteractionConfig {
-  keyboardControl?: KeyboardControlScenarioConfig
-  /**
-   * ROS 2 Twist topic → vehicle bindings. When present, the React
-   * shell creates one `VehicleCommandTopicBridge` per enabled entry
-   * so external `geometry_msgs/msg/Twist` publishers can drive the
-   * named vehicles. Absent / empty means no Twist bridge is created;
-   * selecting the rosbridge transport alone never enables control.
-   */
-  ros2TwistControls?: Ros2TwistControlBinding[]
-}
-
 /**
- * Per-topic visual override declared by a scenario. Mirrors the runtime
- * `PathVisualConfig` (under `src/app/RenderableTopics.ts`) but is kept
- * here as a plain data shape so the simulation-side scenario loader does
- * not depend on UI/communication types. The fields are optional so a
- * scenario may carry just a color, just a thickness, plugin-specific fields,
- * or none of them.
- */
-export interface ScenarioVisualizationTopicStyle {
-  /** CSS HEX color in `#RRGGBB` form. */
-  color?: string
-  /** Line thickness in renderer-specific units (>= 0 finite). */
-  thickness?: number
-  /** Arrow length in meters. Used by `geometry_msgs/msg/PoseArray` topics. */
-  arrowSize?: number
-}
-
-/**
- * One ROS 2 topic the scenario wants the UI to auto-select for
- * rendering, with optional style overrides applied via the
- * `RenderableTopicCapability` at scenario-load time.
+ * Scenario-declared display: an external topic whose data the UI should
+ * render as a visual artifact. Supported combinations:
+ *   - `nav_msgs/msg/Path` → path2d display
+ *   - `geometry_msgs/msg/PoseArray` → pose_array_2d display
  *
- * Architectural note: this struct lives on the scenario side and is
- * consumed by app-layer glue (`src/ui/scenario/ScenarioVisualizationSync.ts`
- * + `App.tsx`). The simulation core never reads it.
+ * The simulation core never reads this; the React shell applies it via
+ * `RenderableTopicCapability` at scenario-load time.
  */
-export interface ScenarioVisualizationRos2Topic {
-  /** Topic name, e.g. `/circle_path`. Non-empty. */
-  topic: string
-  /** ROS 2 message type, e.g. `nav_msgs/msg/Path`. Non-empty. */
-  messageType: string
-  /** Whether the topic is selected for rendering. Defaults to `true`. */
+export interface ScenarioDisplaySpec {
+  source: ScenarioTopicSource
   enabled?: boolean
-  /** Optional per-topic visual override. */
-  style?: ScenarioVisualizationTopicStyle
-}
-
-/**
- * UI/communication-layer config carried by a scenario. Renderer- and
- * transport-agnostic; today only `ros2Topics` is defined, but the shape
- * leaves room for additional families (e.g. tf frames, markers, custom
- * overlays) without breaking existing JSON.
- */
-export interface ScenarioVisualizationConfig {
-  ros2Topics?: ScenarioVisualizationRos2Topic[]
+  style?: {
+    /** CSS HEX color in `#RRGGBB` form. */
+    color?: string
+    /** Line thickness in renderer-specific units (> 0 finite). */
+    thickness?: number
+    /** Arrow length in meters. Used by `geometry_msgs/msg/PoseArray`. */
+    arrowSize?: number
+  }
 }
 
 export interface ScenarioSpec {
@@ -247,13 +239,16 @@ export interface ScenarioSpec {
   entities: EntitySpec[]
   paths?: PathSpec[]
   /** UI / interaction defaults applied at scenario load time. Owned
-   *  by the React shell, not the simulation core — see
-   *  `KeyboardControlScenarioConfig`. */
+   *  by the React shell, not the simulation core. Currently only
+   *  `keyboardControl` is supported here. */
   interaction?: ScenarioInteractionConfig
   /** Simulation-owned trajectory sampling configuration (optional). */
   trajectoryTracking?: TrajectoryTrackingConfig
-  /** UI/communication-layer visualization defaults (optional). The
-   *  simulation core does not read this; the React shell applies it via
-   *  the `RenderableTopicCapability` at scenario-load time. */
-  visualization?: ScenarioVisualizationConfig
+  /** Named external connections (e.g. rosbridge) referenced by
+   *  `actions` and `displays`. */
+  connections?: ScenarioConnectionsConfig
+  /** External topic → simulation behavior bindings (e.g. Twist → vehicle). */
+  actions?: ScenarioActionSpec[]
+  /** External topic → visual artifact bindings (e.g. Path → path2d). */
+  displays?: ScenarioDisplaySpec[]
 }

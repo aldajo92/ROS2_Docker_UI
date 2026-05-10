@@ -44,11 +44,12 @@ import {
 } from '../ui/scenario/ScenarioJsonUtils'
 import { parseScenarioJson } from '../ui/scenario/ScenarioFileLoader'
 import {
-  buildRos2TwistControlsFromBindings,
-  buildVisualizationFromRenderableSelections,
-  trySyncRos2TwistControlsIntoScenarioText,
-  trySyncVisualizationIntoScenarioText,
-} from '../ui/scenario/ScenarioVisualizationSync'
+  actionsToTwistBindings,
+  displaysToRenderableEntries,
+  renderableSelectionsToDisplays,
+  trySyncActionsIntoScenarioText,
+  trySyncDisplaysIntoScenarioText,
+} from '../ui/scenario/ScenarioTopicConfig'
 import { downloadReplay } from '../ui/replay/ReplayFileDownloader'
 import { LayoutSplitter } from '../ui/layout/LayoutSplitter'
 import {
@@ -95,7 +96,6 @@ import { createReplayStateFromFrame } from '../simulation/recording/createReplay
 import type { ReplayFileFormat } from '../simulation/recording/ReplayFormat'
 import type { SimulationState } from '../simulation/core/SimulationState'
 import type {
-  Ros2TwistControlBinding,
   ScenarioInteractionConfig,
   ScenarioSpec,
 } from '../simulation/scenarios/Scenario'
@@ -659,10 +659,9 @@ function AppShell({
   const isTransportConnected = echo !== undefined
 
   // Renderable-topic capability — the source of truth for the live
-  // visualization state surfaced by `Ros2TopicsPanel`. We project its
-  // `selectedTopics` snapshot back into the scenario editor JSON so
-  // each click is reflected as a `visualization.ros2Topics` entry, and
-  // we apply scenario-declared visualization on load.
+  // display state surfaced by `Ros2TopicsPanel`. We project its
+  // `selectedTopics` snapshot back into the scenario editor JSON as
+  // `displays[]` entries, and we apply scenario-declared displays on load.
   const renderableTopics = useRenderableTopics()
   // Mirrors `renderableTopics` so `handleScenarioLoaded` can read the
   // latest capability without taking it as a hook dependency (the
@@ -677,8 +676,8 @@ function AppShell({
   // scenario before rosbridge connected). The effect below drains it
   // exactly once per scenario load and clears the ref so further
   // selection edits aren't overridden on reconnect.
-  const pendingScenarioVisualizationRef = useRef<
-    ScenarioSpec['visualization'] | null
+  const pendingScenarioDisplaysRef = useRef<
+    ScenarioSpec['displays'] | null
   >(null)
 
   const handleScenarioLoaded = useCallback(
@@ -693,40 +692,27 @@ function AppShell({
       // case — the user must explicitly select a Twist topic in the
       // Ros2 Topics panel (or declare one in the scenario JSON) to
       // expose vehicle control.
-      const declaredBindings = spec.interaction?.ros2TwistControls ?? []
-      onTwistControlBindingsChange(
-        declaredBindings.map(toRos2TwistTopicBindingState),
-      )
+      onTwistControlBindingsChange(actionsToTwistBindings(spec.actions ?? []))
 
       // Compute the editor text. Two cases matter:
       //
-      //   1. The loaded spec brings its own `visualization` block —
-      //      honor it as-is. Capability state is reconciled by the
-      //      pending-apply effect below; the reactive sync will
-      //      eventually re-project the merged result into the editor.
+      //   1. The loaded spec brings its own `displays` block — honor it
+      //      as-is. Capability state is reconciled by the pending-apply
+      //      effect below; the reactive sync will eventually re-project
+      //      the merged result into the editor.
       //
-      //   2. The spec has NO `visualization` but the capability
-      //      already has selected topics (the user clicked rows
-      //      *before* loading the scenario). Project those into the
-      //      editor JSON immediately so it stays consistent with what
-      //      is being rendered. Without this, the editor would silently
-      //      claim "no visualization" while a path was still on screen.
+      //   2. The spec has NO `displays` but the capability already has
+      //      selected topics (the user clicked rows *before* loading the
+      //      scenario). Project those into the editor JSON immediately so
+      //      it stays consistent with what is being rendered. Without this
+      //      the editor would silently claim "no displays" while a path
+      //      was still on screen.
       const cap = renderableTopicsRef.current
       const baseText = formatScenarioJson(spec)
       let editorText = baseText
       let editorSpec: ScenarioSpec = spec
-      if (
-        !spec.visualization?.ros2Topics?.length &&
-        cap &&
-        cap.selectedTopics.length > 0
-      ) {
-        const visualization = buildVisualizationFromRenderableSelections(
-          cap.selectedTopics,
-        )
-        const synced = trySyncVisualizationIntoScenarioText(
-          baseText,
-          visualization,
-        )
+      if (!(spec.displays?.length) && cap && cap.selectedTopics.length > 0) {
+        const synced = trySyncDisplaysIntoScenarioText(baseText, cap.selectedTopics)
         if (synced.ok && synced.changed) {
           editorText = synced.text
           editorSpec = synced.spec
@@ -738,11 +724,11 @@ function AppShell({
         normalizeScenarioFileName(spec.name) ?? 'scenario.json',
       )
 
-      // Stash the scenario's declared visualization for the next-run
-      // apply effect. We don't apply directly here because the
-      // capability might not be available yet (rosbridge disconnected,
-      // mock transport, etc.).
-      pendingScenarioVisualizationRef.current = spec.visualization ?? null
+      // Stash the scenario's declared displays for the next-run apply
+      // effect. We don't apply directly here because the capability
+      // might not be available yet (rosbridge disconnected, mock
+      // transport, etc.).
+      pendingScenarioDisplaysRef.current = spec.displays ?? null
       // A new scenario invalidates any in-memory replay; bail out of
       // replay mode so the renderer stops painting stale frames.
       if (replaySessionRef.current) handleExitReplay()
@@ -750,26 +736,25 @@ function AppShell({
     [handleExitReplay, onTwistControlBindingsChange],
   )
 
-  // Apply scenario-declared visualization once the capability is
-  // available. Runs on every render where either the pending payload
-  // or the capability identity changes; the helper below is idempotent
-  // and resets the ref after a successful apply.
+  // Apply scenario-declared displays once the capability is available.
+  // Runs on every render where either the pending payload or the
+  // capability identity changes; idempotent and resets the ref after
+  // a successful apply.
   useEffect(() => {
     if (!renderableTopics) return
-    const pending = pendingScenarioVisualizationRef.current
+    const pending = pendingScenarioDisplaysRef.current
     if (!pending) return
-    pendingScenarioVisualizationRef.current = null
-    const entries = pending.ros2Topics ?? []
+    pendingScenarioDisplaysRef.current = null
+    const entries = displaysToRenderableEntries(pending)
     for (const entry of entries) {
-      const topicInfo = { name: entry.topic, type: entry.messageType }
+      const topicInfo = { name: entry.topicName, type: entry.messageType }
       if (!renderableTopics.isRenderable(topicInfo)) continue
-      const enabled = entry.enabled !== false
-      if (enabled) {
-        if (!renderableTopics.isSelected(entry.topic)) {
+      if (entry.enabled) {
+        if (!renderableTopics.isSelected(entry.topicName)) {
           renderableTopics.selectTopic(topicInfo)
         }
-        if (entry.style) {
-          renderableTopics.setVisualConfig(entry.topic, {
+        if (Object.keys(entry.style).length > 0) {
+          renderableTopics.setVisualConfig(entry.topicName, {
             ...(entry.style.color !== undefined && { color: entry.style.color }),
             ...(entry.style.thickness !== undefined && {
               thickness: entry.style.thickness,
@@ -779,8 +764,8 @@ function AppShell({
             }),
           })
         }
-      } else if (renderableTopics.isSelected(entry.topic)) {
-        renderableTopics.deselectTopic(entry.topic)
+      } else if (renderableTopics.isSelected(entry.topicName)) {
+        renderableTopics.deselectTopic(entry.topicName)
       }
     }
   }, [renderableTopics])
@@ -804,31 +789,21 @@ function AppShell({
     if (!selectedRenderableTopics) return
     const text = currentScenarioTextRef.current
     if (text.length === 0) return
-    const visualization = buildVisualizationFromRenderableSelections(
-      selectedRenderableTopics,
-    )
-    const result = trySyncVisualizationIntoScenarioText(text, visualization)
+    const result = trySyncDisplaysIntoScenarioText(text, selectedRenderableTopics)
     if (!result.ok) return
     if (!result.changed) return
     setCurrentScenarioSpec(result.spec)
     setCurrentScenarioText(result.text)
   }, [selectedRenderableTopics])
 
-  // Mirror of the visualization sync above: project the live Twist
-  // control bindings into `interaction.ros2TwistControls` in the
-  // editor text. Selecting a Twist topic in the Ros2 Topics panel
-  // therefore appears as an enabled scenario entry; toggling it off
-  // persists as `enabled: false` rather than silently disappearing.
+  // Mirror of the displays sync above: project the live Twist control
+  // bindings into `actions[]` in the editor text. Selecting a Twist
+  // topic in the Ros2 Topics panel appears as an enabled action entry;
+  // toggling it off persists as `enabled: false`.
   useEffect(() => {
     const text = currentScenarioTextRef.current
     if (text.length === 0) return
-    const ros2TwistControls = buildRos2TwistControlsFromBindings(
-      twistControlBindings,
-    )
-    const result = trySyncRos2TwistControlsIntoScenarioText(
-      text,
-      ros2TwistControls,
-    )
+    const result = trySyncActionsIntoScenarioText(text, twistControlBindings)
     if (!result.ok) return
     if (!result.changed) return
     setCurrentScenarioSpec(result.spec)
@@ -1285,24 +1260,4 @@ function computeSaveRecordingDisabledReason({
   if (isReplayMode) return 'Exit replay mode before saving a new recording.'
   if (frameCount === 0) return 'No recorded frames yet — start recording first.'
   return undefined
-}
-
-/**
- * Translate a JSON-safe `Ros2TwistControlBinding` (scenario layer)
- * into the runtime `Ros2TwistTopicBindingState` (communication layer).
- * The shapes are nearly identical; the indirection lets each layer
- * own its own type without one importing the other.
- */
-function toRos2TwistTopicBindingState(
-  binding: Ros2TwistControlBinding,
-): Ros2TwistTopicBindingState {
-  return {
-    topic: binding.topic,
-    vehicleId: binding.vehicleId,
-    ...(binding.enabled !== undefined && { enabled: binding.enabled }),
-    ...(binding.scale !== undefined && { scale: binding.scale }),
-    ...(binding.limits !== undefined && { limits: binding.limits }),
-    ...(binding.timeoutSec !== undefined && { timeoutSec: binding.timeoutSec }),
-    ...(binding.onTimeout !== undefined && { onTimeout: binding.onTimeout }),
-  }
 }

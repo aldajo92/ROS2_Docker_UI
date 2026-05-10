@@ -117,7 +117,7 @@ export interface Ros2TwistTopicBindingState {
  * rosbridge transport alone must NOT enable a default vehicle
  * binding; the only way `/cmd_vel → ego` becomes active is when
  * the user explicitly selects it in the topics panel or declares
- * it under `interaction.ros2TwistControls` in the scenario.
+ * it under `scenario.actions[]` with `messageType: geometry_msgs/msg/Twist`.
  */
 export function resolveEnabledTwistBindings(
   bindings: ReadonlyArray<Ros2TwistTopicBindingState> | undefined,
@@ -136,8 +136,8 @@ export interface CommunicationProviderProps {
    * empty, no bridges are created — selecting the rosbridge transport
    * alone is not enough to start driving a vehicle. Bindings flow in
    * from either the Ros2 Topics panel (user picks a Twist topic →
-   * vehicle pair) or the loaded scenario's
-   * `interaction.ros2TwistControls`.
+   * vehicle pair) or the loaded scenario's `actions[]` entries with
+   * `messageType: geometry_msgs/msg/Twist`.
    */
   twistControlBindings?: ReadonlyArray<Ros2TwistTopicBindingState>
   /**

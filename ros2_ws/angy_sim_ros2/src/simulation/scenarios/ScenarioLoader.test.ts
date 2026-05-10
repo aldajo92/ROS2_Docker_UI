@@ -711,242 +711,498 @@ describe('ScenarioLoader.parse — interaction.keyboardControl', () => {
   })
 })
 
-describe('ScenarioLoader.parse — interaction.ros2TwistControls', () => {
-  it('parses a full Twist binding with scale, limits, and timeout', () => {
+describe('ScenarioLoader.parse — legacy field rejection', () => {
+  it('rejects interaction.ros2TwistControls with a clear migration message', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        interaction: { ros2TwistControls: [] },
+      }),
+    ).toThrow(/interaction\.ros2TwistControls is no longer supported/)
+  })
+
+  it('rejection message for ros2TwistControls mentions actions[]', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        interaction: { ros2TwistControls: [{ topic: '/cmd_vel', vehicleId: 'ego' }] },
+      }),
+    ).toThrow(/actions\[\]/)
+  })
+
+  it('rejects visualization.ros2Topics with a clear migration message', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        visualization: { ros2Topics: [] },
+      }),
+    ).toThrow(/visualization\.ros2Topics is no longer supported/)
+  })
+
+  it('rejection message for ros2Topics mentions displays[]', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        visualization: {
+          ros2Topics: [{ topic: '/a', messageType: 'nav_msgs/msg/Path' }],
+        },
+      }),
+    ).toThrow(/displays\[\]/)
+  })
+})
+
+describe('ScenarioLoader.parse — connections', () => {
+  it('accepts missing connections', () => {
+    const spec = ScenarioLoader.parse({ name: 's', entities: [] })
+    expect(spec.connections).toBeUndefined()
+  })
+
+  it('parses a rosbridge connection with url', () => {
     const spec = ScenarioLoader.parse({
       name: 's',
       entities: [],
-      interaction: {
-        ros2TwistControls: [
-          {
+      connections: {
+        rosbridge: { kind: 'rosbridge', url: 'ws://localhost:9090' },
+      },
+    })
+    expect(spec.connections?.rosbridge).toEqual({
+      kind: 'rosbridge',
+      url: 'ws://localhost:9090',
+    })
+  })
+
+  it('parses a rosbridge connection without url', () => {
+    const spec = ScenarioLoader.parse({
+      name: 's',
+      entities: [],
+      connections: { rosbridge: { kind: 'rosbridge' } },
+    })
+    expect(spec.connections?.rosbridge).toEqual({ kind: 'rosbridge' })
+  })
+
+  it('rejects unsupported connection kind', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        connections: { ros: { kind: 'dds' } },
+      }),
+    ).toThrow(/kind must be "rosbridge"/)
+  })
+})
+
+describe('ScenarioLoader.parse — actions', () => {
+  const conn = { rosbridge: { kind: 'rosbridge' } }
+
+  it('accepts missing actions', () => {
+    const spec = ScenarioLoader.parse({ name: 's', entities: [] })
+    expect(spec.actions).toBeUndefined()
+  })
+
+  it('parses a full Twist action with all optional fields', () => {
+    const spec = ScenarioLoader.parse({
+      name: 's',
+      entities: [],
+      connections: conn,
+      actions: [
+        {
+          source: {
+            connection: 'rosbridge',
             topic: '/cmd_vel',
-            vehicleId: 'ego',
-            enabled: true,
-            scale: { v: 0.5, w: 1.5 },
-            limits: {
-              maxForwardSpeed: 2.0,
-              maxReverseSpeed: 1.0,
-              maxAngularSpeed: 2.5,
-            },
-            timeoutSec: 0.5,
-            onTimeout: 'stop',
+            messageType: 'geometry_msgs/msg/Twist',
+          },
+          target: { kind: 'vehicle', id: 'ego' },
+          enabled: true,
+          scale: { v: 0.5, w: 1.5 },
+          limits: {
+            maxForwardSpeed: 2.0,
+            maxReverseSpeed: 1.0,
+            maxAngularSpeed: 2.5,
+          },
+          timeoutSec: 0.5,
+          onTimeout: 'stop',
+        },
+      ],
+    })
+    expect(spec.actions?.[0]).toEqual({
+      source: {
+        connection: 'rosbridge',
+        topic: '/cmd_vel',
+        messageType: 'geometry_msgs/msg/Twist',
+      },
+      target: { kind: 'vehicle', id: 'ego' },
+      enabled: true,
+      scale: { v: 0.5, w: 1.5 },
+      limits: {
+        maxForwardSpeed: 2.0,
+        maxReverseSpeed: 1.0,
+        maxAngularSpeed: 2.5,
+      },
+      timeoutSec: 0.5,
+      onTimeout: 'stop',
+    })
+  })
+
+  it('parses a minimal Twist action (source + target only)', () => {
+    const spec = ScenarioLoader.parse({
+      name: 's',
+      entities: [],
+      connections: conn,
+      actions: [
+        {
+          source: { connection: 'rosbridge', topic: '/cmd_vel', messageType: 'geometry_msgs/msg/Twist' },
+          target: { kind: 'vehicle', id: 'ego' },
+        },
+      ],
+    })
+    expect(spec.actions).toHaveLength(1)
+    expect(spec.actions?.[0].target).toEqual({ kind: 'vehicle', id: 'ego' })
+  })
+
+  it('accepts an empty actions array', () => {
+    const spec = ScenarioLoader.parse({ name: 's', entities: [], connections: conn, actions: [] })
+    expect(spec.actions).toEqual([])
+  })
+
+  it('rejects nav_msgs/msg/Path in actions[]', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        connections: conn,
+        actions: [
+          {
+            source: { connection: 'rosbridge', topic: '/path', messageType: 'nav_msgs/msg/Path' },
+            target: { kind: 'vehicle', id: 'ego' },
           },
         ],
-      },
-    })
-    expect(spec.interaction?.ros2TwistControls).toEqual([
-      {
-        topic: '/cmd_vel',
-        vehicleId: 'ego',
-        enabled: true,
-        scale: { v: 0.5, w: 1.5 },
-        limits: {
-          maxForwardSpeed: 2.0,
-          maxReverseSpeed: 1.0,
-          maxAngularSpeed: 2.5,
-        },
-        timeoutSec: 0.5,
-        onTimeout: 'stop',
-      },
-    ])
-  })
-
-  it('parses a minimal binding (just topic + vehicleId)', () => {
-    const spec = ScenarioLoader.parse({
-      name: 's',
-      entities: [],
-      interaction: {
-        ros2TwistControls: [{ topic: '/cmd_vel', vehicleId: 'ego' }],
-      },
-    })
-    expect(spec.interaction?.ros2TwistControls).toEqual([
-      { topic: '/cmd_vel', vehicleId: 'ego' },
-    ])
-  })
-
-  it('accepts an empty array (still parses, no bindings)', () => {
-    const spec = ScenarioLoader.parse({
-      name: 's',
-      entities: [],
-      interaction: { ros2TwistControls: [] },
-    })
-    expect(spec.interaction?.ros2TwistControls).toEqual([])
-  })
-
-  it('accepts a missing ros2TwistControls field (backward compat)', () => {
-    const spec = ScenarioLoader.parse({
-      name: 's',
-      entities: [],
-      interaction: { keyboardControl: { enabled: true } },
-    })
-    expect(spec.interaction?.ros2TwistControls).toBeUndefined()
-  })
-
-  it('does NOT require messageType — schema is implicit', () => {
-    // Per the schema decision: the field name `ros2TwistControls`
-    // already defines the message contract, so messageType is not
-    // part of the schema. A binding without messageType must parse.
-    const spec = ScenarioLoader.parse({
-      name: 's',
-      entities: [],
-      interaction: {
-        ros2TwistControls: [{ topic: '/cmd_vel', vehicleId: 'ego' }],
-      },
-    })
-    expect(spec.interaction?.ros2TwistControls).toBeDefined()
-  })
-
-  it('throws on non-array ros2TwistControls', () => {
-    expect(() =>
-      ScenarioLoader.parse({
-        name: 's',
-        entities: [],
-        interaction: { ros2TwistControls: 'oops' },
       }),
-    ).toThrow(/ros2TwistControls must be an array/)
+    ).toThrow(/not supported in actions/)
   })
 
-  it('throws on empty topic string', () => {
+  it('rejects geometry_msgs/msg/PoseArray in actions[]', () => {
     expect(() =>
       ScenarioLoader.parse({
         name: 's',
         entities: [],
-        interaction: {
-          ros2TwistControls: [{ topic: '', vehicleId: 'ego' }],
-        },
+        connections: conn,
+        actions: [
+          {
+            source: {
+              connection: 'rosbridge',
+              topic: '/poses',
+              messageType: 'geometry_msgs/msg/PoseArray',
+            },
+            target: { kind: 'vehicle', id: 'ego' },
+          },
+        ],
       }),
-    ).toThrow(/topic must be a non-empty string/)
+    ).toThrow(/not supported in actions/)
   })
 
-  it('throws on missing topic', () => {
+  it('rejects action referencing unknown connection', () => {
     expect(() =>
       ScenarioLoader.parse({
         name: 's',
         entities: [],
-        interaction: {
-          ros2TwistControls: [{ vehicleId: 'ego' }],
-        },
+        connections: conn,
+        actions: [
+          {
+            source: {
+              connection: 'dds',
+              topic: '/cmd_vel',
+              messageType: 'geometry_msgs/msg/Twist',
+            },
+            target: { kind: 'vehicle', id: 'ego' },
+          },
+        ],
       }),
-    ).toThrow(/topic must be a non-empty string/)
+    ).toThrow(/not declared in scenario\.connections/)
   })
 
-  it('throws on empty vehicleId string', () => {
+  it('rejects action with non-boolean enabled', () => {
     expect(() =>
       ScenarioLoader.parse({
         name: 's',
         entities: [],
-        interaction: {
-          ros2TwistControls: [{ topic: '/cmd_vel', vehicleId: '' }],
-        },
-      }),
-    ).toThrow(/vehicleId must be a non-empty string/)
-  })
-
-  it('throws on non-boolean enabled', () => {
-    expect(() =>
-      ScenarioLoader.parse({
-        name: 's',
-        entities: [],
-        interaction: {
-          ros2TwistControls: [
-            { topic: '/cmd_vel', vehicleId: 'ego', enabled: 'yes' },
-          ],
-        },
+        connections: conn,
+        actions: [
+          {
+            source: {
+              connection: 'rosbridge',
+              topic: '/cmd_vel',
+              messageType: 'geometry_msgs/msg/Twist',
+            },
+            target: { kind: 'vehicle', id: 'ego' },
+            enabled: 'yes',
+          },
+        ],
       }),
     ).toThrow(/enabled must be a boolean/)
   })
 
-  it('throws on non-finite scale.v', () => {
+  it('rejects action scale with non-finite v', () => {
     expect(() =>
       ScenarioLoader.parse({
         name: 's',
         entities: [],
-        interaction: {
-          ros2TwistControls: [
-            { topic: '/cmd_vel', vehicleId: 'ego', scale: { v: NaN } },
-          ],
-        },
+        connections: conn,
+        actions: [
+          {
+            source: {
+              connection: 'rosbridge',
+              topic: '/cmd_vel',
+              messageType: 'geometry_msgs/msg/Twist',
+            },
+            target: { kind: 'vehicle', id: 'ego' },
+            scale: { v: NaN },
+          },
+        ],
       }),
     ).toThrow(/scale\.v/)
   })
 
-  it('throws on non-positive limits.maxForwardSpeed', () => {
+  it('rejects action with non-positive maxForwardSpeed', () => {
     expect(() =>
       ScenarioLoader.parse({
         name: 's',
         entities: [],
-        interaction: {
-          ros2TwistControls: [
-            {
+        connections: conn,
+        actions: [
+          {
+            source: {
+              connection: 'rosbridge',
               topic: '/cmd_vel',
-              vehicleId: 'ego',
-              limits: { maxForwardSpeed: 0 },
+              messageType: 'geometry_msgs/msg/Twist',
             },
-          ],
-        },
+            target: { kind: 'vehicle', id: 'ego' },
+            limits: { maxForwardSpeed: 0 },
+          },
+        ],
       }),
     ).toThrow(/maxForwardSpeed/)
   })
 
-  it('throws on non-positive timeoutSec', () => {
+  it('rejects action with non-positive timeoutSec', () => {
     expect(() =>
       ScenarioLoader.parse({
         name: 's',
         entities: [],
-        interaction: {
-          ros2TwistControls: [
-            { topic: '/cmd_vel', vehicleId: 'ego', timeoutSec: -1 },
-          ],
-        },
+        connections: conn,
+        actions: [
+          {
+            source: {
+              connection: 'rosbridge',
+              topic: '/cmd_vel',
+              messageType: 'geometry_msgs/msg/Twist',
+            },
+            target: { kind: 'vehicle', id: 'ego' },
+            timeoutSec: -1,
+          },
+        ],
       }),
     ).toThrow(/timeoutSec/)
   })
 
-  it('throws on unsupported onTimeout value', () => {
+  it('rejects unsupported onTimeout value', () => {
     expect(() =>
       ScenarioLoader.parse({
         name: 's',
         entities: [],
-        interaction: {
-          ros2TwistControls: [
-            {
+        connections: conn,
+        actions: [
+          {
+            source: {
+              connection: 'rosbridge',
               topic: '/cmd_vel',
-              vehicleId: 'ego',
-              timeoutSec: 0.5,
-              onTimeout: 'panic',
+              messageType: 'geometry_msgs/msg/Twist',
             },
-          ],
-        },
+            target: { kind: 'vehicle', id: 'ego' },
+            onTimeout: 'panic',
+          },
+        ],
       }),
     ).toThrow(/onTimeout must be "stop"/)
   })
+})
 
-  it('reports the array index in error messages', () => {
+describe('ScenarioLoader.parse — displays', () => {
+  const conn = { rosbridge: { kind: 'rosbridge' } }
+
+  it('accepts missing displays', () => {
+    const spec = ScenarioLoader.parse({ name: 's', entities: [] })
+    expect(spec.displays).toBeUndefined()
+  })
+
+  it('parses a valid Path display', () => {
+    const spec = ScenarioLoader.parse({
+      name: 's',
+      entities: [],
+      connections: conn,
+      displays: [
+        {
+          source: {
+            connection: 'rosbridge',
+            topic: '/circle_path',
+            messageType: 'nav_msgs/msg/Path',
+          },
+          enabled: true,
+          style: { color: '#ffaaff', thickness: 3 },
+        },
+      ],
+    })
+    expect(spec.displays?.[0]).toEqual({
+      source: {
+        connection: 'rosbridge',
+        topic: '/circle_path',
+        messageType: 'nav_msgs/msg/Path',
+      },
+      enabled: true,
+      style: { color: '#ffaaff', thickness: 3 },
+    })
+  })
+
+  it('parses a valid PoseArray display with arrowSize', () => {
+    const spec = ScenarioLoader.parse({
+      name: 's',
+      entities: [],
+      connections: conn,
+      displays: [
+        {
+          source: {
+            connection: 'rosbridge',
+            topic: '/poses',
+            messageType: 'geometry_msgs/msg/PoseArray',
+          },
+          style: { color: '#00bcd4', arrowSize: 0.75 },
+        },
+      ],
+    })
+    expect(spec.displays?.[0].style).toEqual({ color: '#00bcd4', arrowSize: 0.75 })
+  })
+
+  it('omits style when not provided', () => {
+    const spec = ScenarioLoader.parse({
+      name: 's',
+      entities: [],
+      connections: conn,
+      displays: [
+        {
+          source: { connection: 'rosbridge', topic: '/a', messageType: 'nav_msgs/msg/Path' },
+        },
+      ],
+    })
+    expect(spec.displays?.[0].style).toBeUndefined()
+  })
+
+  it('rejects geometry_msgs/msg/Twist in displays[]', () => {
     expect(() =>
       ScenarioLoader.parse({
         name: 's',
         entities: [],
-        interaction: {
-          ros2TwistControls: [
-            { topic: '/cmd_vel', vehicleId: 'ego' },
-            { topic: '/foo', vehicleId: '' },
-          ],
-        },
+        connections: conn,
+        displays: [
+          {
+            source: {
+              connection: 'rosbridge',
+              topic: '/cmd_vel',
+              messageType: 'geometry_msgs/msg/Twist',
+            },
+          },
+        ],
       }),
-    ).toThrow(/ros2TwistControls\[1\]\.vehicleId/)
+    ).toThrow(/not supported in displays/)
   })
 
-  it('does not require vehicleId to exist among entities', () => {
-    // Same liberal-parsing policy as keyboardControl: validation of
-    // vehicle existence is the runtime's job, not the loader's.
-    const spec = ScenarioLoader.parse({
-      name: 's',
-      entities: [],
-      interaction: {
-        ros2TwistControls: [{ topic: '/cmd_vel', vehicleId: 'ghost' }],
-      },
-    })
-    expect(spec.interaction?.ros2TwistControls?.[0].vehicleId).toBe('ghost')
+  it('rejects display referencing unknown connection', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        connections: conn,
+        displays: [
+          {
+            source: {
+              connection: 'mqtt',
+              topic: '/path',
+              messageType: 'nav_msgs/msg/Path',
+            },
+          },
+        ],
+      }),
+    ).toThrow(/not declared in scenario\.connections/)
+  })
+
+  it('rejects non-positive thickness', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        connections: conn,
+        displays: [
+          {
+            source: { connection: 'rosbridge', topic: '/a', messageType: 'nav_msgs/msg/Path' },
+            style: { thickness: 0 },
+          },
+        ],
+      }),
+    ).toThrow(/thickness must be a finite number > 0/)
+  })
+
+  it('rejects non-finite thickness', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        connections: conn,
+        displays: [
+          {
+            source: { connection: 'rosbridge', topic: '/a', messageType: 'nav_msgs/msg/Path' },
+            style: { thickness: Infinity },
+          },
+        ],
+      }),
+    ).toThrow(/thickness must be a finite number > 0/)
+  })
+
+  it('rejects invalid color hex', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        connections: conn,
+        displays: [
+          {
+            source: { connection: 'rosbridge', topic: '/a', messageType: 'nav_msgs/msg/Path' },
+            style: { color: 'red' },
+          },
+        ],
+      }),
+    ).toThrow(/#RRGGBB hex format/)
+  })
+
+  it('rejects non-positive arrowSize', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        connections: conn,
+        displays: [
+          {
+            source: {
+              connection: 'rosbridge',
+              topic: '/poses',
+              messageType: 'geometry_msgs/msg/PoseArray',
+            },
+            style: { arrowSize: 0 },
+          },
+        ],
+      }),
+    ).toThrow(/arrowSize must be a finite number > 0/)
   })
 })
 
@@ -1065,221 +1321,11 @@ describe('ScenarioLoader.loadFromUrl', () => {
   })
 })
 
-describe('ScenarioLoader.parse — visualization', () => {
-  it('accepts missing visualization', () => {
-    const spec = ScenarioLoader.parse({ name: 's', entities: [] })
-    expect(spec.visualization).toBeUndefined()
+describe('ScenarioLoader.parse — visualization (legacy, kept only as regression guard)', () => {
+  it('accepts a visualization block with no ros2Topics (empty/unrelated fields are ignored)', () => {
+    // A `visualization` key without `ros2Topics` does not trigger a rejection.
+    const spec = ScenarioLoader.parse({ name: 's', entities: [], visualization: {} })
+    expect(spec.connections).toBeUndefined()
   })
 
-  it('parses an empty visualization block', () => {
-    const spec = ScenarioLoader.parse({
-      name: 's',
-      entities: [],
-      visualization: {},
-    })
-    expect(spec.visualization).toEqual({})
-  })
-
-  it('parses a full visualization.ros2Topics entry', () => {
-    const spec = ScenarioLoader.parse({
-      name: 's',
-      entities: [],
-      visualization: {
-        ros2Topics: [
-          {
-            topic: '/circle_path',
-            messageType: 'nav_msgs/msg/Path',
-            enabled: true,
-            style: { color: '#ffaaff', thickness: 3 },
-          },
-        ],
-      },
-    })
-    expect(spec.visualization?.ros2Topics).toHaveLength(1)
-    expect(spec.visualization?.ros2Topics?.[0]).toEqual({
-      topic: '/circle_path',
-      messageType: 'nav_msgs/msg/Path',
-      enabled: true,
-      style: { color: '#ffaaff', thickness: 3 },
-    })
-  })
-
-  it('parses PoseArray visualization arrowSize style', () => {
-    const spec = ScenarioLoader.parse({
-      name: 's',
-      entities: [],
-      visualization: {
-        ros2Topics: [
-          {
-            topic: '/pose_array',
-            messageType: 'geometry_msgs/msg/PoseArray',
-            style: { color: '#00bcd4', thickness: 1, arrowSize: 0.75 },
-          },
-        ],
-      },
-    })
-    expect(spec.visualization?.ros2Topics?.[0]).toEqual({
-      topic: '/pose_array',
-      messageType: 'geometry_msgs/msg/PoseArray',
-      style: { color: '#00bcd4', thickness: 1, arrowSize: 0.75 },
-    })
-  })
-
-  it('omits style when not provided', () => {
-    const spec = ScenarioLoader.parse({
-      name: 's',
-      entities: [],
-      visualization: {
-        ros2Topics: [
-          { topic: '/a', messageType: 'nav_msgs/msg/Path' },
-        ],
-      },
-    })
-    expect(spec.visualization?.ros2Topics?.[0]).toEqual({
-      topic: '/a',
-      messageType: 'nav_msgs/msg/Path',
-    })
-  })
-
-  it('rejects non-array ros2Topics', () => {
-    expect(() =>
-      ScenarioLoader.parse({
-        name: 's',
-        entities: [],
-        visualization: { ros2Topics: 'nope' as never },
-      }),
-    ).toThrow(/ros2Topics must be an array/)
-  })
-
-  it('rejects empty topic name', () => {
-    expect(() =>
-      ScenarioLoader.parse({
-        name: 's',
-        entities: [],
-        visualization: {
-          ros2Topics: [{ topic: '', messageType: 'nav_msgs/msg/Path' }],
-        },
-      }),
-    ).toThrow(/topic must be a non-empty string/)
-  })
-
-  it('rejects empty messageType', () => {
-    expect(() =>
-      ScenarioLoader.parse({
-        name: 's',
-        entities: [],
-        visualization: {
-          ros2Topics: [{ topic: '/a', messageType: '' }],
-        },
-      }),
-    ).toThrow(/messageType must be a non-empty string/)
-  })
-
-  it('rejects non-boolean enabled', () => {
-    expect(() =>
-      ScenarioLoader.parse({
-        name: 's',
-        entities: [],
-        visualization: {
-          ros2Topics: [
-            {
-              topic: '/a',
-              messageType: 'nav_msgs/msg/Path',
-              enabled: 'yes' as never,
-            },
-          ],
-        },
-      }),
-    ).toThrow(/enabled must be a boolean/)
-  })
-
-  it('rejects invalid color hex', () => {
-    expect(() =>
-      ScenarioLoader.parse({
-        name: 's',
-        entities: [],
-        visualization: {
-          ros2Topics: [
-            {
-              topic: '/a',
-              messageType: 'nav_msgs/msg/Path',
-              style: { color: 'red' },
-            },
-          ],
-        },
-      }),
-    ).toThrow(/#RRGGBB hex format/)
-  })
-
-  it('rejects 3-digit hex shorthand', () => {
-    expect(() =>
-      ScenarioLoader.parse({
-        name: 's',
-        entities: [],
-        visualization: {
-          ros2Topics: [
-            {
-              topic: '/a',
-              messageType: 'nav_msgs/msg/Path',
-              style: { color: '#abc' },
-            },
-          ],
-        },
-      }),
-    ).toThrow(/#RRGGBB hex format/)
-  })
-
-  it('rejects non-positive thickness', () => {
-    expect(() =>
-      ScenarioLoader.parse({
-        name: 's',
-        entities: [],
-        visualization: {
-          ros2Topics: [
-            {
-              topic: '/a',
-              messageType: 'nav_msgs/msg/Path',
-              style: { thickness: 0 },
-            },
-          ],
-        },
-      }),
-    ).toThrow(/thickness must be a finite number > 0/)
-  })
-
-  it('rejects non-finite thickness', () => {
-    expect(() =>
-      ScenarioLoader.parse({
-        name: 's',
-        entities: [],
-        visualization: {
-          ros2Topics: [
-            {
-              topic: '/a',
-              messageType: 'nav_msgs/msg/Path',
-              style: { thickness: Number.POSITIVE_INFINITY },
-            },
-          ],
-        },
-      }),
-    ).toThrow(/thickness must be a finite number > 0/)
-  })
-
-  it('rejects non-positive arrowSize', () => {
-    expect(() =>
-      ScenarioLoader.parse({
-        name: 's',
-        entities: [],
-        visualization: {
-          ros2Topics: [
-            {
-              topic: '/pose_array',
-              messageType: 'geometry_msgs/msg/PoseArray',
-              style: { arrowSize: 0 },
-            },
-          ],
-        },
-      }),
-    ).toThrow(/arrowSize must be a finite number > 0/)
-  })
 })

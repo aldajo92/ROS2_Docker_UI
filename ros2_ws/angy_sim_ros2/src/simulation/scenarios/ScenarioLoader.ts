@@ -14,12 +14,13 @@ import type {
   PathPointSpec,
   PathSpec,
   RectangleObstacleSpec,
-  Ros2TwistControlBinding,
+  ScenarioActionSpec,
+  ScenarioConnectionSpec,
+  ScenarioConnectionsConfig,
+  ScenarioDisplaySpec,
   ScenarioInteractionConfig,
   ScenarioSpec,
-  ScenarioVisualizationConfig,
-  ScenarioVisualizationRos2Topic,
-  ScenarioVisualizationTopicStyle,
+  ScenarioTopicSource,
   StaticObstacleSpec,
 } from './Scenario'
 import type {
@@ -49,6 +50,19 @@ export class ScenarioLoader {
     if (!Array.isArray(input.entities)) {
       throw new ScenarioParseError('scenario.entities must be an array')
     }
+    // Reject legacy fields with a clear migration message.
+    if (isObj(input.interaction) && input.interaction.ros2TwistControls !== undefined) {
+      throw new ScenarioParseError(
+        'scenario.interaction.ros2TwistControls is no longer supported. ' +
+        'Use scenario.actions[] instead.',
+      )
+    }
+    if (isObj(input.visualization) && input.visualization.ros2Topics !== undefined) {
+      throw new ScenarioParseError(
+        'scenario.visualization.ros2Topics is no longer supported. ' +
+        'Use scenario.displays[] instead.',
+      )
+    }
     const description =
       typeof input.description === 'string' ? input.description : undefined
     const paths =
@@ -59,9 +73,17 @@ export class ScenarioLoader {
       input.trajectoryTracking !== undefined
         ? parseTrajectoryTracking(input.trajectoryTracking)
         : undefined
-    const visualization =
-      input.visualization !== undefined
-        ? parseVisualization(input.visualization)
+    const connections =
+      input.connections !== undefined
+        ? parseConnections(input.connections, 'scenario.connections')
+        : undefined
+    const actions =
+      input.actions !== undefined
+        ? parseActions(input.actions, 'scenario.actions', connections ?? {})
+        : undefined
+    const displays =
+      input.displays !== undefined
+        ? parseDisplays(input.displays, 'scenario.displays', connections ?? {})
         : undefined
     return {
       name: input.name,
@@ -70,7 +92,9 @@ export class ScenarioLoader {
       paths,
       interaction,
       trajectoryTracking,
-      visualization,
+      ...(connections !== undefined && { connections }),
+      ...(actions !== undefined && { actions }),
+      ...(displays !== undefined && { displays }),
     }
   }
 
@@ -220,76 +244,8 @@ function parseInteraction(input: unknown): ScenarioInteractionConfig {
     input.keyboardControl !== undefined
       ? parseKeyboardControl(input.keyboardControl)
       : undefined
-  const ros2TwistControls =
-    input.ros2TwistControls !== undefined
-      ? parseRos2TwistControls(
-          input.ros2TwistControls,
-          'scenario.interaction.ros2TwistControls',
-        )
-      : undefined
   return {
     ...(keyboardControl !== undefined && { keyboardControl }),
-    ...(ros2TwistControls !== undefined && { ros2TwistControls }),
-  }
-}
-
-function parseRos2TwistControls(
-  input: unknown,
-  path: string,
-): Ros2TwistControlBinding[] {
-  if (!Array.isArray(input)) {
-    throw new ScenarioParseError(`${path} must be an array`)
-  }
-  return input.map((entry, i) =>
-    parseRos2TwistControlBinding(entry, `${path}[${i}]`),
-  )
-}
-
-function parseRos2TwistControlBinding(
-  input: unknown,
-  path: string,
-): Ros2TwistControlBinding {
-  if (!isObj(input)) {
-    throw new ScenarioParseError(`${path} must be an object`)
-  }
-  if (typeof input.topic !== 'string' || input.topic.length === 0) {
-    throw new ScenarioParseError(`${path}.topic must be a non-empty string`)
-  }
-  if (typeof input.vehicleId !== 'string' || input.vehicleId.length === 0) {
-    throw new ScenarioParseError(
-      `${path}.vehicleId must be a non-empty string`,
-    )
-  }
-  if (input.enabled !== undefined && typeof input.enabled !== 'boolean') {
-    throw new ScenarioParseError(`${path}.enabled must be a boolean`)
-  }
-  const scale =
-    input.scale !== undefined
-      ? parseRos2TwistScale(input.scale, `${path}.scale`)
-      : undefined
-  const limits =
-    input.limits !== undefined
-      ? parseRos2TwistLimits(input.limits, `${path}.limits`)
-      : undefined
-  const timeoutSec =
-    input.timeoutSec !== undefined
-      ? requirePositiveFinite(input.timeoutSec, `${path}.timeoutSec`)
-      : undefined
-  let onTimeout: 'stop' | undefined
-  if (input.onTimeout !== undefined) {
-    if (input.onTimeout !== 'stop') {
-      throw new ScenarioParseError(`${path}.onTimeout must be "stop"`)
-    }
-    onTimeout = 'stop'
-  }
-  return {
-    topic: input.topic,
-    vehicleId: input.vehicleId,
-    ...(typeof input.enabled === 'boolean' && { enabled: input.enabled }),
-    ...(scale !== undefined && { scale }),
-    ...(limits !== undefined && { limits }),
-    ...(timeoutSec !== undefined && { timeoutSec }),
-    ...(onTimeout !== undefined && { onTimeout }),
   }
 }
 
@@ -542,49 +498,173 @@ function parseTrajectoryEntityConfig(
   }
 }
 
-/* -- visualization ------------------------------------------------------ */
+/* -- connections / actions / displays ----------------------------------- */
 
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/
 
-function parseVisualization(input: unknown): ScenarioVisualizationConfig {
-  const path = 'scenario.visualization'
+const TWIST_MESSAGE_TYPE = 'geometry_msgs/msg/Twist'
+const DISPLAY_MESSAGE_TYPES = new Set(['nav_msgs/msg/Path', 'geometry_msgs/msg/PoseArray'])
+
+function parseConnections(
+  input: unknown,
+  path: string,
+): ScenarioConnectionsConfig {
   if (!isObj(input)) {
     throw new ScenarioParseError(`${path} must be an object`)
   }
-  const ros2Topics =
-    input.ros2Topics !== undefined
-      ? parseVisualizationRos2Topics(input.ros2Topics, `${path}.ros2Topics`)
+  const result: ScenarioConnectionsConfig = {}
+  for (const [id, spec] of Object.entries(input)) {
+    if (id.length === 0) {
+      throw new ScenarioParseError(`${path} connection id must be a non-empty string`)
+    }
+    result[id] = parseConnectionSpec(spec, `${path}.${id}`)
+  }
+  return result
+}
+
+function parseConnectionSpec(
+  input: unknown,
+  path: string,
+): ScenarioConnectionSpec {
+  if (!isObj(input)) {
+    throw new ScenarioParseError(`${path} must be an object`)
+  }
+  if (input.kind !== 'rosbridge') {
+    throw new ScenarioParseError(`${path}.kind must be "rosbridge"`)
+  }
+  const url =
+    input.url !== undefined
+      ? (typeof input.url === 'string'
+          ? input.url
+          : (() => { throw new ScenarioParseError(`${path}.url must be a string`) })())
       : undefined
   return {
-    ...(ros2Topics !== undefined && { ros2Topics }),
+    kind: 'rosbridge',
+    ...(url !== undefined && { url }),
   }
 }
 
-function parseVisualizationRos2Topics(
+function parseTopicSource(
   input: unknown,
   path: string,
-): ScenarioVisualizationRos2Topic[] {
-  if (!Array.isArray(input)) {
-    throw new ScenarioParseError(`${path} must be an array`)
-  }
-  return input.map((entry, i) =>
-    parseVisualizationRos2Topic(entry, `${path}[${i}]`),
-  )
-}
-
-function parseVisualizationRos2Topic(
-  input: unknown,
-  path: string,
-): ScenarioVisualizationRos2Topic {
+  connections: ScenarioConnectionsConfig,
+): ScenarioTopicSource {
   if (!isObj(input)) {
     throw new ScenarioParseError(`${path} must be an object`)
+  }
+  if (typeof input.connection !== 'string' || input.connection.length === 0) {
+    throw new ScenarioParseError(`${path}.connection must be a non-empty string`)
+  }
+  if (!(input.connection in connections)) {
+    throw new ScenarioParseError(
+      `${path}.connection "${input.connection}" is not declared in scenario.connections`,
+    )
   }
   if (typeof input.topic !== 'string' || input.topic.length === 0) {
     throw new ScenarioParseError(`${path}.topic must be a non-empty string`)
   }
   if (typeof input.messageType !== 'string' || input.messageType.length === 0) {
+    throw new ScenarioParseError(`${path}.messageType must be a non-empty string`)
+  }
+  return {
+    connection: input.connection,
+    topic: input.topic,
+    messageType: input.messageType,
+  }
+}
+
+function parseActions(
+  input: unknown,
+  path: string,
+  connections: ScenarioConnectionsConfig,
+): ScenarioActionSpec[] {
+  if (!Array.isArray(input)) {
+    throw new ScenarioParseError(`${path} must be an array`)
+  }
+  return input.map((entry, i) => parseActionSpec(entry, `${path}[${i}]`, connections))
+}
+
+function parseActionSpec(
+  input: unknown,
+  path: string,
+  connections: ScenarioConnectionsConfig,
+): ScenarioActionSpec {
+  if (!isObj(input)) {
+    throw new ScenarioParseError(`${path} must be an object`)
+  }
+  const source = parseTopicSource(input.source, `${path}.source`, connections)
+  if (source.messageType !== TWIST_MESSAGE_TYPE) {
     throw new ScenarioParseError(
-      `${path}.messageType must be a non-empty string`,
+      `${path}.source.messageType "${source.messageType}" is not supported in actions[]. ` +
+      `Only "${TWIST_MESSAGE_TYPE}" is valid here.`,
+    )
+  }
+  if (!isObj(input.target)) {
+    throw new ScenarioParseError(`${path}.target must be an object`)
+  }
+  if (input.target.kind !== 'vehicle') {
+    throw new ScenarioParseError(`${path}.target.kind must be "vehicle"`)
+  }
+  if (typeof input.target.id !== 'string' || input.target.id.length === 0) {
+    throw new ScenarioParseError(`${path}.target.id must be a non-empty string`)
+  }
+  if (input.enabled !== undefined && typeof input.enabled !== 'boolean') {
+    throw new ScenarioParseError(`${path}.enabled must be a boolean`)
+  }
+  const scale =
+    input.scale !== undefined
+      ? parseRos2TwistScale(input.scale, `${path}.scale`)
+      : undefined
+  const limits =
+    input.limits !== undefined
+      ? parseRos2TwistLimits(input.limits, `${path}.limits`)
+      : undefined
+  const timeoutSec =
+    input.timeoutSec !== undefined
+      ? requirePositiveFinite(input.timeoutSec, `${path}.timeoutSec`)
+      : undefined
+  let onTimeout: 'stop' | undefined
+  if (input.onTimeout !== undefined) {
+    if (input.onTimeout !== 'stop') {
+      throw new ScenarioParseError(`${path}.onTimeout must be "stop"`)
+    }
+    onTimeout = 'stop'
+  }
+  return {
+    source,
+    target: { kind: 'vehicle', id: input.target.id as string },
+    ...(typeof input.enabled === 'boolean' && { enabled: input.enabled }),
+    ...(scale !== undefined && { scale }),
+    ...(limits !== undefined && { limits }),
+    ...(timeoutSec !== undefined && { timeoutSec }),
+    ...(onTimeout !== undefined && { onTimeout }),
+  }
+}
+
+function parseDisplays(
+  input: unknown,
+  path: string,
+  connections: ScenarioConnectionsConfig,
+): ScenarioDisplaySpec[] {
+  if (!Array.isArray(input)) {
+    throw new ScenarioParseError(`${path} must be an array`)
+  }
+  return input.map((entry, i) => parseDisplaySpec(entry, `${path}[${i}]`, connections))
+}
+
+function parseDisplaySpec(
+  input: unknown,
+  path: string,
+  connections: ScenarioConnectionsConfig,
+): ScenarioDisplaySpec {
+  if (!isObj(input)) {
+    throw new ScenarioParseError(`${path} must be an object`)
+  }
+  const source = parseTopicSource(input.source, `${path}.source`, connections)
+  if (!DISPLAY_MESSAGE_TYPES.has(source.messageType)) {
+    throw new ScenarioParseError(
+      `${path}.source.messageType "${source.messageType}" is not supported in displays[]. ` +
+      `Valid types: ${[...DISPLAY_MESSAGE_TYPES].map((t) => `"${t}"`).join(', ')}.`,
     )
   }
   if (input.enabled !== undefined && typeof input.enabled !== 'boolean') {
@@ -592,29 +672,26 @@ function parseVisualizationRos2Topic(
   }
   const style =
     input.style !== undefined
-      ? parseVisualizationTopicStyle(input.style, `${path}.style`)
+      ? parseDisplayStyle(input.style, `${path}.style`)
       : undefined
   return {
-    topic: input.topic,
-    messageType: input.messageType,
+    source,
     ...(typeof input.enabled === 'boolean' && { enabled: input.enabled }),
     ...(style !== undefined && { style }),
   }
 }
 
-function parseVisualizationTopicStyle(
+function parseDisplayStyle(
   input: unknown,
   path: string,
-): ScenarioVisualizationTopicStyle {
+): ScenarioDisplaySpec['style'] {
   if (!isObj(input)) {
     throw new ScenarioParseError(`${path} must be an object`)
   }
   let color: string | undefined
   if (input.color !== undefined) {
     if (typeof input.color !== 'string' || !HEX_COLOR_RE.test(input.color)) {
-      throw new ScenarioParseError(
-        `${path}.color must match #RRGGBB hex format`,
-      )
+      throw new ScenarioParseError(`${path}.color must match #RRGGBB hex format`)
     }
     color = input.color
   }
@@ -625,9 +702,7 @@ function parseVisualizationTopicStyle(
       !Number.isFinite(input.thickness) ||
       input.thickness <= 0
     ) {
-      throw new ScenarioParseError(
-        `${path}.thickness must be a finite number > 0`,
-      )
+      throw new ScenarioParseError(`${path}.thickness must be a finite number > 0`)
     }
     thickness = input.thickness
   }
@@ -638,9 +713,7 @@ function parseVisualizationTopicStyle(
       !Number.isFinite(input.arrowSize) ||
       input.arrowSize <= 0
     ) {
-      throw new ScenarioParseError(
-        `${path}.arrowSize must be a finite number > 0`,
-      )
+      throw new ScenarioParseError(`${path}.arrowSize must be a finite number > 0`)
     }
     arrowSize = input.arrowSize
   }
