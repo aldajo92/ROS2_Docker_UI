@@ -256,6 +256,15 @@ export function CommunicationProvider({
     RenderableTopicCapability | undefined
   >(undefined)
 
+  // Live transport handle, published *after* `transport.connect()`
+  // resolves. The Twist-bridge effect (below) keys off this slot so it
+  // only runs against an already-open transport, and so that toggling
+  // a Twist checkbox never re-runs the transport-lifecycle effect.
+  // Cleared back to `null` whenever the transport effect tears down.
+  const [connectedTransport, setConnectedTransport] = useState<Transport | null>(
+    null,
+  )
+
   useEffect(() => {
     if (config.kind === 'none') {
       // No transport to wire; the render-time `status` derivation
@@ -264,14 +273,14 @@ export function CommunicationProvider({
       return
     }
 
+    engine.logger?.debug(
+      `[CommunicationProvider] transport effect mounted (kind="${config.kind}")`,
+    )
+
     let cancelled = false
     let transport: Transport | null = null
     let unsubscribeStatus: (() => void) | undefined
     const cleanups: Array<() => void | Promise<void>> = []
-    // Bridges that subscribe to a topic must wait for `transport.connect()`
-    // before starting. Collect them here and start in series after the
-    // transport is up so individual errors stay attributable.
-    const bridgesToStart: VehicleCommandTopicBridge[] = []
 
     const onStatus = (s: TransportConnectionStatus, err?: string) => {
       if (cancelled) return
@@ -359,7 +368,12 @@ export function CommunicationProvider({
 
         // Tear down: clear the capability so consumers don't keep
         // calling a stale refresh against a disconnected transport.
-        cleanups.push(() => setTopicDiscoveryState(undefined))
+        cleanups.push(() => {
+          engine.logger?.debug(
+            '[CommunicationProvider] topic discovery reset',
+          )
+          setTopicDiscoveryState(undefined)
+        })
       }
 
       // ----- Topic-echo capability (rosbridge-only) ---------------------
@@ -452,73 +466,6 @@ export function CommunicationProvider({
         })
       }
 
-      // ----- Inbound: Twist topic(s) → VehicleCommandQueue -------------
-      //
-      // One bridge per enabled `(topic, vehicleId)` binding. Disabled
-      // bindings are kept in the snapshot but skipped here so the user
-      // can flip them back on without re-loading the scenario.
-      //
-      // Audit logs for the "no implicit binding" guarantee:
-      //   - raw input from the prop
-      //   - resolved enabled bindings
-      //   - one line per bridge actually created (topic + vehicleId)
-      //   - explicit "zero bridges" line when the loop creates none
-      // Logged at info so they're visible by default; trim or move to
-      // `debug` if they get noisy.
-      engine.logger?.info(
-        `[CommunicationProvider] twist bindings (raw, count=${requestedBindings.length}):`,
-        requestedBindings,
-      )
-      engine.logger?.info(
-        `[CommunicationProvider] twist bindings (enabled, count=${enabledBindings.length}):`,
-        enabledBindings,
-      )
-      if (enabledBindings.length === 0) {
-        engine.logger?.info(
-          '[CommunicationProvider] no enabled twist bindings; skipping VehicleCommandTopicBridge setup',
-        )
-      }
-      for (const binding of enabledBindings) {
-        // rosbridge needs the wire type for each subscribed topic;
-        // bindings declared at runtime won't be in the constructor
-        // map for `RoslibRosbridgeTransport`, so we register them
-        // dynamically. Mock / memory transports don't use this method
-        // (it's optional on the generic Transport interface).
-        if (transport instanceof RoslibRosbridgeTransport) {
-          transport.setTopicType(binding.topic, ROS_MESSAGE_TYPES.twist)
-        }
-        let bindingAdapter: RosTwistToVehicleCommandAdapter
-        try {
-          bindingAdapter = new RosTwistToVehicleCommandAdapter({
-            vehicleId: binding.vehicleId,
-            ...(binding.scale !== undefined && { scale: binding.scale }),
-            ...(binding.limits !== undefined && { limits: binding.limits }),
-          })
-        } catch (err) {
-          // Surface the configuration error in the engine logger but
-          // don't tear down the whole transport — other bindings may
-          // be valid.
-          engine.logger?.warn(
-            `[CommunicationProvider] dropping invalid Twist binding for "${binding.topic}" -> "${binding.vehicleId}": ${(err as Error).message}`,
-          )
-          continue
-        }
-        const bindingBridge = new VehicleCommandTopicBridge(
-          transport,
-          binding.topic,
-          commandQueue,
-          bindingAdapter,
-          engine.logger,
-        )
-        engine.logger?.info(
-          `[CommunicationProvider] created VehicleCommandTopicBridge: topic="${binding.topic}" vehicleId="${binding.vehicleId}"`,
-        )
-        cleanups.push(() => bindingBridge.stop())
-        // Bridges that subscribe require an open transport; collect
-        // them now and start after `transport.connect()` resolves.
-        bridgesToStart.push(bindingBridge)
-      }
-
       // ----- Outbound: SimulationClock → /clock ---------------------
       const clockAdapter = new SimClockToRosClockAdapter()
       const clockBridge = new ClockPublisherBridge(
@@ -551,9 +498,10 @@ export function CommunicationProvider({
 
       onStatus('connecting')
 
-      // Connect first, then start bridges. Bridges that subscribe
-      // require an open transport; doing both in series keeps errors
-      // attributable.
+      // Connect first, then start the clock bridge. Twist bridges
+      // live in a separate effect (below) keyed off `connectedTransport`,
+      // so toggling a Twist checkbox never re-runs this transport
+      // lifecycle.
       void (async () => {
         try {
           await transport!.connect()
@@ -561,10 +509,11 @@ export function CommunicationProvider({
             await transport!.disconnect()
             return
           }
-          for (const bridge of bridgesToStart) {
-            await bridge.start()
-          }
           await clockBridge.start()
+          // Publish the live transport so the Twist-bridge effect can
+          // pick it up. Set after clockBridge.start() succeeds so we
+          // don't expose a transport that's only half-wired.
+          setConnectedTransport(transport!)
           // For mock/memory transports there is no live status feed;
           // mark connected explicitly so the UI doesn't get stuck on
           // 'connecting'.
@@ -628,6 +577,14 @@ export function CommunicationProvider({
 
     return () => {
       cancelled = true
+      engine.logger?.debug(
+        `[CommunicationProvider] transport effect cleanup (kind="${config.kind}")`,
+      )
+      // Clear the published transport BEFORE running cleanups so the
+      // Twist-bridge effect (which depends on `connectedTransport`)
+      // tears its bridges down with the transport still alive — its
+      // bridge.stop() calls need the underlying connection.
+      setConnectedTransport(null)
       // Run cleanups in reverse registration order. Errors are logged
       // but never thrown — unmount must complete.
       for (const fn of [...cleanups].reverse()) {
@@ -649,13 +606,122 @@ export function CommunicationProvider({
   }, [
     config,
     engine,
-    commandQueue,
     externalPathQueue,
     externalPoseArrayQueue,
-    bindingsKey,
     clockPeriodSec,
-    enabledBindings,
   ])
+
+  // ----- Inbound: Twist topic(s) → VehicleCommandQueue ----------------
+  //
+  // Dedicated effect for `VehicleCommandTopicBridge` lifecycle. Keyed
+  // off `connectedTransport` (only runs against an already-open
+  // transport) and `bindingsKey` (re-runs only when the *content* of
+  // the bindings changes). This is the fix for the bug where toggling
+  // a single Twist checkbox tore down the whole rosbridge stack —
+  // toggles now create / stop only the Twist bridge.
+  //
+  // Audit logs (info-level so they're visible by default) prove the
+  // contract from the surrounding architecture:
+  //   - raw input from the prop
+  //   - resolved enabled bindings
+  //   - one line per bridge actually started (topic + vehicleId)
+  //   - explicit "zero bridges" line when none are created
+  //   - debug-level start/stop lines per bridge so a toggle shows up
+  //     as exactly two log entries (stop the old, start the new) with
+  //     no transport-cleanup line in between.
+  useEffect(() => {
+    if (connectedTransport === null) return
+
+    engine.logger?.info(
+      `[CommunicationProvider] twist bindings (raw, count=${requestedBindings.length}):`,
+      requestedBindings,
+    )
+    engine.logger?.info(
+      `[CommunicationProvider] twist bindings (enabled, count=${enabledBindings.length}):`,
+      enabledBindings,
+    )
+    if (enabledBindings.length === 0) {
+      engine.logger?.info(
+        '[CommunicationProvider] no enabled twist bindings; skipping VehicleCommandTopicBridge setup',
+      )
+      return
+    }
+
+    const startedBridges: VehicleCommandTopicBridge[] = []
+    let cancelled = false
+
+    for (const binding of enabledBindings) {
+      // rosbridge needs the wire type for each subscribed topic;
+      // bindings declared at runtime won't be in the constructor
+      // map for `RoslibRosbridgeTransport`, so we register them
+      // dynamically. Mock / memory transports don't use this method
+      // (it's optional on the generic Transport interface).
+      if (connectedTransport instanceof RoslibRosbridgeTransport) {
+        connectedTransport.setTopicType(binding.topic, ROS_MESSAGE_TYPES.twist)
+      }
+      let bindingAdapter: RosTwistToVehicleCommandAdapter
+      try {
+        bindingAdapter = new RosTwistToVehicleCommandAdapter({
+          vehicleId: binding.vehicleId,
+          ...(binding.scale !== undefined && { scale: binding.scale }),
+          ...(binding.limits !== undefined && { limits: binding.limits }),
+        })
+      } catch (err) {
+        // Surface the configuration error but don't tear down the
+        // whole transport — other bindings may be valid.
+        engine.logger?.warn(
+          `[CommunicationProvider] dropping invalid Twist binding for "${binding.topic}" -> "${binding.vehicleId}": ${(err as Error).message}`,
+        )
+        continue
+      }
+      const bridge = new VehicleCommandTopicBridge(
+        connectedTransport,
+        binding.topic,
+        commandQueue,
+        bindingAdapter,
+        engine.logger,
+      )
+      engine.logger?.info(
+        `[CommunicationProvider] created VehicleCommandTopicBridge: topic="${binding.topic}" vehicleId="${binding.vehicleId}"`,
+      )
+      // Transport is already connected here, so start immediately.
+      // Errors during start are logged but don't poison other bridges.
+      void bridge
+        .start()
+        .then(() => {
+          if (cancelled) return
+          engine.logger?.debug(
+            `[CommunicationProvider] twist bridge started: topic="${binding.topic}" vehicleId="${binding.vehicleId}"`,
+          )
+        })
+        .catch((err: unknown) => {
+          if (cancelled) return
+          const message = err instanceof Error ? err.message : String(err)
+          engine.logger?.warn(
+            `[CommunicationProvider] twist bridge start failed for "${binding.topic}": ${message}`,
+          )
+        })
+      startedBridges.push(bridge)
+    }
+
+    return () => {
+      cancelled = true
+      for (const bridge of startedBridges) {
+        try {
+          bridge.stop()
+        } catch (err) {
+          console.warn('[CommunicationProvider] twist bridge stop failed:', err)
+        }
+      }
+      engine.logger?.debug(
+        `[CommunicationProvider] twist bridges stopped (count=${startedBridges.length})`,
+      )
+    }
+    // `requestedBindings` and `enabledBindings` are derived from
+    // `bindingsKey` and stable per content; using the key as the
+    // dependency keeps re-runs limited to real binding changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectedTransport, bindingsKey, commandQueue, engine])
 
   // Guard the context value so callers never see rosbridge-specific
   // discovery / echo / renderable-topic state while the active

@@ -4,8 +4,13 @@ This document describes the display plugin architecture introduced in `angy_sim_
 the list of currently supported ROS 2 topics, and the step-by-step recipe for adding
 the next display type.
 
-Read together with `Architecture.md` (Layer 8 — external communication) and
-`Development_Guide.md`.
+Read together with `Architecture.md` (Layer 8 — external communication),
+`Development_Guide.md`, and `Topic_Support_Guide.md`.
+
+For topics that manipulate the simulation instead of rendering artifacts
+(for example `geometry_msgs/msg/Twist` vehicle control), start with
+`Topic_Support_Guide.md`. This file is the detailed recipe for display
+plugins only.
 
 ---
 

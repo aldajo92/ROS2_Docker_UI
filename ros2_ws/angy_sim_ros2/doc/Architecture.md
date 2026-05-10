@@ -1549,12 +1549,12 @@ entries. Architectural notes:
   automatically.
 - The Inspector exposes a per-row vehicle dropdown for
   `geometry_msgs/msg/Twist` rows in `Ros2TopicsPanel`. The dropdown
-  reads from the same lifted state. **Dropdown changes are not synced
-  back into the Scenario Editor JSON in this iteration** — the editor
-  shows what was loaded, and changing the dropdown updates the live
-  bridges only. This is intentional: it keeps the editor's textarea
-  free of click-driven mutations and lets the user explicitly persist
-  bindings via JSON edits + Apply.
+  reads from the same lifted state. Dropdown / checkbox changes are
+  projected back into the Scenario Editor JSON under
+  `interaction.ros2TwistControls`, so a downloaded scenario can
+  reproduce the selected control bindings. This mirrors the display
+  topic rule: every supported selected topic must be reflected in the
+  editor, using the scenario block appropriate for its category.
 - `timeoutSec` and `onTimeout: "stop"` are parsed and stored for
   forward compatibility but are not yet wired into the runtime; a
   binding with a configured timeout behaves like one without it. This

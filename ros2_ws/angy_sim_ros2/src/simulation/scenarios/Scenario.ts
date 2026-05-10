@@ -188,8 +188,8 @@ export interface ScenarioInteractionConfig {
    * ROS 2 Twist topic → vehicle bindings. When present, the React
    * shell creates one `VehicleCommandTopicBridge` per enabled entry
    * so external `geometry_msgs/msg/Twist` publishers can drive the
-   * named vehicles. Absent / empty array preserves the previous
-   * "single hardcoded `/cmd_vel → ego`" behavior as a fallback.
+   * named vehicles. Absent / empty means no Twist bridge is created;
+   * selecting the rosbridge transport alone never enables control.
    */
   ros2TwistControls?: Ros2TwistControlBinding[]
 }
