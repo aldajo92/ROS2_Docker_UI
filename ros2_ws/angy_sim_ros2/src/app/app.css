@@ -765,7 +765,6 @@ body.layout-splitter-dragging {
 
 .scenario-editor-preview-toolbar {
   display: flex;
-  justify-content: flex-start;
   align-items: center;
   gap: 8px;
   padding: 4px 6px;
@@ -776,6 +775,7 @@ body.layout-splitter-dragging {
 }
 
 .scenario-editor-preview-file-name {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -785,6 +785,7 @@ body.layout-splitter-dragging {
   font-family: ui-monospace, "SFMono-Regular", monospace;
 }
 
+.scenario-editor-file-name-edit-button,
 .scenario-editor-copy-button {
   flex: 0 0 auto;
   width: 26px;
@@ -801,10 +802,17 @@ body.layout-splitter-dragging {
   transition: background 120ms, color 120ms, border-color 120ms;
 }
 
+.scenario-editor-file-name-edit-button {
+  margin-left: auto;
+}
+
+.scenario-editor-file-name-edit-button:hover,
+.scenario-editor-file-name-edit-button:focus-visible,
 .scenario-editor-copy-button:hover {
   background: var(--accent);
   color: var(--accent-fg);
   border-color: var(--accent);
+  outline: none;
 }
 
 .scenario-editor-preview-shell .scenario-editor-preview {
