@@ -13,4 +13,6 @@ export interface VehicleMotionRuntime {
   syncVehicles(vehicles: readonly VehicleEntity[]): void
   step(dt: number): void
   readVehicleState(vehicleId: string): VehicleRuntimeState | undefined
+  /** Release external resources (e.g. WASM memory). Optional for pure-JS runtimes. */
+  dispose?(): void
 }

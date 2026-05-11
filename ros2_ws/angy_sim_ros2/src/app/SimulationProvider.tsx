@@ -4,6 +4,9 @@ import { SimulationEngine } from '../simulation/core/SimulationEngine'
 import { SimulationController } from '../simulation/core/SimulationController'
 import { VehicleDynamicsSystem } from '../simulation/systems/VehicleDynamicsSystem'
 import { buildVehicleMotionRuntime } from './buildVehicleMotionRuntime'
+import { buildVehicleMotionRuntimeAsync } from './buildVehicleMotionRuntimeAsync'
+import { VehicleMotionRuntimeAsyncRequired } from './buildVehicleMotionRuntime'
+import type { VehicleMotionRuntime } from '../simulation/physics/VehicleMotionRuntime'
 import type { VehicleMotionRuntimeConfig } from '../simulation/physics/VehicleMotionRuntimeConfig'
 import { DEFAULT_VEHICLE_MOTION_RUNTIME_CONFIG } from '../simulation/physics/VehicleMotionRuntimeConfig'
 import { CollisionSystem } from '../simulation/systems/CollisionSystem'
@@ -31,55 +34,139 @@ import type { SimulationContextValue } from './SimulationContext'
  * Builds a SimulationEngine on first mount, wires the default systems,
  * and exposes both the engine and a controller facade through context.
  *
- * The engine is created once and never recreated — React StrictMode's
- * double-invoke triggers cleanup, but the engine itself stays alive
- * between strict-mode passes. We only `pause()` on unmount; we never
- * recreate. This avoids the "two engines running" trap.
+ * ## Sync vs async runtime selection
+ *
+ * `kinematic` (the default) is synchronous — the engine is ready immediately
+ * and `useState` lazy-init guarantees it is created exactly once, even in
+ * React StrictMode.
+ *
+ * `rapier` and any future async runtime require WASM/network initialization.
+ * When `vehicleMotionRuntimeConfig: { type: 'rapier' }` is passed:
+ *   - the provider renders `null` until the runtime is ready
+ *   - async init runs in `useEffect` so it does not block the first render
+ *   - children are mounted once the context is available
+ *
+ * Alternatively, a pre-built runtime can be injected directly via the
+ * `vehicleMotionRuntime` prop (takes priority over `vehicleMotionRuntimeConfig`).
+ * This is useful for tests or call sites that need to share one runtime
+ * instance across multiple providers.
+ *
+ * ## Cleanup
+ *
+ * On unmount the provider calls `engine.pause()` followed by
+ * `engine.systems.dispose()`. `VehicleDynamicsSystem.dispose()` in turn
+ * calls `runtime.dispose?.()`, which for `RapierVehicleMotionRuntime`
+ * frees the underlying WASM world.
  */
 export interface SimulationProviderProps {
   children: ReactNode
   /**
-   * Collision backend selector. Defaults to
-   * `DEFAULT_COLLISION_CONFIG` (`simpleCircle2D`). Pass
-   * `{ backend: 'disabled' }` to skip collision detection without
-   * removing `CollisionSystem` from the tick pipeline.
-   *
-   * `'rapier2D'` is intentionally NOT supported synchronously here
-   * because it requires `await RapierCollisionBackend2D.create()`.
-   * Wire Rapier explicitly at the call site if you need it.
+   * Collision backend selector. Defaults to `DEFAULT_COLLISION_CONFIG`
+   * (`simpleCircle2D`). `'rapier2D'` requires async construction —
+   * wire `RapierCollisionBackend2D` explicitly at the call site.
    */
   collisionConfig?: CollisionConfig
   /**
-   * Vehicle motion runtime selector. Defaults to `{ type: 'kinematic' }`.
-   * Only `kinematic` is implemented today; passing another type throws at
-   * construction time so the misconfiguration is caught early.
+   * Vehicle motion runtime selector. Supports all registered types,
+   * including `rapier` (async). Defaults to `{ type: 'kinematic' }`.
+   * Ignored when `vehicleMotionRuntime` is provided.
    */
   vehicleMotionRuntimeConfig?: VehicleMotionRuntimeConfig
+  /**
+   * Pre-built runtime instance. Takes priority over
+   * `vehicleMotionRuntimeConfig`. Useful when the runtime was created
+   * externally (e.g. to share it, or to inject a test double).
+   * The provider calls `runtime.dispose?.()` on unmount via the system
+   * dispose chain.
+   */
+  vehicleMotionRuntime?: VehicleMotionRuntime
 }
 
 export function SimulationProvider({
   children,
   collisionConfig = DEFAULT_COLLISION_CONFIG,
   vehicleMotionRuntimeConfig = DEFAULT_VEHICLE_MOTION_RUNTIME_CONFIG,
+  vehicleMotionRuntime: injectedRuntime,
 }: SimulationProviderProps) {
-  const [value] = useState<SimulationContextValue>(() =>
-    buildContext(collisionConfig, vehicleMotionRuntimeConfig),
-  )
+  // Synchronous path: useState guarantees single creation even in StrictMode.
+  // Returns null only when the config requires async init (e.g. rapier).
+  const [syncCtx] = useState<SimulationContextValue | null>(() => {
+    const runtime = injectedRuntime ?? tryBuildVehicleMotionRuntime(vehicleMotionRuntimeConfig)
+    return runtime ? buildContext(collisionConfig, runtime) : null
+  })
 
+  // Async path: populated by the effect below when syncCtx is null.
+  const [asyncCtx, setAsyncCtx] = useState<SimulationContextValue | null>(null)
+  // Surfaces async init failures (e.g. unsupported type) through React's error boundary.
+  const [asyncError, setAsyncError] = useState<Error | null>(null)
+
+  // Async init — runs only when syncCtx is null (no sync runtime available).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
+    if (syncCtx !== null) return
+    let cancelled = false
+    let built: SimulationContextValue | null = null
+
+    buildVehicleMotionRuntimeAsync(vehicleMotionRuntimeConfig)
+      .then((runtime) => {
+        if (cancelled) { runtime.dispose?.(); return }
+        built = buildContext(collisionConfig, runtime)
+        setAsyncCtx(built)
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setAsyncError(err instanceof Error ? err : new Error(String(err)))
+        }
+      })
+
     return () => {
-      value.engine.pause()
+      cancelled = true
+      if (built) {
+        built.engine.pause()
+        built.engine.systems.dispose()
+      }
     }
-  }, [value])
+  }, []) // intentional stable deps — all inputs captured from initial render
+
+  // Cleanup for the synchronously-built context.
+  useEffect(() => {
+    if (!syncCtx) return
+    return () => {
+      syncCtx.engine.pause()
+      syncCtx.engine.systems.dispose()
+    }
+  }, [syncCtx])
+
+  if (asyncError) throw asyncError
+
+  const ctx = syncCtx ?? asyncCtx
+  if (!ctx) return null
 
   return (
-    <SimulationContext.Provider value={value}>{children}</SimulationContext.Provider>
+    <SimulationContext.Provider value={ctx}>{children}</SimulationContext.Provider>
   )
+}
+
+/**
+ * Attempts synchronous runtime construction from config.
+ * Returns `null` only for `VehicleMotionRuntimeAsyncRequired` (e.g. `rapier`),
+ * letting the provider fall through to the async `useEffect` path.
+ * Any other error (unsupported type, invalid config) is re-thrown immediately.
+ */
+function tryBuildVehicleMotionRuntime(
+  config: VehicleMotionRuntimeConfig,
+): VehicleMotionRuntime | null {
+  try {
+    return buildVehicleMotionRuntime(config)
+  } catch (e) {
+    if (e instanceof VehicleMotionRuntimeAsyncRequired) return null
+    throw e
+  }
 }
 
 function buildContext(
   collisionConfig: CollisionConfig,
-  vehicleMotionRuntimeConfig: VehicleMotionRuntimeConfig,
+  runtime: VehicleMotionRuntime,
 ): SimulationContextValue {
   const engine = new SimulationEngine()
   const commandQueue = new VehicleCommandQueue()
@@ -102,7 +189,7 @@ function buildContext(
   engine.systems.add(new VehicleCommandSystem(commandQueue))
   engine.systems.add(new ExternalPathRenderSystem(externalPathQueue))
   engine.systems.add(new ExternalPoseArrayRenderSystem(externalPoseArrayQueue))
-  engine.systems.add(new VehicleDynamicsSystem(buildVehicleMotionRuntime(vehicleMotionRuntimeConfig)))
+  engine.systems.add(new VehicleDynamicsSystem(runtime))
   engine.systems.add(new TrajectoryTrackingSystem())
   engine.systems.add(new CollisionSystem(buildCollisionBackend(collisionConfig)))
   engine.systems.add(new MetricsSystem())

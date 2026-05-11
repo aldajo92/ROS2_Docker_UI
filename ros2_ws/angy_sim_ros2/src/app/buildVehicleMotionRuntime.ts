@@ -3,14 +3,32 @@ import type { VehicleMotionRuntime } from '../simulation/physics/VehicleMotionRu
 import type { VehicleMotionRuntimeConfig } from '../simulation/physics/VehicleMotionRuntimeConfig'
 
 /**
- * Constructs the `VehicleMotionRuntime` for the requested config.
+ * Thrown when the requested runtime type requires async initialization.
+ * `SimulationProvider` catches this specifically to fall through to its async
+ * init path. Any other error (e.g. unsupported type) is re-thrown immediately.
+ */
+export class VehicleMotionRuntimeAsyncRequired extends Error {
+  constructor(type: string) {
+    super(
+      `Vehicle motion runtime "${type}" requires async initialization. ` +
+        `Pass vehicleMotionRuntimeConfig={{ type: "${type}" }} to SimulationProvider, ` +
+        `or await buildVehicleMotionRuntimeAsync({ type: "${type}" }) and inject via the ` +
+        `vehicleMotionRuntime prop.`,
+    )
+    this.name = 'VehicleMotionRuntimeAsyncRequired'
+  }
+}
+
+/**
+ * Constructs the `VehicleMotionRuntime` for the requested config synchronously.
  *
- * `kinematic` is the only runtime available today. Requesting `rapier` or
- * `remote` throws immediately so callers know they asked for something
- * unimplemented rather than silently receiving a different runtime.
+ * `kinematic` is synchronous and used by default.
  *
- * Future runtime implementations belong in `src/infrastructure/` and should
- * be wired here once available.
+ * `rapier` requires async WASM initialization — throws `VehicleMotionRuntimeAsyncRequired`
+ * so callers can detect the need for async init without a string match.
+ * `SimulationProvider` handles this automatically via its async path.
+ *
+ * `remote` is not yet implemented and throws a plain `Error`.
  */
 export function buildVehicleMotionRuntime(
   config: VehicleMotionRuntimeConfig,
@@ -19,7 +37,7 @@ export function buildVehicleMotionRuntime(
     case 'kinematic':
       return new KinematicVehicleMotionRuntime()
     case 'rapier':
-      throw new Error('Vehicle motion runtime "rapier" is not implemented yet.')
+      throw new VehicleMotionRuntimeAsyncRequired('rapier')
     case 'remote':
       throw new Error('Vehicle motion runtime "remote" is not implemented yet.')
   }

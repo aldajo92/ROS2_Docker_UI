@@ -1,12 +1,13 @@
 // @vitest-environment happy-dom
 
-import { describe, expect, it, afterEach } from 'vitest'
+import { describe, expect, it, afterEach, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { useContext } from 'react'
 import { SimulationProvider } from './SimulationProvider'
 import { SimulationContext } from './SimulationContext'
 import type { SimulationContextValue } from './SimulationContext'
+import { buildVehicleMotionRuntimeAsync } from './buildVehicleMotionRuntimeAsync'
 import { VehicleEntity } from '../simulation/entities/VehicleEntity'
 import { Pose2D } from '../math/geometry/Pose2D'
 
@@ -81,9 +82,65 @@ describe('SimulationProvider', () => {
     expect(vehicle.pose.position.x).toBeCloseTo(1)
   })
 
-  it('passing an unimplemented runtime type throws at construction', () => {
-    expect(() =>
-      mountProvider({ vehicleMotionRuntimeConfig: { type: 'rapier' } }),
-    ).toThrow('Vehicle motion runtime "rapier" is not implemented yet.')
+  it('vehicleMotionRuntimeConfig remote: throws immediately at mount (unsupported, not async)', () => {
+    expect(() => mountProvider({ vehicleMotionRuntimeConfig: { type: 'remote' } })).toThrow(
+      'Vehicle motion runtime "remote" is not implemented yet.',
+    )
+  })
+
+  it('vehicleMotionRuntimeConfig rapier: renders null initially, then provides working engine', async () => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+
+    let captured: SimulationContextValue | null = null
+    function Probe() {
+      captured = useContext(SimulationContext)
+      return null
+    }
+
+    // First render — async init not yet complete; provider should render null
+    act(() => {
+      root!.render(
+        <SimulationProvider vehicleMotionRuntimeConfig={{ type: 'rapier' }}>
+          <Probe />
+        </SimulationProvider>,
+      )
+    })
+    expect(captured).toBeNull()
+
+    // Poll until async WASM init + useEffect state update settles
+    await vi.waitFor(() => {
+      if (captured === null) throw new Error('engine not ready')
+    }, { timeout: 5000, interval: 50 })
+
+    expect(captured).not.toBeNull()
+    const vehicle = new VehicleEntity({
+      id: 'ego',
+      pose: Pose2D.of(0, 0, 0),
+      controls: { v: 1, w: 0 },
+    })
+    captured!.engine.state.entities.add(vehicle)
+    act(() => captured!.engine.step(1.0))
+    expect(vehicle.pose.position.x).toBeGreaterThan(0)
+  })
+
+  it('pre-built rapier runtime via vehicleMotionRuntime prop: vehicle pose advances', async () => {
+    const rapierRuntime = await buildVehicleMotionRuntimeAsync({ type: 'rapier' })
+    try {
+      const ctx = mountProvider({ vehicleMotionRuntime: rapierRuntime })
+      const vehicle = new VehicleEntity({
+        id: 'ego',
+        pose: Pose2D.of(0, 0, 0),
+        controls: { v: 1, w: 0 },
+      })
+      ctx.engine.state.entities.add(vehicle)
+
+      act(() => ctx.engine.step(1.0))
+
+      expect(vehicle.pose.position.x).toBeGreaterThan(0)
+    } finally {
+      rapierRuntime.dispose?.()
+    }
   })
 })

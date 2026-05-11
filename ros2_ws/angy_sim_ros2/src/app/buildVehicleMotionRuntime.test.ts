@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { buildVehicleMotionRuntime } from './buildVehicleMotionRuntime'
+import { buildVehicleMotionRuntime, VehicleMotionRuntimeAsyncRequired } from './buildVehicleMotionRuntime'
 import { KinematicVehicleMotionRuntime } from '../simulation/physics/KinematicVehicleMotionRuntime'
 import { DEFAULT_VEHICLE_MOTION_RUNTIME_CONFIG } from '../simulation/physics/VehicleMotionRuntimeConfig'
-import type { VehicleMotionRuntimeType } from '../simulation/physics/VehicleMotionRuntimeConfig'
 
 describe('buildVehicleMotionRuntime', () => {
   it('default config builds a KinematicVehicleMotionRuntime', () => {
@@ -21,12 +20,18 @@ describe('buildVehicleMotionRuntime', () => {
     expect(a).not.toBe(b)
   })
 
-  it.each([['rapier'], ['remote']] as [VehicleMotionRuntimeType][][])(
-    '"%s" throws a clear not-implemented error',
-    (type) => {
-      expect(() => buildVehicleMotionRuntime({ type })).toThrow(
-        `Vehicle motion runtime "${type}" is not implemented yet.`,
-      )
-    },
-  )
+  it('"rapier" throws VehicleMotionRuntimeAsyncRequired', () => {
+    expect(() => buildVehicleMotionRuntime({ type: 'rapier' })).toThrow(
+      VehicleMotionRuntimeAsyncRequired,
+    )
+  })
+
+  it('"remote" throws a plain Error (unsupported, not async-init)', () => {
+    expect(() => buildVehicleMotionRuntime({ type: 'remote' })).toThrow(
+      'Vehicle motion runtime "remote" is not implemented yet.',
+    )
+    expect(() => buildVehicleMotionRuntime({ type: 'remote' })).not.toThrow(
+      VehicleMotionRuntimeAsyncRequired,
+    )
+  })
 })

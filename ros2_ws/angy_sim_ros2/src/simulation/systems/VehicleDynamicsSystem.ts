@@ -27,6 +27,10 @@ export class VehicleDynamicsSystem implements SimulationSystem {
     this.runtime.reset()
   }
 
+  dispose(): void {
+    this.runtime.dispose?.()
+  }
+
   update(dt: number, state: SimulationState): void {
     // Collect vehicles and delegate motion to the runtime
     const vehicles: VehicleEntity[] = []
