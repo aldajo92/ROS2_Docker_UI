@@ -625,6 +625,7 @@ body.layout-splitter-dragging {
 
 .scenario-picker-row select {
   flex: 1;
+  min-width: 0;
   background: var(--bg-panel-2);
   color: var(--fg);
   border: 1px solid var(--border);
@@ -640,6 +641,7 @@ body.layout-splitter-dragging {
 }
 
 .scenario-picker-row button {
+  flex: 0 0 auto;
   background: var(--bg-panel-2);
   color: var(--fg);
   border: 1px solid var(--border);
