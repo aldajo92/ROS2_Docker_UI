@@ -1329,3 +1329,117 @@ describe('ScenarioLoader.parse — visualization (legacy, kept only as regressio
   })
 
 })
+
+describe('ScenarioLoader.parse — publishers', () => {
+  const BASE_CONNECTIONS = { rosbridge: { kind: 'rosbridge' } }
+  const BASE_PUBLISHER = {
+    source: { connection: 'rosbridge' },
+    topic: '/sim/ego/noisy_pose',
+    messageType: 'geometry_msgs/msg/PoseWithCovarianceStamped',
+    vehicleId: 'ego',
+  }
+
+  it('parses a valid noisy pose publisher', () => {
+    const spec = ScenarioLoader.parse({
+      name: 's',
+      entities: [],
+      connections: BASE_CONNECTIONS,
+      publishers: [BASE_PUBLISHER],
+    })
+    expect(spec.publishers).toHaveLength(1)
+    expect(spec.publishers![0].topic).toBe('/sim/ego/noisy_pose')
+    expect(spec.publishers![0].vehicleId).toBe('ego')
+  })
+
+  it('parses noise config', () => {
+    const spec = ScenarioLoader.parse({
+      name: 's',
+      entities: [],
+      connections: BASE_CONNECTIONS,
+      publishers: [{
+        ...BASE_PUBLISHER,
+        noise: { model: 'gaussian2d', stdDev: { x: 0.05, y: 0.05, yaw: 0.02 }, seed: 42 },
+      }],
+    })
+    const noise = spec.publishers![0].noise!
+    expect(noise.model).toBe('gaussian2d')
+    expect(noise.stdDev.x).toBe(0.05)
+    expect(noise.seed).toBe(42)
+  })
+
+  it('parses optional fields (frameId, childFrameId, rateHz, enabled)', () => {
+    const spec = ScenarioLoader.parse({
+      name: 's',
+      entities: [],
+      connections: BASE_CONNECTIONS,
+      publishers: [{ ...BASE_PUBLISHER, frameId: 'odom', childFrameId: 'base_link', rateHz: 10, enabled: false }],
+    })
+    const p = spec.publishers![0]
+    expect(p.frameId).toBe('odom')
+    expect(p.childFrameId).toBe('base_link')
+    expect(p.rateHz).toBe(10)
+    expect(p.enabled).toBe(false)
+  })
+
+  it('absent publishers block is allowed', () => {
+    const spec = ScenarioLoader.parse({ name: 's', entities: [] })
+    expect(spec.publishers).toBeUndefined()
+  })
+
+  it('rejects unknown messageType in publishers', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        connections: BASE_CONNECTIONS,
+        publishers: [{ ...BASE_PUBLISHER, messageType: 'geometry_msgs/msg/Twist' }],
+      }),
+    ).toThrow(/not supported in publishers/)
+  })
+
+  it('rejects unknown connection in publishers', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        connections: BASE_CONNECTIONS,
+        publishers: [{ ...BASE_PUBLISHER, source: { connection: 'unknown' } }],
+      }),
+    ).toThrow(/not defined in scenario.connections/)
+  })
+
+  it('rejects publishers without connections block', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        publishers: [BASE_PUBLISHER],
+      }),
+    ).toThrow(/not defined in scenario.connections/)
+  })
+
+  it('rejects invalid noise model', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        connections: BASE_CONNECTIONS,
+        publishers: [{ ...BASE_PUBLISHER, noise: { model: 'unknown', stdDev: {} } }],
+      }),
+    ).toThrow(/not supported/)
+  })
+
+  it('rejects negative stdDev in noise', () => {
+    expect(() =>
+      ScenarioLoader.parse({
+        name: 's',
+        entities: [],
+        connections: BASE_CONNECTIONS,
+        publishers: [{
+          ...BASE_PUBLISHER,
+          noise: { model: 'gaussian2d', stdDev: { x: -0.1 } },
+        }],
+      }),
+    ).toThrow(/finite non-negative/)
+  })
+})

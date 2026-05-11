@@ -233,6 +233,51 @@ export interface ScenarioDisplaySpec {
   }
 }
 
+/**
+ * Noise configuration for a scenario publisher. Currently only
+ * `model: 'gaussian2d'` is supported, which adds independent Gaussian
+ * noise to `x`, `y`, and `yaw`.
+ */
+export interface ScenarioPublisherNoiseSpec {
+  model: 'gaussian2d'
+  stdDev: {
+    x?: number
+    y?: number
+    yaw?: number
+  }
+  seed?: number
+}
+
+/**
+ * Scenario-declared outbound publisher: the simulation publishes telemetry
+ * to an external topic. This is distinct from `actions` (inbound) and
+ * `displays` (inbound rendered). Currently the only supported
+ * `messageType` is `geometry_msgs/msg/PoseWithCovarianceStamped`.
+ *
+ *   - `source.connection`: key into `connections`.
+ *   - `topic`: ROS 2 topic to publish to.
+ *   - `messageType`: must be `geometry_msgs/msg/PoseWithCovarianceStamped`.
+ *   - `vehicleId`: id of the vehicle entity whose pose is published.
+ *   - `frameId`: ROS frame for `header.frame_id` (default `"map"`).
+ *   - `childFrameId`: ROS child frame id (default equals `vehicleId`).
+ *   - `rateHz`: publish frequency in Hz (default 20).
+ *   - `enabled`: when `false`, no bridge is created.
+ *   - `noise`: optional noise model applied before publishing.
+ */
+export interface ScenarioPublisherSpec {
+  source: {
+    connection: string
+  }
+  topic: string
+  messageType: string
+  vehicleId?: string
+  frameId?: string
+  childFrameId?: string
+  rateHz?: number
+  enabled?: boolean
+  noise?: ScenarioPublisherNoiseSpec
+}
+
 export interface ScenarioSpec {
   name: string
   description?: string
@@ -245,10 +290,12 @@ export interface ScenarioSpec {
   /** Simulation-owned trajectory sampling configuration (optional). */
   trajectoryTracking?: TrajectoryTrackingConfig
   /** Named external connections (e.g. rosbridge) referenced by
-   *  `actions` and `displays`. */
+   *  `actions`, `displays`, and `publishers`. */
   connections?: ScenarioConnectionsConfig
   /** External topic → simulation behavior bindings (e.g. Twist → vehicle). */
   actions?: ScenarioActionSpec[]
   /** External topic → visual artifact bindings (e.g. Path → path2d). */
   displays?: ScenarioDisplaySpec[]
+  /** Outbound telemetry publishers (e.g. noisy pose → ROS 2 topic). */
+  publishers?: ScenarioPublisherSpec[]
 }

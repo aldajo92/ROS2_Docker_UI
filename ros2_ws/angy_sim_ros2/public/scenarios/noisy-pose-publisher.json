@@ -1,0 +1,33 @@
+{
+  "name": "noisy-pose-publisher",
+  "description": "Ego vehicle with noisy pose published to ROS 2 via rosbridge. Echoes /sim/ego/noisy_pose (geometry_msgs/msg/PoseWithCovarianceStamped) at 20 Hz while the simulation runs.",
+  "connections": {
+    "rosbridge": { "kind": "rosbridge" }
+  },
+  "publishers": [
+    {
+      "source": { "connection": "rosbridge" },
+      "topic": "/sim/ego/noisy_pose",
+      "messageType": "geometry_msgs/msg/PoseWithCovarianceStamped",
+      "vehicleId": "ego",
+      "frameId": "map",
+      "childFrameId": "ego",
+      "rateHz": 20,
+      "enabled": true,
+      "noise": {
+        "model": "gaussian2d",
+        "stdDev": { "x": 0.05, "y": 0.05, "yaw": 0.02 },
+        "seed": 1234
+      }
+    }
+  ],
+  "entities": [
+    {
+      "kind": "vehicle",
+      "id": "ego",
+      "pose": { "x": 0, "y": 0, "yaw": 0 },
+      "controls": { "v": 0.5, "w": 0.15 },
+      "radius": 0.4
+    }
+  ]
+}

@@ -4,6 +4,7 @@ import {
   CommunicationProvider,
   type Ros2TwistTopicBindingState,
 } from './CommunicationProvider'
+import type { ScenarioPublisherSpec } from '../simulation/scenarios/Scenario'
 import { buildBaselineVehicleCommand } from './restoreVehicleBaseline'
 import { useSimulation, useSimulationRunning } from './useSimulation'
 import { ConnectionStatusPanel } from '../ui/ConnectionStatusPanel'
@@ -125,12 +126,18 @@ export default function App() {
   const [twistControlBindings, setTwistControlBindings] = useState<
     Ros2TwistTopicBindingState[]
   >([])
+  const [publishers, setPublishers] = useState<ScenarioPublisherSpec[]>([])
   return (
     <SimulationProvider>
-      <CommunicationProvider twistControlBindings={twistControlBindings}>
+      <CommunicationProvider
+        twistControlBindings={twistControlBindings}
+        publishers={publishers}
+      >
         <AppShell
           twistControlBindings={twistControlBindings}
           onTwistControlBindingsChange={setTwistControlBindings}
+          publishers={publishers}
+          onPublishersChange={setPublishers}
         />
       </CommunicationProvider>
     </SimulationProvider>
@@ -142,11 +149,14 @@ interface AppShellProps {
   onTwistControlBindingsChange: (
     next: Ros2TwistTopicBindingState[],
   ) => void
+  publishers: ScenarioPublisherSpec[]
+  onPublishersChange: (next: ScenarioPublisherSpec[]) => void
 }
 
 function AppShell({
   twistControlBindings,
   onTwistControlBindingsChange,
+  onPublishersChange,
 }: AppShellProps) {
   const { engine, controller, commandQueue } = useSimulation()
   const isRunning = useSimulationRunning()
@@ -693,6 +703,7 @@ function AppShell({
       // Ros2 Topics panel (or declare one in the scenario JSON) to
       // expose vehicle control.
       onTwistControlBindingsChange(actionsToTwistBindings(spec.actions ?? []))
+      onPublishersChange(spec.publishers ?? [])
 
       // Compute the editor text. Two cases matter:
       //
@@ -733,7 +744,7 @@ function AppShell({
       // replay mode so the renderer stops painting stale frames.
       if (replaySessionRef.current) handleExitReplay()
     },
-    [handleExitReplay, onTwistControlBindingsChange],
+    [handleExitReplay, onTwistControlBindingsChange, onPublishersChange],
   )
 
   // Apply scenario-declared displays once the capability is available.

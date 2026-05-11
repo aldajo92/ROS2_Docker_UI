@@ -19,6 +19,8 @@ import type {
   ScenarioConnectionsConfig,
   ScenarioDisplaySpec,
   ScenarioInteractionConfig,
+  ScenarioPublisherNoiseSpec,
+  ScenarioPublisherSpec,
   ScenarioSpec,
   ScenarioTopicSource,
   StaticObstacleSpec,
@@ -85,6 +87,10 @@ export class ScenarioLoader {
       input.displays !== undefined
         ? parseDisplays(input.displays, 'scenario.displays', connections ?? {})
         : undefined
+    const publishers =
+      input.publishers !== undefined
+        ? parsePublishers(input.publishers, 'scenario.publishers', connections ?? {})
+        : undefined
     return {
       name: input.name,
       description,
@@ -95,6 +101,7 @@ export class ScenarioLoader {
       ...(connections !== undefined && { connections }),
       ...(actions !== undefined && { actions }),
       ...(displays !== undefined && { displays }),
+      ...(publishers !== undefined && { publishers }),
     }
   }
 
@@ -721,6 +728,122 @@ function parseDisplayStyle(
     ...(color !== undefined && { color }),
     ...(thickness !== undefined && { thickness }),
     ...(arrowSize !== undefined && { arrowSize }),
+  }
+}
+
+const PUBLISHER_MESSAGE_TYPE = 'geometry_msgs/msg/PoseWithCovarianceStamped'
+
+function parsePublishers(
+  input: unknown,
+  path: string,
+  connections: ScenarioConnectionsConfig,
+): ScenarioPublisherSpec[] {
+  if (!Array.isArray(input)) {
+    throw new ScenarioParseError(`${path} must be an array`)
+  }
+  return input.map((entry, i) => parsePublisherSpec(entry, `${path}[${i}]`, connections))
+}
+
+function parsePublisherSpec(
+  input: unknown,
+  path: string,
+  connections: ScenarioConnectionsConfig,
+): ScenarioPublisherSpec {
+  if (!isObj(input)) {
+    throw new ScenarioParseError(`${path} must be an object`)
+  }
+  // Parse source (connection reference only — publishers push out, not subscribe)
+  if (!isObj(input.source)) {
+    throw new ScenarioParseError(`${path}.source must be an object`)
+  }
+  if (typeof input.source.connection !== 'string' || input.source.connection.length === 0) {
+    throw new ScenarioParseError(`${path}.source.connection must be a non-empty string`)
+  }
+  if (!(input.source.connection in connections)) {
+    throw new ScenarioParseError(
+      `${path}.source.connection "${input.source.connection}" is not defined in scenario.connections`,
+    )
+  }
+  if (typeof input.topic !== 'string' || input.topic.length === 0) {
+    throw new ScenarioParseError(`${path}.topic must be a non-empty string`)
+  }
+  if (typeof input.messageType !== 'string' || input.messageType.length === 0) {
+    throw new ScenarioParseError(`${path}.messageType must be a non-empty string`)
+  }
+  if (input.messageType !== PUBLISHER_MESSAGE_TYPE) {
+    throw new ScenarioParseError(
+      `${path}.messageType "${input.messageType}" is not supported in publishers[]. ` +
+      `Only "${PUBLISHER_MESSAGE_TYPE}" is valid here.`,
+    )
+  }
+  if (input.vehicleId !== undefined && (typeof input.vehicleId !== 'string' || input.vehicleId.length === 0)) {
+    throw new ScenarioParseError(`${path}.vehicleId must be a non-empty string`)
+  }
+  if (input.frameId !== undefined && (typeof input.frameId !== 'string' || input.frameId.length === 0)) {
+    throw new ScenarioParseError(`${path}.frameId must be a non-empty string`)
+  }
+  if (input.childFrameId !== undefined && (typeof input.childFrameId !== 'string' || input.childFrameId.length === 0)) {
+    throw new ScenarioParseError(`${path}.childFrameId must be a non-empty string`)
+  }
+  if (input.rateHz !== undefined) {
+    requirePositiveFinite(input.rateHz, `${path}.rateHz`)
+  }
+  if (input.enabled !== undefined && typeof input.enabled !== 'boolean') {
+    throw new ScenarioParseError(`${path}.enabled must be a boolean`)
+  }
+  const noise =
+    input.noise !== undefined
+      ? parsePublisherNoise(input.noise, `${path}.noise`)
+      : undefined
+  return {
+    source: { connection: input.source.connection as string },
+    topic: input.topic as string,
+    messageType: input.messageType as string,
+    ...(typeof input.vehicleId === 'string' && { vehicleId: input.vehicleId }),
+    ...(typeof input.frameId === 'string' && { frameId: input.frameId }),
+    ...(typeof input.childFrameId === 'string' && { childFrameId: input.childFrameId }),
+    ...(typeof input.rateHz === 'number' && { rateHz: input.rateHz }),
+    ...(typeof input.enabled === 'boolean' && { enabled: input.enabled }),
+    ...(noise !== undefined && { noise }),
+  }
+}
+
+function parsePublisherNoise(
+  input: unknown,
+  path: string,
+): ScenarioPublisherNoiseSpec {
+  if (!isObj(input)) {
+    throw new ScenarioParseError(`${path} must be an object`)
+  }
+  if (input.model !== 'gaussian2d') {
+    throw new ScenarioParseError(
+      `${path}.model "${String(input.model)}" is not supported. Only "gaussian2d" is valid.`,
+    )
+  }
+  if (!isObj(input.stdDev)) {
+    throw new ScenarioParseError(`${path}.stdDev must be an object`)
+  }
+  const stdDev: ScenarioPublisherNoiseSpec['stdDev'] = {}
+  for (const key of ['x', 'y', 'yaw'] as const) {
+    if (input.stdDev[key] !== undefined) {
+      const v = input.stdDev[key]
+      if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) {
+        throw new ScenarioParseError(`${path}.stdDev.${key} must be a finite non-negative number`)
+      }
+      stdDev[key] = v
+    }
+  }
+  let seed: number | undefined
+  if (input.seed !== undefined) {
+    if (typeof input.seed !== 'number' || !Number.isInteger(input.seed)) {
+      throw new ScenarioParseError(`${path}.seed must be an integer`)
+    }
+    seed = input.seed
+  }
+  return {
+    model: 'gaussian2d',
+    stdDev,
+    ...(seed !== undefined && { seed }),
   }
 }
 

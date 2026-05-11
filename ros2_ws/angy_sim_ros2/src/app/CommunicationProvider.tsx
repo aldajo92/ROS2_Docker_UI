@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useSimulation } from './useSimulation'
 import {
@@ -39,6 +39,10 @@ import {
 import { ROS_MESSAGE_TYPES } from '../infrastructure/communication/rosbridge/RosMessageTypes'
 import { RosTwistToVehicleCommandAdapter } from '../infrastructure/communication/rosbridge/adapters/RosTwistToVehicleCommandAdapter'
 import { SimClockToRosClockAdapter } from '../infrastructure/communication/rosbridge/adapters/SimClockToRosClockAdapter'
+import { SimPoseWithCovarianceToRosPoseWithCovarianceStampedAdapter } from '../infrastructure/communication/rosbridge/adapters/SimPoseWithCovarianceToRosPoseWithCovarianceStampedAdapter'
+import { VehicleNoisyPosePublisherBridge } from '../simulation/communication/bridges/VehicleNoisyPosePublisherBridge'
+import { GaussianPoseNoise2D } from '../simulation/sensors/GaussianPoseNoise2D'
+import type { ScenarioPublisherSpec } from '../simulation/scenarios/Scenario'
 import { RosbridgeTopicDiscovery } from '../infrastructure/communication/rosbridge/RosbridgeTopicDiscovery'
 import { RosbridgeTopicEcho } from '../infrastructure/communication/rosbridge/RosbridgeTopicEcho'
 import { RosbridgeRenderableTopics } from '../infrastructure/communication/rosbridge/RosbridgeRenderableTopics'
@@ -141,6 +145,13 @@ export interface CommunicationProviderProps {
    */
   twistControlBindings?: ReadonlyArray<Ros2TwistTopicBindingState>
   /**
+   * Outbound telemetry publishers declared by the loaded scenario
+   * (`scenario.publishers[]`). The provider creates one bridge per
+   * *enabled* entry. Changing this prop adds/removes publisher bridges
+   * without reconnecting the transport.
+   */
+  publishers?: ReadonlyArray<ScenarioPublisherSpec>
+  /**
    * Outbound clock publish rate, in seconds. The default 50 Hz mirrors
    * `Topics.clock.frequencyHz` in `TopicRegistry.ts`.
    */
@@ -169,10 +180,27 @@ function twistBindingsKey(
   )
 }
 
+function publishersKey(publishers: ReadonlyArray<ScenarioPublisherSpec>): string {
+  return JSON.stringify(
+    publishers.map((p) => ({
+      connection: p.source.connection,
+      topic: p.topic,
+      messageType: p.messageType,
+      vehicleId: p.vehicleId ?? null,
+      frameId: p.frameId ?? null,
+      childFrameId: p.childFrameId ?? null,
+      rateHz: p.rateHz ?? null,
+      enabled: p.enabled !== false,
+      noise: p.noise ?? null,
+    })),
+  )
+}
+
 export function CommunicationProvider({
   children,
   config: configOverride,
   twistControlBindings,
+  publishers: publishersProp,
   clockPeriodSec = 1 / 50,
 }: CommunicationProviderProps) {
   const { engine, commandQueue, externalPathQueue, externalPoseArrayQueue } = useSimulation()
@@ -195,6 +223,14 @@ export function CommunicationProvider({
     [twistBindingsKey(requestedBindings)],
   )
   const bindingsKey = twistBindingsKey(requestedBindings)
+
+  const requestedPublishers: ReadonlyArray<ScenarioPublisherSpec> = publishersProp ?? []
+  const pubsKey = publishersKey(requestedPublishers)
+
+  // Holds the active CommunicationSystem so the publishers effect can
+  // dynamically add/remove PeriodicPublisher entries without reconnecting
+  // the transport.
+  const commsSystemRef = useRef<CommunicationSystem | null>(null)
 
   // The active transport config is stateful so the UI picker can swap
   // transports at runtime without a page reload. The initializer runs
@@ -481,6 +517,10 @@ export function CommunicationProvider({
       // clock (paused engine = no publishes; fast-forward = faster
       // publishes). Registered LAST in the tick order so outbound
       // telemetry reflects the just-applied tick.
+      //
+      // Noisy pose publishers are added/removed dynamically by the
+      // publishers effect below (keyed off scenario `publishers[]`),
+      // so they don't trigger a transport reconnect on scenario change.
       const clockPublisher = new PeriodicPublisher(clockPeriodSec, () => {
         // Fire-and-forget; transport handles its own backpressure.
         void clockBridge.publishOnce()
@@ -492,8 +532,10 @@ export function CommunicationProvider({
       // SystemManager.add invariant satisfied.
       engine.systems.remove(COMMUNICATION_SYSTEM_NAME)
       engine.systems.add(commsSystem)
+      commsSystemRef.current = commsSystem
       cleanups.push(() => {
         engine.systems.remove(COMMUNICATION_SYSTEM_NAME)
+        commsSystemRef.current = null
       })
 
       onStatus('connecting')
@@ -722,6 +764,85 @@ export function CommunicationProvider({
     // dependency keeps re-runs limited to real binding changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectedTransport, bindingsKey, commandQueue, engine])
+
+  // ----- Outbound: scenario publishers[] → noisy pose bridges -----------
+  //
+  // Dedicated effect for `VehicleNoisyPosePublisherBridge` lifecycle. Keyed
+  // off `connectedTransport` (only runs against an already-open transport)
+  // and `pubsKey` (re-runs only when publisher *content* changes, e.g. on
+  // scenario load). Bridges are added to / removed from the existing
+  // `CommunicationSystem` so the transport lifecycle is never disturbed.
+  useEffect(() => {
+    if (connectedTransport === null) return
+    const commsSystem = commsSystemRef.current
+    if (!commsSystem) return
+
+    const enabledPublishers = requestedPublishers.filter((p) => p.enabled !== false)
+    if (enabledPublishers.length === 0) return
+
+    const addedPeriodicPublishers: PeriodicPublisher[] = []
+    const startedBridges: VehicleNoisyPosePublisherBridge[] = []
+
+    for (const spec of enabledPublishers) {
+      if (spec.messageType !== 'geometry_msgs/msg/PoseWithCovarianceStamped') continue
+      if (!spec.vehicleId) continue
+
+      const noise = spec.noise
+      let noiseModel: GaussianPoseNoise2D
+      try {
+        noiseModel = new GaussianPoseNoise2D({
+          stdDevX: noise?.stdDev?.x ?? 0,
+          stdDevY: noise?.stdDev?.y ?? 0,
+          stdDevYaw: noise?.stdDev?.yaw ?? 0,
+          ...(noise?.seed !== undefined && { seed: noise.seed }),
+        })
+      } catch (err) {
+        engine.logger?.warn(
+          `[CommunicationProvider] invalid noise config for publisher "${spec.topic}": ${(err as Error).message}`,
+        )
+        continue
+      }
+
+      const adapter = new SimPoseWithCovarianceToRosPoseWithCovarianceStampedAdapter()
+      const bridge = new VehicleNoisyPosePublisherBridge(
+        connectedTransport,
+        spec.vehicleId,
+        spec.topic,
+        engine,
+        adapter,
+        noiseModel,
+        spec.frameId ?? 'map',
+        spec.childFrameId ?? spec.vehicleId,
+      )
+
+      if (connectedTransport instanceof RoslibRosbridgeTransport) {
+        connectedTransport.setTopicType(spec.topic, spec.messageType)
+      }
+
+      const periodSec = spec.rateHz ? 1 / spec.rateHz : 1 / 20
+      const periodicPublisher = new PeriodicPublisher(periodSec, () => {
+        void bridge.publishOnce()
+      })
+
+      void bridge.start()
+      commsSystem.addPublisher(periodicPublisher)
+
+      addedPeriodicPublishers.push(periodicPublisher)
+      startedBridges.push(bridge)
+    }
+
+    return () => {
+      const sys = commsSystemRef.current
+      for (const p of addedPeriodicPublishers) {
+        sys?.removePublisher(p)
+      }
+      for (const bridge of startedBridges) {
+        void bridge.stop()
+      }
+    }
+    // `requestedPublishers` is derived from `pubsKey` for stable deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectedTransport, pubsKey, engine])
 
   // Guard the context value so callers never see rosbridge-specific
   // discovery / echo / renderable-topic state while the active

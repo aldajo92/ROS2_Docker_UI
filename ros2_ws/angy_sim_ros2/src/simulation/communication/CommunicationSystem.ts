@@ -17,7 +17,16 @@ export class CommunicationSystem implements SimulationSystem {
   private readonly publishers: PeriodicPublisher[]
 
   constructor(publishers: PeriodicPublisher[]) {
-    this.publishers = publishers
+    this.publishers = [...publishers]
+  }
+
+  addPublisher(publisher: PeriodicPublisher): void {
+    this.publishers.push(publisher)
+  }
+
+  removePublisher(publisher: PeriodicPublisher): void {
+    const i = this.publishers.indexOf(publisher)
+    if (i !== -1) this.publishers.splice(i, 1)
   }
 
   update(dt: number, _state: SimulationState): void {

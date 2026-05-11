@@ -69,6 +69,10 @@ const SCENARIO_OPTIONS: readonly ScenarioOption[] = [
     label: 'Rectangle slalom (auto-drive panels)',
     url: '/scenarios/rectangle-slalom.json',
   },
+  {
+    label: 'Noisy pose publisher (ROS 2 PoseWithCovarianceStamped)',
+    url: '/scenarios/noisy-pose-publisher.json',
+  },
 ]
 
 export function ControlPanel({
