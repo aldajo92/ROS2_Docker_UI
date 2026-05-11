@@ -42,7 +42,7 @@ Display topics must:
 - Store state in `SimulationState`.
 - Let renderers read that state.
 - Sync selection and supported style fields into
-  `visualization.ros2Topics` in the Scenario Editor.
+  `displays[]` in the Scenario Editor.
 
 Display topics must not:
 
@@ -61,7 +61,7 @@ Control topics change simulation behavior. The current example is:
 Control topics must:
 
 - Be opt-in per topic and per target entity.
-- Sync selection into the relevant scenario interaction block.
+- Sync selection into `actions[]` in the Scenario Editor.
 - Use canonical simulation commands or queues.
 - Respect tick boundaries.
 - Start and stop only the specific bridge/subscription for that topic.
@@ -74,57 +74,120 @@ Control topics must not:
 - Reconnect the whole transport when one control topic is toggled.
 - Leave stale sticky commands without an explicit restore policy.
 
+### Publisher Topics
+
+Publisher topics send simulation state outward to external consumers. Examples:
+
+- `geometry_msgs/msg/PoseWithCovarianceStamped` <- vehicle noisy pose
+
+Publisher topics must:
+
+- Be declared in `publishers[]` in the scenario — never hardcoded.
+- Run at a configurable `rateHz`, driven by `PeriodicPublisher` inside
+  `CommunicationSystem`.
+- Read simulation state read-only; never mutate `SimulationState`.
+- Convert internal state through a `MessageAdapter` before transport publish.
+- Keep ROS wire-format names (`frame_id`, `nanosec`, etc.) inside the adapter
+  only — not in the simulation or bridge layer.
+- Sync their lifecycle via `CommunicationSystem.addPublisher` /
+  `removePublisher` so scenario changes do not reconnect the transport.
+
+Publisher topics must not:
+
+- Publish without an explicit scenario `publishers[]` entry.
+- Import ROS, rosbridge, `roslib`, React, Three.js, or Phaser into
+  `src/simulation/`.
+- Mutate `SimulationState` or entity fields.
+
 ## Current Supported Topics
 
 | ROS 2 message type | Category | Scenario block | Runtime path |
 |---|---|---|---|
-| `nav_msgs/msg/Path` | Display | `visualization.ros2Topics[]` | `RosPathToPath2DAdapter` -> display plugin -> `ExternalPathUpdateQueue` -> `ExternalPathRenderSystem` -> `state.paths` |
-| `geometry_msgs/msg/PoseArray` | Display | `visualization.ros2Topics[]` | `RosPoseArrayToPoseArray2DAdapter` -> display plugin -> `ExternalPoseArrayUpdateQueue` -> `ExternalPoseArrayRenderSystem` -> `state.poseArrays` |
-| `geometry_msgs/msg/Twist` | Control | `interaction.ros2TwistControls[]` | `RosTwistToVehicleCommandAdapter` -> `VehicleCommandTopicBridge` -> `VehicleCommandQueue` -> `VehicleCommandSystem` -> `VehicleEntity.setCommand(...)` |
+| `nav_msgs/msg/Path` | Display (inbound) | `displays[]` | `RosPathToPath2DAdapter` -> display plugin -> `ExternalPathUpdateQueue` -> `ExternalPathRenderSystem` -> `state.paths` |
+| `geometry_msgs/msg/PoseArray` | Display (inbound) | `displays[]` | `RosPoseArrayToPoseArray2DAdapter` -> display plugin -> `ExternalPoseArrayUpdateQueue` -> `ExternalPoseArrayRenderSystem` -> `state.poseArrays` |
+| `geometry_msgs/msg/Twist` | Control (inbound) | `actions[]` | `RosTwistToVehicleCommandAdapter` -> `VehicleCommandTopicBridge` -> `VehicleCommandQueue` -> `VehicleCommandSystem` -> `VehicleEntity.setCommand(...)` |
+| `geometry_msgs/msg/PoseWithCovarianceStamped` | Publisher (outbound) | `publishers[]` | `GaussianPoseNoise2D` -> `VehicleNoisyPosePublisherBridge` -> `SimPoseWithCovarianceToRosPoseWithCovarianceStampedAdapter` -> rosbridge transport |
 
 ## Scenario Editor Contract
 
 Every selected supported topic must be reflected in the Scenario Editor.
 
-Display selections go under:
+All external connections are declared under `connections`, keyed by a
+user-chosen id. The `kind` field identifies the transport; `url` is optional.
+
+Display selections go into `displays[]`:
 
 ```json
 {
-  "visualization": {
-    "ros2Topics": [
-      {
+  "connections": {
+    "rosbridge": { "kind": "rosbridge" }
+  },
+  "displays": [
+    {
+      "source": {
+        "connection": "rosbridge",
         "topic": "/circle_path",
-        "messageType": "nav_msgs/msg/Path",
-        "style": {
-          "color": "#f0c14a",
-          "thickness": 2
-        }
+        "messageType": "nav_msgs/msg/Path"
+      },
+      "style": {
+        "color": "#f0c14a",
+        "thickness": 2
       }
-    ]
-  }
+    }
+  ]
 }
 ```
 
-Control selections go under a type-specific interaction family. For Twist:
+Control selections go into `actions[]`. For Twist:
 
 ```json
 {
-  "interaction": {
-    "ros2TwistControls": [
-      {
+  "connections": {
+    "rosbridge": { "kind": "rosbridge" }
+  },
+  "actions": [
+    {
+      "source": {
+        "connection": "rosbridge",
         "topic": "/cmd_vel",
-        "vehicleId": "ego",
-        "enabled": true
+        "messageType": "geometry_msgs/msg/Twist"
+      },
+      "target": { "kind": "vehicle", "id": "ego" },
+      "enabled": true
+    }
+  ]
+}
+```
+
+Outbound publisher selections go into `publishers[]`:
+
+```json
+{
+  "connections": {
+    "rosbridge": { "kind": "rosbridge" }
+  },
+  "publishers": [
+    {
+      "source": { "connection": "rosbridge" },
+      "topic": "/sim/ego/noisy_pose",
+      "messageType": "geometry_msgs/msg/PoseWithCovarianceStamped",
+      "vehicleId": "ego",
+      "frameId": "map",
+      "rateHz": 20,
+      "noise": {
+        "model": "gaussian2d",
+        "stdDev": { "x": 0.05, "y": 0.05, "yaw": 0.02 },
+        "seed": 1234
       }
-    ]
-  }
+    }
+  ]
 }
 ```
 
 Rules:
 
 - Selecting a topic writes the scenario entry.
-- Deselecting a display topic removes it from `visualization.ros2Topics`.
+- Deselecting a display topic removes it from `displays[]`.
 - Disabling a control topic may preserve the entry with `enabled: false` when
   that is useful for a lossless UI round trip.
 - Loading a scenario applies its selected topics back into the live UI state.
@@ -162,8 +225,8 @@ Changing one topic selection must not:
 Expected log shape when toggling a Twist topic:
 
 ```text
-twist bridge started: topic="/cmd_vel" vehicleId="ego"
-twist bridge stopped: count=1
+[CommunicationProvider] twist bridge started: topic="/cmd_vel" vehicleId="ego"
+[CommunicationProvider] twist bridges stopped (count=1)
 ```
 
 Unexpected log shape:
@@ -252,7 +315,7 @@ Rules:
 
 - No `/cmd_vel -> ego` fallback exists.
 - `enabled !== false` means active.
-- Empty or missing `interaction.ros2TwistControls` means no Twist bridge.
+- Empty or missing `actions[]` means no Twist bridge.
 - `VehicleEntity.setCommand(...)` is sticky: the last command remains until a
   new command changes it.
 - Deselecting a Twist binding must explicitly define what happens to the

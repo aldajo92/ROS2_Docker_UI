@@ -102,6 +102,45 @@ Ros2TopicsPanel
 
 ---
 
+### `pose_array_2d` — Pose Array
+
+| Property | Value |
+|---|---|
+| **Plugin id** | `pose_array_2d` |
+| **Plugin file** | `src/app/display/plugins/PoseArrayDisplayPlugin.ts` |
+| **ROS 2 message type** | `geometry_msgs/msg/PoseArray` |
+| **Binding file** | `src/infrastructure/communication/rosbridge/display/RosTopicDisplayBindings.ts` |
+| **Adapter** | `src/infrastructure/communication/rosbridge/adapters/RosPoseArrayToPoseArray2DAdapter.ts` |
+| **Internal artifact** | `PoseArray2D` (`src/simulation/poses/PoseArray2D.ts`) |
+| **Simulation queue** | `ExternalPoseArrayUpdateQueue` |
+| **Simulation system** | `ExternalPoseArrayRenderSystem` |
+| **Renderers** | `ThreePoseArrayRenderer`, `PhaserPoseArrayRenderer` |
+| **Replay support** | Partial — pose arrays live in `state.poseArrays` but are not yet snapshot/restored |
+
+#### Visual config
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `color` | `string` (CSS hex) | `#00bcd4` | Arrow color |
+| `arrowSize` | `number` | `0.5` | Total arrow length in meters |
+| `thickness` | `number` | `2` | Arrow shaft thickness in renderer-specific units |
+
+#### What happens end-to-end
+
+1. Topic discovery finds a topic with type `geometry_msgs/msg/PoseArray`.
+2. The user checks the topic in `Ros2TopicsPanel`.
+3. `RosbridgeRenderableTopics.selectTopic()` looks up the `geometry_msgs/msg/PoseArray` binding.
+4. The binding creates a `RosPoseArrayToPoseArray2DAdapter` keyed to the topic name.
+5. On each incoming ROS message the adapter converts it to a `PoseArray2D`.
+6. `poseArrayDisplayPlugin.applyConfig()` stamps color + arrowSize onto the artifact.
+7. `poseArrayDisplayPlugin.enqueueUpsert()` pushes the artifact into `ExternalPoseArrayUpdateQueue`.
+8. During the next engine tick `ExternalPoseArrayRenderSystem` drains the queue into `state.poseArrays`.
+9. `ThreePoseArrayRenderer` / `PhaserPoseArrayRenderer` reads `state.poseArrays` and draws one arrow per pose.
+10. Unchecking the topic calls `enqueueRemove()`, which removes the pose array from `state.poseArrays`
+    on the next tick.
+
+---
+
 ## Adding the next plugin
 
 Follow these steps in order. Each step references the files to create or edit.
@@ -234,10 +273,10 @@ following paths in the same PR:
 - The artifact type if the renderer needs to read the styled value from
   `SimulationState`.
 - The plugin's `applyConfig()` implementation.
-- `ScenarioVisualizationTopicStyle` in `src/simulation/scenarios/Scenario.ts`.
-- `ScenarioLoader.parse()` validation for `visualization.ros2Topics[].style`.
-- The scenario visualization projection helper in
-  `src/ui/scenario/ScenarioVisualizationSync.ts`, so live UI edits are written
+- `ScenarioDisplaySpec.style` in `src/simulation/scenarios/Scenario.ts`.
+- `ScenarioLoader.parse()` validation for `displays[].style`.
+- The scenario topic config helper in
+  `src/ui/scenario/ScenarioTopicConfig.ts`, so live UI edits are written
   back into the Scenario Editor JSON.
 - The scenario-load apply path in `App.tsx`, so scenario-declared style fields
   are applied back into `RenderableTopicCapability`.
@@ -383,13 +422,13 @@ Required test categories (mirror the existing `path2d` tests as a template):
 | Replay snapshot | `createSnapshotFromState.test.ts` (extend existing) |
 | Architecture boundary | `architecture.display.test.ts` catches violations automatically |
 | Scenario style parse | `ScenarioLoader.test.ts` validates every `style` field |
-| Scenario editor sync | `ScenarioVisualizationSync.test.ts` verifies UI style edits serialize into `visualization.ros2Topics[].style` |
+| Scenario editor sync | `ScenarioTopicConfig.test.ts` verifies UI style edits serialize into `displays[].style` |
 
 For every visual-config field exposed by the plugin UI, add tests for both
 directions of the scenario round-trip:
 
-- [ ] Loading scenario JSON applies `visualization.ros2Topics[].style.<field>` to
-      the live selected topic config.
+- [ ] Loading scenario JSON applies `displays[].style.<field>` to the live
+      selected topic config.
 - [ ] Editing the UI control writes `<field>` back into the Scenario Editor JSON.
 - [ ] Defaults are omitted from JSON only when they truly match the plugin's own
       defaults, not another plugin's defaults.
@@ -441,6 +480,7 @@ Before opening a PR for a new plugin, confirm:
 | Plugin | Artifact in `state` | Snapshot | Restore | Status |
 |---|---|---|---|---|
 | `path2d` | `state.paths` | No | No | Deferred — paths are live-only today |
+| `pose_array_2d` | `state.poseArrays` | No | No | Deferred — pose arrays are live-only today |
 
 > **Rule:** future plugins must include replay support from the first implementation.
 > A plugin is not considered complete until its artifact is snapshot and restored.

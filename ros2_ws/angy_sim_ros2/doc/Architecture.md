@@ -1520,22 +1520,31 @@ scenario events, Python planners, joysticks, UI buttons — pushes a
 `vehicle.setCommand(...)`. This is what makes the simulator
 deterministic, replayable, and renderer/transport-agnostic.
 
-### Scenario-declared ROS 2 Twist control
+### Scenario-declared ROS 2 topics
 
-`scenario.interaction.ros2TwistControls` declares which ROS 2
-`geometry_msgs/msg/Twist` topics drive which vehicles. It is a list of
-`{ topic, vehicleId, enabled?, scale?, limits?, timeoutSec?, onTimeout? }`
-entries. Architectural notes:
+The scenario schema has three top-level blocks for external ROS 2 topics, all
+of which reference entries in the `connections` map by name:
+
+```json
+{
+  "connections": {
+    "rosbridge": { "kind": "rosbridge", "url": "ws://localhost:9090" }
+  },
+  "actions": [ … ],
+  "displays": [ … ],
+  "publishers": [ … ]
+}
+```
+
+**`actions[]`** — inbound control topics that drive simulation behavior. The
+only currently supported message type is `geometry_msgs/msg/Twist`, which
+routes to a named vehicle via `VehicleCommandTopicBridge`. Each entry carries
+`source.connection`, `source.topic`, `source.messageType`, `target.kind`,
+`target.id`, and optional `enabled`, `scale`, `limits`, `timeoutSec`, and
+`onTimeout`. Architectural notes:
 
 - The block is **control config**, not visualization. It does not
-  belong under `visualization` and does not affect rendering.
-- The message contract is implicit. The block is named
-  `ros2TwistControls`, so individual entries do **not** carry a
-  `messageType` field. The wire format is always
-  `geometry_msgs/msg/Twist` and the runtime conversion is fixed:
-  `Twist.linear.x → linearVelocity`, `Twist.angular.z → angularVelocity`.
-  Adding richer message types is a future schema change with its own
-  block name.
+  affect rendering.
 - Wire-shape parsing and `scale` / `limits` clamping live in the
   rosbridge adapter (`RosTwistToVehicleCommandAdapter`) under
   `src/infrastructure/communication/rosbridge/`. The simulation core
@@ -1548,23 +1557,33 @@ entries. Architectural notes:
   new scenario or a UI dropdown choice rewires subscriptions
   automatically.
 - The Inspector exposes a per-row vehicle dropdown for
-  `geometry_msgs/msg/Twist` rows in `Ros2TopicsPanel`. The dropdown
-  reads from the same lifted state. Dropdown / checkbox changes are
-  projected back into the Scenario Editor JSON under
-  `interaction.ros2TwistControls`, so a downloaded scenario can
-  reproduce the selected control bindings. This mirrors the display
-  topic rule: every supported selected topic must be reflected in the
-  editor, using the scenario block appropriate for its category.
+  `geometry_msgs/msg/Twist` rows in `Ros2TopicsPanel`. Dropdown /
+  checkbox changes are projected back into the Scenario Editor JSON
+  under `actions[]`, so a downloaded scenario can reproduce the
+  selected control bindings.
 - `timeoutSec` and `onTimeout: "stop"` are parsed and stored for
-  forward compatibility but are not yet wired into the runtime; a
-  binding with a configured timeout behaves like one without it. This
-  deferral is documented here so on-disk JSON stays honest about what
-  the runtime actually honors today.
+  forward compatibility but are not yet wired into the runtime.
 - Precedence: keyboard control and ROS Twist control feed the same
   `VehicleCommandQueue`. Within a single tick, the *last* command for
   a given vehicle wins (`setCommand` is "last write wins"). There is
   no cross-source arbitration — both sources are first-class and
   compose cleanly because they share the queue.
+
+**`displays[]`** — inbound display topics whose data the UI renders as visual
+artifacts (paths, pose arrays, etc.). Each entry carries `source.connection`,
+`source.topic`, `source.messageType`, optional `enabled`, and optional `style`
+(color, thickness, arrowSize). The simulation core never reads this block; the
+React shell applies it via `RenderableTopicCapability` at scenario-load time.
+
+**`publishers[]`** — outbound telemetry topics the simulation publishes to
+external consumers. The only currently supported message type is
+`geometry_msgs/msg/PoseWithCovarianceStamped`, which publishes a vehicle's
+noisy measured pose at a configurable rate. Each entry carries
+`source.connection`, `topic`, `messageType`, `vehicleId`, `frameId`,
+`childFrameId`, `rateHz`, optional `enabled`, and optional `noise`
+(model, stdDev, seed). Publisher lifecycle is managed via
+`CommunicationSystem.addPublisher` / `removePublisher` so scenario changes do
+not reconnect the transport. See `Topic_Support_Guide.md` for the full recipe.
 
 ## Extension points
 
