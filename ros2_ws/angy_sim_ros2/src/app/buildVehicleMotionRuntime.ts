@@ -24,11 +24,9 @@ export class VehicleMotionRuntimeAsyncRequired extends Error {
  *
  * `kinematic` is synchronous and used by default.
  *
- * `rapier` requires async WASM initialization — throws `VehicleMotionRuntimeAsyncRequired`
- * so callers can detect the need for async init without a string match.
- * `SimulationProvider` handles this automatically via its async path.
- *
- * `remote` is not yet implemented and throws a plain `Error`.
+ * `rapier` and `remote` require async initialization — each throws
+ * `VehicleMotionRuntimeAsyncRequired` so callers can detect the async path
+ * without string matching. `SimulationProvider` handles this automatically.
  */
 export function buildVehicleMotionRuntime(
   config: VehicleMotionRuntimeConfig,
@@ -39,6 +37,6 @@ export function buildVehicleMotionRuntime(
     case 'rapier':
       throw new VehicleMotionRuntimeAsyncRequired('rapier')
     case 'remote':
-      throw new Error('Vehicle motion runtime "remote" is not implemented yet.')
+      throw new VehicleMotionRuntimeAsyncRequired('remote')
   }
 }

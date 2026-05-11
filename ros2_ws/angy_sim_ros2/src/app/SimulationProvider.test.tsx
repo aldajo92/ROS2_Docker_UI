@@ -82,10 +82,40 @@ describe('SimulationProvider', () => {
     expect(vehicle.pose.position.x).toBeCloseTo(1)
   })
 
-  it('vehicleMotionRuntimeConfig remote: throws immediately at mount (unsupported, not async)', () => {
-    expect(() => mountProvider({ vehicleMotionRuntimeConfig: { type: 'remote' } })).toThrow(
-      'Vehicle motion runtime "remote" is not implemented yet.',
-    )
+  it('vehicleMotionRuntimeConfig remote: renders null initially, then provides working engine', async () => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+
+    let captured: SimulationContextValue | null = null
+    function Probe() {
+      captured = useContext(SimulationContext)
+      return null
+    }
+
+    act(() => {
+      root!.render(
+        <SimulationProvider vehicleMotionRuntimeConfig={{ type: 'remote' }}>
+          <Probe />
+        </SimulationProvider>,
+      )
+    })
+    expect(captured).toBeNull()
+
+    await vi.waitFor(() => {
+      if (captured === null) throw new Error('engine not ready')
+    }, { timeout: 5000, interval: 50 })
+
+    expect(captured).not.toBeNull()
+    const vehicle = new VehicleEntity({
+      id: 'ego',
+      pose: Pose2D.of(0, 0, 0),
+      controls: { v: 1, w: 0 },
+    })
+    captured!.engine.state.entities.add(vehicle)
+    // Remote step is async — await so the entity pose is written back before asserting.
+    await act(async () => { await captured!.engine.step(1.0) })
+    expect(vehicle.pose.position.x).toBeGreaterThan(0)
   })
 
   it('vehicleMotionRuntimeConfig rapier: renders null initially, then provides working engine', async () => {

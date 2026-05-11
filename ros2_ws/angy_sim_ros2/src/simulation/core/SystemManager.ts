@@ -16,6 +16,15 @@ export interface SystemManagerInstrument {
 /**
  * Holds an ordered list of systems and runs them sequentially each
  * tick. Order matters — e.g. dynamics should run before collision.
+ *
+ * When every system's `update()` returns `void` (the common case for
+ * kinematic/rapier), the entire tick completes synchronously with zero
+ * extra overhead — the return value is `undefined`.
+ *
+ * When a system returns a `Promise<void>` (e.g. `VehicleDynamicsSystem`
+ * backed by a remote runtime), subsequent systems are chained via
+ * `.then()` so they run only after the async work settles. The manager
+ * returns the tail Promise to the caller.
  */
 export class SystemManager {
   private systems: SimulationSystem[] = []
@@ -39,30 +48,50 @@ export class SystemManager {
   }
 
   /**
-   * Runs every registered system in registration order. When
-   * `instrument` is provided, `beforeSystem` / `afterSystem` wrap each
-   * call — this is how the wall-clock profiler captures per-system
-   * durations without the manager depending on the profiler module.
-   * The no-instrument code path is byte-equivalent to the pre-profiler
-   * implementation and carries zero extra overhead.
+   * Runs every registered system in registration order.
+   *
+   * Returns `undefined` (void) when the entire run is synchronous,
+   * or a `Promise<void>` that resolves when all async work completes.
+   *
+   * Instrumentation via `beforeSystem`/`afterSystem` wraps the
+   * synchronous entry point of each system regardless of async depth.
+   * The no-instrument synchronous path is zero-overhead.
    */
   update(
     dt: number,
     state: SimulationState,
     instrument?: SystemManagerInstrument,
-  ): void {
-    if (!instrument) {
-      for (const sys of this.systems) sys.update(dt, state)
-      return
-    }
+  ): void | Promise<void> {
+    let chain: Promise<void> | null = null
+
     for (const sys of this.systems) {
-      instrument.beforeSystem(sys.name)
-      try {
-        sys.update(dt, state)
-      } finally {
-        instrument.afterSystem(sys.name)
+      if (chain !== null) {
+        const s = sys
+        chain = chain.then(() => {
+          instrument?.beforeSystem(s.name)
+          let result: void | Promise<void>
+          try {
+            result = s.update(dt, state)
+          } finally {
+            instrument?.afterSystem(s.name)
+          }
+          return result instanceof Promise ? result : undefined
+        })
+      } else {
+        instrument?.beforeSystem(sys.name)
+        let result: void | Promise<void>
+        try {
+          result = sys.update(dt, state)
+        } finally {
+          instrument?.afterSystem(sys.name)
+        }
+        if (result instanceof Promise) {
+          chain = result
+        }
       }
     }
+
+    return chain ?? undefined
   }
 
   /** Invoke `reset` on every system that defines it. Order follows

@@ -58,6 +58,8 @@ export class SimulationEngine {
   readonly recorder: SimulationRecorder
   readonly profiler: SimulationProfiler
   private loop: SimulationLoop
+  /** Non-null while an async manual step is in-flight. Guards against overlap. */
+  private _pendingTick: Promise<void> | null = null
 
   constructor(options: SimulationEngineOptions = {}) {
     this.clock = new SimulationClock()
@@ -78,7 +80,14 @@ export class SimulationEngine {
       enabled: options.profilerEnabled ?? true,
     })
     this.loop = new SimulationLoop({ fixedDtSec: options.fixedDtSec ?? 1 / 60 })
-    this.loop.setStepCallback((dt) => this.tick(dt))
+    this.loop.setStepCallback((dt) => {
+      const r = this.tick(dt)
+      if (!(r instanceof Promise)) return r
+      // Catch async tick failures so the loop never produces unhandled rejections.
+      return r.catch((err: unknown) => {
+        this.logger.error('SimulationEngine: async tick failed', err)
+      })
+    })
   }
 
   /* -- lifecycle ------------------------------------------------------- */
@@ -95,17 +104,36 @@ export class SimulationEngine {
     this.events.emit('paused', undefined)
   }
 
-  /** Manually advance one step. Ignored while the timer-driven loop runs. */
-  step(dt?: number): void {
+  /**
+   * Manually advance one step. Ignored while the timer-driven loop runs.
+   *
+   * Returns `undefined` (void) for synchronous runtimes (kinematic, rapier).
+   * Returns a `Promise<void>` when a system performs async work (e.g. remote
+   * runtime). Callers that need to observe the post-tick state for async
+   * runtimes should `await` the return value.
+   *
+   * A second call while the previous async step is still in-flight is
+   * silently ignored (same policy as calling step() while the loop runs).
+   */
+  step(dt?: number): void | Promise<void> {
     if (this.loop.isRunning()) {
       this.logger.warn('SimulationEngine.step ignored: loop is running')
       return
     }
-    this.tick(dt ?? this.loop.getFixedDt())
+    if (this._pendingTick) {
+      this.logger.warn('SimulationEngine.step ignored: previous async step still pending')
+      return
+    }
+    const result = this.tick(dt ?? this.loop.getFixedDt())
+    if (result instanceof Promise) {
+      this._pendingTick = result.finally(() => { this._pendingTick = null })
+      return this._pendingTick
+    }
   }
 
   reset(): void {
     this.loop.pause()
+    this._pendingTick = null // allow new manual steps after reset
     this.clock.reset()
     this.entities.clear()
     this.state.resetMetrics()
@@ -315,7 +343,7 @@ export class SimulationEngine {
 
   /* -- internals ------------------------------------------------------- */
 
-  private tick(dt: number): void {
+  private tick(dt: number): void | Promise<void> {
     this.clock.tick(dt)
 
     // Profiler instrumentation is diagnostic-only: it observes
@@ -324,20 +352,32 @@ export class SimulationEngine {
     // `undefined`, and `SystemManager.update` follows the original
     // zero-overhead iteration path.
     this.profiler.beginTick()
-    this.systems.update(dt, this.state, this.profiler.getSystemInstrument())
-    this.state.metrics.ticks += 1
-    const sample = this.profiler.endTick({
-      tickIndex: this.state.metrics.ticks,
-      simDtSec: dt,
-    })
+    const updateResult = this.systems.update(dt, this.state, this.profiler.getSystemInstrument())
 
-    this.events.emit('tick', {
-      time: this.clock.time(),
-      dt,
-      ticks: this.state.metrics.ticks,
-    })
-    if (sample) {
-      this.events.emit('profileSample', sample)
+    const afterUpdate = (): void => {
+      this.state.metrics.ticks += 1
+      const sample = this.profiler.endTick({
+        tickIndex: this.state.metrics.ticks,
+        simDtSec: dt,
+      })
+      this.events.emit('tick', {
+        time: this.clock.time(),
+        dt,
+        ticks: this.state.metrics.ticks,
+      })
+      if (sample) {
+        this.events.emit('profileSample', sample)
+      }
     }
+
+    if (updateResult instanceof Promise) {
+      return updateResult.then(afterUpdate, (err: unknown) => {
+        // Balance beginTick/endTick so the profiler stays consistent on failure.
+        this.profiler.endTick({ tickIndex: this.state.metrics.ticks, simDtSec: dt })
+        throw err
+      })
+    }
+
+    afterUpdate()
   }
 }

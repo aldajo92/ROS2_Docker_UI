@@ -1,4 +1,4 @@
-type StepCallback = (dt: number) => void
+type StepCallback = (dt: number) => void | Promise<void>
 
 export interface SimulationLoopOptions {
   /** Fixed simulation step in seconds (default 1/60 ≈ 16.67 ms). */
@@ -14,12 +14,17 @@ export interface SimulationLoopOptions {
  * `setInterval` (over `requestAnimationFrame`) keeps the loop usable in
  * Node tests and in headless workers; if vsync-locked stepping is
  * needed the renderer can drive `stepOnce(dt)` from its frame loop.
+ *
+ * When the step callback returns a Promise (async runtime), the loop
+ * skips the next interval fire until the current tick resolves —
+ * preventing overlapping ticks under a slow remote backend.
  */
 export class SimulationLoop {
   private fixedDtSec: number
   private speedFactor: number
   private callback: StepCallback | null = null
   private intervalHandle: ReturnType<typeof setInterval> | null = null
+  private ticking = false
 
   constructor(options: SimulationLoopOptions = {}) {
     this.fixedDtSec = options.fixedDtSec ?? 1 / 60
@@ -69,6 +74,13 @@ export class SimulationLoop {
   }
 
   private fire(): void {
-    if (this.callback) this.callback(this.fixedDtSec)
+    if (this.ticking) return
+    const result = this.callback?.(this.fixedDtSec)
+    if (result instanceof Promise) {
+      this.ticking = true
+      result.finally(() => {
+        this.ticking = false
+      })
+    }
   }
 }

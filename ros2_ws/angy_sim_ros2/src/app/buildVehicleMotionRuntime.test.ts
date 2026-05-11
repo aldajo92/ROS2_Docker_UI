@@ -26,11 +26,8 @@ describe('buildVehicleMotionRuntime', () => {
     )
   })
 
-  it('"remote" throws a plain Error (unsupported, not async-init)', () => {
+  it('"remote" throws VehicleMotionRuntimeAsyncRequired (needs async init)', () => {
     expect(() => buildVehicleMotionRuntime({ type: 'remote' })).toThrow(
-      'Vehicle motion runtime "remote" is not implemented yet.',
-    )
-    expect(() => buildVehicleMotionRuntime({ type: 'remote' })).not.toThrow(
       VehicleMotionRuntimeAsyncRequired,
     )
   })

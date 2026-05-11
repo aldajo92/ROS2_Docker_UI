@@ -13,7 +13,7 @@ import type { SimulationState } from '../core/SimulationState'
  */
 export interface SimulationSystem {
   readonly name: string
-  update(dt: number, state: SimulationState): void
+  update(dt: number, state: SimulationState): void | Promise<void>
   reset?(): void
   dispose?(): void
 }

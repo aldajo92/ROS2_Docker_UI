@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { buildVehicleMotionRuntimeAsync } from './buildVehicleMotionRuntimeAsync'
 import { KinematicVehicleMotionRuntime } from '../simulation/physics/KinematicVehicleMotionRuntime'
 import { RapierVehicleMotionRuntime } from '../infrastructure/physics/rapier/RapierVehicleMotionRuntime'
+import { RemoteVehicleMotionRuntime } from '../infrastructure/physics/remote/RemoteVehicleMotionRuntime'
 
 describe('buildVehicleMotionRuntimeAsync', () => {
   it('kinematic returns KinematicVehicleMotionRuntime', async () => {
@@ -23,9 +24,17 @@ describe('buildVehicleMotionRuntimeAsync', () => {
     b.dispose?.()
   })
 
-  it('remote throws not-implemented error', async () => {
-    await expect(buildVehicleMotionRuntimeAsync({ type: 'remote' })).rejects.toThrow(
-      'Vehicle motion runtime "remote" is not implemented yet.',
-    )
+  it('remote returns RemoteVehicleMotionRuntime', async () => {
+    const runtime = await buildVehicleMotionRuntimeAsync({ type: 'remote' })
+    expect(runtime).toBeInstanceOf(RemoteVehicleMotionRuntime)
+    runtime.dispose?.()
+  })
+
+  it('each remote call returns a new instance', async () => {
+    const a = await buildVehicleMotionRuntimeAsync({ type: 'remote' })
+    const b = await buildVehicleMotionRuntimeAsync({ type: 'remote' })
+    expect(a).not.toBe(b)
+    a.dispose?.()
+    b.dispose?.()
   })
 })
