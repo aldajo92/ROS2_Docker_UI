@@ -69,6 +69,10 @@ import {
   DEFAULT_RENDERER_TYPE,
   type RendererType,
 } from '../ui/viewport/RendererType'
+import {
+  DEFAULT_VEHICLE_MOTION_RUNTIME_CONFIG,
+  type VehicleMotionRuntimeType,
+} from '../simulation/physics/VehicleMotionRuntimeConfig'
 import { SimulatorKeyboardControls } from '../ui/input/SimulatorKeyboardControls'
 import {
   DEFAULT_KEYBOARD_CONTROL_UI_STATE,
@@ -127,8 +131,23 @@ export default function App() {
     Ros2TwistTopicBindingState[]
   >([])
   const [publishers, setPublishers] = useState<ScenarioPublisherSpec[]>([])
+  const [motionRuntimeType, setMotionRuntimeType] =
+    useState<VehicleMotionRuntimeType>(DEFAULT_VEHICLE_MOTION_RUNTIME_CONFIG.type)
+
+  // rendererType lives here, above the keyed SimulationProvider, so it survives
+  // runtime switches — the renderer adapter (Three.js / Phaser) is unrelated to
+  // physics runtime and should not reset when the engine remounts.
+  const [rendererType, setRendererType] = useState<RendererType>(DEFAULT_RENDERER_TYPE)
+
   return (
-    <SimulationProvider>
+    // key={motionRuntimeType} remounts the entire SimulationProvider subtree when
+    // the runtime type changes, giving the new engine a clean slate.  State that
+    // must survive a runtime switch (rendererType, twistBindings, publishers) is
+    // intentionally kept above this boundary.
+    <SimulationProvider
+      key={motionRuntimeType}
+      vehicleMotionRuntimeConfig={{ type: motionRuntimeType }}
+    >
       <CommunicationProvider
         twistControlBindings={twistControlBindings}
         publishers={publishers}
@@ -138,6 +157,10 @@ export default function App() {
           onTwistControlBindingsChange={setTwistControlBindings}
           publishers={publishers}
           onPublishersChange={setPublishers}
+          motionRuntimeType={motionRuntimeType}
+          onMotionRuntimeTypeChange={setMotionRuntimeType}
+          rendererType={rendererType}
+          onRendererTypeChange={setRendererType}
         />
       </CommunicationProvider>
     </SimulationProvider>
@@ -151,12 +174,21 @@ interface AppShellProps {
   ) => void
   publishers: ScenarioPublisherSpec[]
   onPublishersChange: (next: ScenarioPublisherSpec[]) => void
+  motionRuntimeType: VehicleMotionRuntimeType
+  onMotionRuntimeTypeChange: (next: VehicleMotionRuntimeType) => void
+  /** Lifted above the SimulationProvider key boundary so it survives runtime switches. */
+  rendererType: RendererType
+  onRendererTypeChange: (next: RendererType) => void
 }
 
 function AppShell({
   twistControlBindings,
   onTwistControlBindingsChange,
   onPublishersChange,
+  motionRuntimeType,
+  onMotionRuntimeTypeChange,
+  rendererType,
+  onRendererTypeChange,
 }: AppShellProps) {
   const { engine, controller, commandQueue } = useSimulation()
   const isRunning = useSimulationRunning()
@@ -181,10 +213,6 @@ function AppShell({
       lineWidth: trajectoryVisualization.lineWidth,
     }),
     [trajectoryVisualization],
-  )
-
-  const [rendererType, setRendererType] = useState<RendererType>(
-    DEFAULT_RENDERER_TYPE,
   )
 
   // Performance overlay is diagnostic-only; hidden by default so the
@@ -1171,7 +1199,9 @@ function AppShell({
               <>
                 <RendererPanel
                   rendererType={rendererType}
-                  onRendererTypeChange={setRendererType}
+                  onRendererTypeChange={onRendererTypeChange}
+                  motionRuntimeType={motionRuntimeType}
+                  onMotionRuntimeTypeChange={onMotionRuntimeTypeChange}
                 />
                 <MetricsPanel />
                 <PerformancePanel

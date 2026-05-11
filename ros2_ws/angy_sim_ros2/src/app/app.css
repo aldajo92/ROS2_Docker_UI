@@ -524,6 +524,10 @@ body.layout-splitter-dragging {
   gap: 10px;
 }
 
+.renderer-picker + .renderer-picker {
+  margin-top: 10px;
+}
+
 .renderer-picker-label {
   flex: 0 0 auto;
   font-size: 0.85rem;

@@ -173,4 +173,48 @@ describe('SimulationProvider', () => {
       rapierRuntime.dispose?.()
     }
   })
+
+  describe('runtime switching via key remount (App.tsx contract)', () => {
+    it('each SimulationProvider mount creates a fresh engine instance', () => {
+      const ctx1 = mountProvider({ vehicleMotionRuntimeConfig: { type: 'kinematic' } })
+      const engine1 = ctx1.engine
+      cleanup()
+
+      const ctx2 = mountProvider({ vehicleMotionRuntimeConfig: { type: 'kinematic' } })
+      // Distinct instance: confirms key-based remount in App creates a clean engine
+      expect(ctx2.engine).not.toBe(engine1)
+    })
+
+    it('fresh engine after remount correctly uses vehicleMotionRuntimeConfig', () => {
+      // Simulate App switching from one runtime type to another via key remount.
+      // First mount — dispose it
+      const ctx1 = mountProvider({ vehicleMotionRuntimeConfig: { type: 'kinematic' } })
+      expect(ctx1.engine).toBeDefined()
+      cleanup()
+
+      // Second mount with (same or different) config — vehicle must advance
+      const ctx2 = mountProvider({ vehicleMotionRuntimeConfig: { type: 'kinematic' } })
+      const vehicle = new VehicleEntity({
+        id: 'ego',
+        pose: Pose2D.of(0, 0, 0),
+        controls: { v: 1, w: 0 },
+      })
+      ctx2.engine.state.entities.add(vehicle)
+      act(() => ctx2.engine.step(1.0))
+      expect(vehicle.pose.position.x).toBeCloseTo(1)
+    })
+
+    it('engine from first mount is disposed when SimulationProvider unmounts', () => {
+      const ctx = mountProvider({ vehicleMotionRuntimeConfig: { type: 'kinematic' } })
+      const engine = ctx.engine
+      // Start it so we can verify pause is called on cleanup
+      engine.start()
+      expect(engine.isRunning()).toBe(true)
+
+      cleanup()
+
+      // After unmount the engine should be paused
+      expect(engine.isRunning()).toBe(false)
+    })
+  })
 })
