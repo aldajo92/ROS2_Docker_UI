@@ -3,7 +3,9 @@ import type { ReactNode } from 'react'
 import { SimulationEngine } from '../simulation/core/SimulationEngine'
 import { SimulationController } from '../simulation/core/SimulationController'
 import { VehicleDynamicsSystem } from '../simulation/systems/VehicleDynamicsSystem'
-import { KinematicVehicleMotionRuntime } from '../simulation/physics/KinematicVehicleMotionRuntime'
+import { buildVehicleMotionRuntime } from './buildVehicleMotionRuntime'
+import type { VehicleMotionRuntimeConfig } from '../simulation/physics/VehicleMotionRuntimeConfig'
+import { DEFAULT_VEHICLE_MOTION_RUNTIME_CONFIG } from '../simulation/physics/VehicleMotionRuntimeConfig'
 import { CollisionSystem } from '../simulation/systems/CollisionSystem'
 import type { CollisionBackend2D } from '../simulation/collision/CollisionBackend2D'
 import {
@@ -47,14 +49,21 @@ export interface SimulationProviderProps {
    * Wire Rapier explicitly at the call site if you need it.
    */
   collisionConfig?: CollisionConfig
+  /**
+   * Vehicle motion runtime selector. Defaults to `{ type: 'kinematic' }`.
+   * Only `kinematic` is implemented today; passing another type throws at
+   * construction time so the misconfiguration is caught early.
+   */
+  vehicleMotionRuntimeConfig?: VehicleMotionRuntimeConfig
 }
 
 export function SimulationProvider({
   children,
   collisionConfig = DEFAULT_COLLISION_CONFIG,
+  vehicleMotionRuntimeConfig = DEFAULT_VEHICLE_MOTION_RUNTIME_CONFIG,
 }: SimulationProviderProps) {
   const [value] = useState<SimulationContextValue>(() =>
-    buildContext(collisionConfig),
+    buildContext(collisionConfig, vehicleMotionRuntimeConfig),
   )
 
   useEffect(() => {
@@ -68,7 +77,10 @@ export function SimulationProvider({
   )
 }
 
-function buildContext(collisionConfig: CollisionConfig): SimulationContextValue {
+function buildContext(
+  collisionConfig: CollisionConfig,
+  vehicleMotionRuntimeConfig: VehicleMotionRuntimeConfig,
+): SimulationContextValue {
   const engine = new SimulationEngine()
   const commandQueue = new VehicleCommandQueue()
   const externalPathQueue = new ExternalPathUpdateQueue()
@@ -90,7 +102,7 @@ function buildContext(collisionConfig: CollisionConfig): SimulationContextValue 
   engine.systems.add(new VehicleCommandSystem(commandQueue))
   engine.systems.add(new ExternalPathRenderSystem(externalPathQueue))
   engine.systems.add(new ExternalPoseArrayRenderSystem(externalPoseArrayQueue))
-  engine.systems.add(new VehicleDynamicsSystem(new KinematicVehicleMotionRuntime()))
+  engine.systems.add(new VehicleDynamicsSystem(buildVehicleMotionRuntime(vehicleMotionRuntimeConfig)))
   engine.systems.add(new TrajectoryTrackingSystem())
   engine.systems.add(new CollisionSystem(buildCollisionBackend(collisionConfig)))
   engine.systems.add(new MetricsSystem())
