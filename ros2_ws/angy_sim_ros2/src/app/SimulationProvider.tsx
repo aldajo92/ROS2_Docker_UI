@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { SimulationEngine } from '../simulation/core/SimulationEngine'
 import { SimulationController } from '../simulation/core/SimulationController'
 import { VehicleDynamicsSystem } from '../simulation/systems/VehicleDynamicsSystem'
+import { KinematicVehicleMotionRuntime } from '../simulation/physics/KinematicVehicleMotionRuntime'
 import { CollisionSystem } from '../simulation/systems/CollisionSystem'
 import type { CollisionBackend2D } from '../simulation/collision/CollisionBackend2D'
 import {
@@ -89,7 +90,7 @@ function buildContext(collisionConfig: CollisionConfig): SimulationContextValue 
   engine.systems.add(new VehicleCommandSystem(commandQueue))
   engine.systems.add(new ExternalPathRenderSystem(externalPathQueue))
   engine.systems.add(new ExternalPoseArrayRenderSystem(externalPoseArrayQueue))
-  engine.systems.add(new VehicleDynamicsSystem())
+  engine.systems.add(new VehicleDynamicsSystem(new KinematicVehicleMotionRuntime()))
   engine.systems.add(new TrajectoryTrackingSystem())
   engine.systems.add(new CollisionSystem(buildCollisionBackend(collisionConfig)))
   engine.systems.add(new MetricsSystem())
