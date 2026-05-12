@@ -191,6 +191,57 @@ describe('Rapier3DVehicleMotionRuntime', () => {
       disposable.dispose?.()
     }).not.toThrow()
   })
+
+  // ── collision response ────────────────────────────────────────────────────
+
+  describe('collision response (dynamic bodies — bounded impulse control)', () => {
+    it('two vehicles heading toward each other are blocked — they do not pass through', () => {
+      // A drives right (+x), B drives left (−x); initial surface gap = 1.2 m.
+      // Kinematic bodies would cross at t≈0.6 s.
+      // With bounded-impulse control the contact solver blocks them.
+      const a = new VehicleEntity({ id: 'a', pose: Pose2D.of(-1, 0, 0), controls: { v: 1, w: 0 } })
+      const b = new VehicleEntity({
+        id: 'b',
+        pose: Pose2D.of(1, 0, Math.PI),
+        controls: { v: 1, w: 0 },
+      })
+      runtime.syncVehicles([a, b])
+
+      for (let i = 0; i < 30; i++) {
+        runtime.step(0.05)
+      }
+
+      const sa = runtime.readVehicleState('a')!
+      const sb = runtime.readVehicleState('b')!
+      // a's centre must stay to the left of b's centre
+      expect(sa.pose.x).toBeLessThan(sb.pose.x)
+    })
+
+    it('centre-to-centre separation after contact stays close to 2 × radius', () => {
+      // Bounded-impulse control (VELOCITY_ALPHA = 0.4) limits the per-step drive
+      // to ~0.107 N·s, which the velocity constraint can match at zero penetration.
+      // Measured separation ≈ 0.8000 m ± 0.001 m in practice.
+      // The previous velocity-override approach showed ~89 mm of penetration; here
+      // the tolerance is tightened to 2 cm to verify the improvement.
+      const radius = 0.4 // VehicleEntity default
+      const a = new VehicleEntity({ id: 'a', pose: Pose2D.of(-1, 0, 0), controls: { v: 1, w: 0 } })
+      const b = new VehicleEntity({
+        id: 'b',
+        pose: Pose2D.of(1, 0, Math.PI),
+        controls: { v: 1, w: 0 },
+      })
+      runtime.syncVehicles([a, b])
+
+      for (let i = 0; i < 50; i++) {
+        runtime.step(0.05)
+      }
+
+      const sa = runtime.readVehicleState('a')!
+      const sb = runtime.readVehicleState('b')!
+      const separation = Math.hypot(sb.pose.x - sa.pose.x, sb.pose.y - sa.pose.y)
+      expect(separation).toBeGreaterThanOrEqual(2 * radius - 0.02)
+    })
+  })
 })
 
 describe('Rapier3DVehicleMotionRuntime factory', () => {

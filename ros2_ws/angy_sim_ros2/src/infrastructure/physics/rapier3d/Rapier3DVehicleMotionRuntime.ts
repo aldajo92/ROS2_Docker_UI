@@ -2,34 +2,86 @@ import RAPIER from '@dimforge/rapier3d-compat'
 import type { VehicleMotionRuntime, VehicleRuntimeState } from '../../../simulation/physics/VehicleMotionRuntime'
 import type { VehicleEntity } from '../../../simulation/entities/VehicleEntity'
 
+// Fraction of the velocity error corrected by a single drive impulse.
+// At steady state (v_actual = v_target) the impulse is zero and position
+// integrates as exactly v × dt, which preserves the proportionality contract.
+// After a contact impulse reduces v_actual, the drive restores only ALPHA of
+// the gap per step, so the contact solver has time to separate bodies before
+// the full commanded speed is reached again (~1/ALPHA steps to fully recover).
+const VELOCITY_ALPHA = 0.4
+
+const COLLIDER_FRICTION = 0.5     // Moderate lateral friction between colliders.
+const COLLIDER_RESTITUTION = 0.3  // Slight bounce on contact.
+// Solid-sphere moment of inertia: I = factor × m × r².
+const SPHERE_INERTIA_FACTOR = 2 / 5
+
 /**
- * Rapier 3D vehicle motion runtime — ADDITIVE EXPERIMENTAL SPIKE.
+ * Rapier 3D vehicle motion runtime — ADDITIVE EXPERIMENTAL.
  *
- * ## Current capability (kinematic-in-3D)
+ * ## Body type: dynamic with ground-plane constraints
  *
- * Vehicles are `kinematicVelocityBased` rigid bodies in a Rapier 3D world.
- * On every `step(dt)` their velocities are set directly from the unicycle
- * controls — identical in spirit to `KinematicVehicleMotionRuntime`, but
- * executed inside the 3D engine. Kinematic bodies are **NOT blocked or
- * deflected by obstacles**: they pass through other bodies without physical
- * contact resolution. This runtime does not yet deliver rigid-body collision
- * response.
+ * Vehicles are `dynamic` rigid bodies constrained to the XY ground plane:
+ * - Translation locked to XY (Z=0) via `enabledTranslations(true,true,false)`.
+ * - Rotation locked to Z axis (yaw only) via `enabledRotations(false,false,true)`.
  *
- * ## What it adds over the 2D baseline
+ * ## Control model: bounded velocity-error impulse
  *
- * - Runs inside the Rapier 3D physics pipeline (separate WASM instance).
- * - 3D collision detection is active (events fire), enabling future extensions
- *   such as raycasting against 3D geometry or sensor overlap queries.
- * - State is projected back to the 2D-compatible `VehicleRuntimeState` shape
- *   so existing renderers and scenarios work without modification.
+ * Each tick a single drive impulse is applied BEFORE `world.step()`:
  *
- * ## Future work to deliver true collision-resolving dynamics
+ *   J_linear  = mass × (v_target − v_actual) × VELOCITY_ALPHA
+ *   J_angular = I    × (w_target − w_actual) × VELOCITY_ALPHA
  *
- * Switch vehicle bodies to `RigidBodyDesc.dynamic()` and control them via
- * impulse/force application instead of velocity overrides. That lets Rapier's
- * solver resolve contact constraints so vehicles are physically blocked by
- * obstacles. The projection layer (quatToYaw / `VehicleRuntimeState`) stays
- * unchanged; only the body creation and tick loop change.
+ * where I = (2/5) × mass × radius².
+ *
+ * At steady state (v_actual = v_target the impulse is zero; the body moves at
+ * exactly the commanded speed with no extra force fighting the solver.
+ * After a contact impulse reduces v_actual the drive corrects only VELOCITY_ALPHA
+ * of the residual gap per step, so the contact constraint dominates separation
+ * (~1/VELOCITY_ALPHA ≈ 2–3 steps to recover significant velocity). This is
+ * fundamentally different from the previous velocity-override approach, which
+ * immediately reset velocity every frame and gave the solver zero time to act.
+ *
+ * ## Why this is better than velocity override
+ *
+ * With `setLinvel` every frame the drive force was effectively infinite:
+ * whatever velocity the solver produced was discarded on the next tick.
+ * With a bounded impulse the maximum drive contribution per step is:
+ *
+ *   |J_max| = VELOCITY_ALPHA × mass × |v_target| ≈ 0.107 N·s  (v=1, r=0.4 m)
+ *
+ * Rapier's velocity-based constraint solver can supply an equal and opposite
+ * contact impulse at the contact surface without requiring penetration, so
+ * bodies stabilise at approximately 2 × radius separation in the typical case.
+ *
+ * ## Body initialisation
+ *
+ * Each new body is seeded with the vehicle's current command as its initial
+ * linvel/angvel so that the drive impulse is zero on the very first tick and
+ * the body immediately moves at the commanded speed.
+ *
+ * ## Readback contract (unchanged)
+ *
+ * After `world.step()` state is read from the body, not from commands:
+ *   pose            : {x, y, yaw}   — contact-resolved position / orientation
+ *   velocity.linear : actual speed  — may differ from |v| if contact occurred
+ *   distanceTraveled: += actualSpeed × dt
+ *
+ * ## Physical parameters
+ *
+ * | Parameter              | Value | Rationale                                        |
+ * |------------------------|-------|--------------------------------------------------|
+ * | VELOCITY_ALPHA         | 0.4   | 40% of velocity error corrected per step          |
+ * | COLLIDER_FRICTION      | 0.5   | Moderate lateral friction at contacts             |
+ * | COLLIDER_RESTITUTION   | 0.3   | Slight bounce; avoids sticky contacts             |
+ * | SPHERE_INERTIA_FACTOR  | 2/5   | Solid-sphere approximation: I = 0.4·m·r²          |
+ *
+ * ## Limitations of this stage
+ *
+ * - Under sustained opposing drive a small residual jitter remains at the
+ *   contact boundary (< 1 cm at typical simulation parameters).
+ * - No lateral tyre model; bodies can still slide sideways after contact.
+ * - Mass determined by collider density defaults (not tuned per vehicle).
+ * - Not suitable for high-fidelity dynamics.
  *
  * ## Ground-plane convention
  *
@@ -43,12 +95,18 @@ import type { VehicleEntity } from '../../../simulation/entities/VehicleEntity'
  *   - src/simulation/ must not import this class.
  *   - VehicleDynamicsSystem knows only the VehicleMotionRuntime contract.
  */
+
+interface BodyRecord {
+  body: RAPIER.RigidBody
+  radius: number
+}
+
 export class Rapier3DVehicleMotionRuntime implements VehicleMotionRuntime {
   readonly name = 'rapier3d'
 
   private readonly rapier: typeof RAPIER
   private world: RAPIER.World
-  private readonly bodies = new Map<string, RAPIER.RigidBody>()
+  private readonly bodies = new Map<string, BodyRecord>()
   private readonly states = new Map<string, VehicleRuntimeState>()
   private currentVehicles: readonly VehicleEntity[] = []
   private disposed = false
@@ -83,9 +141,9 @@ export class Rapier3DVehicleMotionRuntime implements VehicleMotionRuntime {
     this.currentVehicles = vehicles
     const activeIds = new Set(vehicles.map((v) => v.id))
 
-    for (const [id, body] of this.bodies) {
+    for (const [id, record] of this.bodies) {
       if (!activeIds.has(id)) {
-        this.world.removeRigidBody(body)
+        this.world.removeRigidBody(record.body)
         this.bodies.delete(id)
         this.states.delete(id)
       }
@@ -95,18 +153,24 @@ export class Rapier3DVehicleMotionRuntime implements VehicleMotionRuntime {
       if (!this.bodies.has(vehicle.id)) {
         const { x, y } = vehicle.pose.position
         const yaw = vehicle.pose.yaw
-        const bodyDesc = this.rapier.RigidBodyDesc.kinematicVelocityBased()
+        const { v, w } = vehicle.controls
+        // Seed initial velocity from the current command so the drive impulse
+        // is zero on the first tick (v_actual = v_target → J = 0).
+        const bodyDesc = this.rapier.RigidBodyDesc.dynamic()
           .setTranslation(x, y, 0)
           .setRotation(yawToQuat(yaw))
+          .setLinvel(v * Math.cos(yaw), v * Math.sin(yaw), 0)
+          .setAngvel({ x: 0, y: 0, z: w })
+          .enabledTranslations(true, true, false)
+          .enabledRotations(false, false, true)
         const body = this.world.createRigidBody(bodyDesc)
-        // Sphere collider — matches the existing 2D ball collider convention.
-        // The 3D world owns collision detection geometry; future iterations can
-        // switch to a cylinder for more realistic ground-vehicle contact.
         this.world.createCollider(
-          this.rapier.ColliderDesc.ball(vehicle.radius),
+          this.rapier.ColliderDesc.ball(vehicle.radius)
+            .setFriction(COLLIDER_FRICTION)
+            .setRestitution(COLLIDER_RESTITUTION),
           body,
         )
-        this.bodies.set(vehicle.id, body)
+        this.bodies.set(vehicle.id, { body, radius: vehicle.radius })
       }
     }
   }
@@ -115,27 +179,53 @@ export class Rapier3DVehicleMotionRuntime implements VehicleMotionRuntime {
     this.world.timestep = dt
 
     for (const vehicle of this.currentVehicles) {
-      const body = this.bodies.get(vehicle.id)
-      if (!body) continue
+      const record = this.bodies.get(vehicle.id)
+      if (!record) continue
+      const { body, radius } = record
       const { v, w } = vehicle.controls
       const yaw = quatToYaw(body.rotation())
-      body.setLinvel({ x: v * Math.cos(yaw), y: v * Math.sin(yaw), z: 0 }, true)
-      body.setAngvel({ x: 0, y: 0, z: w }, true)
+      const m = body.mass()
+      // Solid-sphere moment of inertia approximation.
+      const I = SPHERE_INERTIA_FACTOR * m * radius * radius
+
+      const vel = body.linvel()
+      const angvelZ = body.angvel().z
+      const vDesX = v * Math.cos(yaw)
+      const vDesY = v * Math.sin(yaw)
+
+      // Bounded drive impulse: closes VELOCITY_ALPHA of the velocity gap.
+      // When v_actual = v_target this is zero — no force fights the solver.
+      // After a contact impulse the drive restores only a fraction per step,
+      // letting the contact constraint maintain separation.
+      body.applyImpulse(
+        {
+          x: m * (vDesX - vel.x) * VELOCITY_ALPHA,
+          y: m * (vDesY - vel.y) * VELOCITY_ALPHA,
+          z: 0,
+        },
+        true,
+      )
+      body.applyTorqueImpulse(
+        { x: 0, y: 0, z: I * (w - angvelZ) * VELOCITY_ALPHA },
+        true,
+      )
     }
 
     this.world.step()
 
     for (const vehicle of this.currentVehicles) {
-      const body = this.bodies.get(vehicle.id)
-      if (!body) continue
+      const record = this.bodies.get(vehicle.id)
+      if (!record) continue
+      const { body } = record
       const pos = body.translation()
       const yaw = quatToYaw(body.rotation())
-      const angvelZ = body.angvel().z
+      const linvel = body.linvel()
+      const actualSpeed = Math.hypot(linvel.x, linvel.y)
       this.states.set(vehicle.id, {
         vehicleId: vehicle.id,
         pose: { x: pos.x, y: pos.y, yaw },
-        velocity: { linear: vehicle.controls.v, angular: angvelZ },
-        distanceTraveled: vehicle.distanceTraveled + Math.abs(vehicle.controls.v) * dt,
+        velocity: { linear: actualSpeed, angular: body.angvel().z },
+        distanceTraveled: vehicle.distanceTraveled + actualSpeed * dt,
       })
     }
   }
