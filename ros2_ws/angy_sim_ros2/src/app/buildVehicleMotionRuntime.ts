@@ -24,7 +24,7 @@ export class VehicleMotionRuntimeAsyncRequired extends Error {
  *
  * `kinematic` is synchronous and used by default.
  *
- * `rapier` and `remote` require async initialization — each throws
+ * `rapier`, `rapier3d`, and `remote` require async initialization — each throws
  * `VehicleMotionRuntimeAsyncRequired` so callers can detect the async path
  * without string matching. `SimulationProvider` handles this automatically.
  */
@@ -36,6 +36,8 @@ export function buildVehicleMotionRuntime(
       return new KinematicVehicleMotionRuntime()
     case 'rapier':
       throw new VehicleMotionRuntimeAsyncRequired('rapier')
+    case 'rapier3d':
+      throw new VehicleMotionRuntimeAsyncRequired('rapier3d')
     case 'remote':
       throw new VehicleMotionRuntimeAsyncRequired('remote')
   }

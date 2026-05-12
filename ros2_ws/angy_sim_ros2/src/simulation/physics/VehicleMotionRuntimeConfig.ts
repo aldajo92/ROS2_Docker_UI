@@ -1,10 +1,14 @@
 /**
  * Identifies which vehicle motion runtime the composition root should build.
- * `kinematic`, `rapier`, and `remote` are all implemented. Heavy runtime
- * implementations belong in `src/infrastructure/` — this file owns only
- * the selection contract.
+ * `kinematic`, `rapier`, `rapier3d`, and `remote` are all registered. Heavy
+ * runtime implementations belong in `src/infrastructure/` — this file owns
+ * only the selection contract.
+ *
+ * `rapier3d` is an additive experimental path: Rapier 3D physics on the XY
+ * ground plane. It is independent of the stable `kinematic` baseline and does
+ * not change existing runtime semantics.
  */
-export type VehicleMotionRuntimeType = 'kinematic' | 'rapier' | 'remote'
+export type VehicleMotionRuntimeType = 'kinematic' | 'rapier' | 'rapier3d' | 'remote'
 
 export interface VehicleMotionRuntimeConfig {
   type: VehicleMotionRuntimeType

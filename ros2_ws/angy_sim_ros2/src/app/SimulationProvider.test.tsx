@@ -155,6 +155,43 @@ describe('SimulationProvider', () => {
     expect(vehicle.pose.position.x).toBeGreaterThan(0)
   })
 
+  it('vehicleMotionRuntimeConfig rapier3d: renders null initially, then provides working engine', async () => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+
+    let captured: SimulationContextValue | null = null
+    function Probe() {
+      captured = useContext(SimulationContext)
+      return null
+    }
+
+    act(() => {
+      root!.render(
+        <SimulationProvider vehicleMotionRuntimeConfig={{ type: 'rapier3d' }}>
+          <Probe />
+        </SimulationProvider>,
+      )
+    })
+    // Async WASM init: provider must render null before the engine is ready
+    expect(captured).toBeNull()
+
+    await vi.waitFor(() => {
+      if (captured === null) throw new Error('engine not ready')
+    }, { timeout: 5000, interval: 50 })
+
+    expect(captured).not.toBeNull()
+    const vehicle = new VehicleEntity({
+      id: 'ego',
+      pose: Pose2D.of(0, 0, 0),
+      controls: { v: 1, w: 0 },
+    })
+    captured!.engine.state.entities.add(vehicle)
+    // rapier3d step is synchronous (kinematic bodies) — no await needed
+    await act(async () => { await captured!.engine.step(1.0) })
+    expect(vehicle.pose.position.x).toBeGreaterThan(0)
+  })
+
   it('pre-built rapier runtime via vehicleMotionRuntime prop: vehicle pose advances', async () => {
     const rapierRuntime = await buildVehicleMotionRuntimeAsync({ type: 'rapier' })
     try {

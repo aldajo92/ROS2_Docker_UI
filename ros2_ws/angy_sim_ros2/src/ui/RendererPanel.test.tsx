@@ -88,13 +88,38 @@ describe('RendererPanel', () => {
       expect(onMotionRuntimeTypeChange).toHaveBeenCalledWith('rapier')
     })
 
-    it('shows all three runtime options', () => {
+    it('shows all four runtime options including rapier3d', () => {
       const el = mountPanel(defaultProps)
       const select = el.querySelector<HTMLSelectElement>('#motion-runtime-select')!
       const values = Array.from(select.options).map((o) => o.value)
       expect(values).toEqual(
-        expect.arrayContaining(['kinematic', 'rapier', 'remote']),
+        expect.arrayContaining(['kinematic', 'rapier', 'rapier3d', 'remote']),
       )
+    })
+
+    it('rapier3d option value is "rapier3d" and label says "Rapier 3D (Experimental)"', () => {
+      const el = mountPanel(defaultProps)
+      const select = el.querySelector<HTMLSelectElement>('#motion-runtime-select')!
+      const opt = Array.from(select.options).find((o) => o.value === 'rapier3d')
+      expect(opt).toBeDefined()
+      expect(opt!.text).toBe('Rapier 3D (Experimental)')
+    })
+
+    it('reflects rapier3d as selected value', () => {
+      const el = mountPanel({ ...defaultProps, motionRuntimeType: 'rapier3d' })
+      const select = el.querySelector<HTMLSelectElement>('#motion-runtime-select')!
+      expect(select.value).toBe('rapier3d')
+    })
+
+    it('calls onMotionRuntimeTypeChange with "rapier3d" when that option is selected', () => {
+      const onMotionRuntimeTypeChange = vi.fn()
+      const el = mountPanel({ ...defaultProps, onMotionRuntimeTypeChange })
+      const select = el.querySelector<HTMLSelectElement>('#motion-runtime-select')!
+      act(() => {
+        select.value = 'rapier3d'
+        select.dispatchEvent(new Event('change', { bubbles: true }))
+      })
+      expect(onMotionRuntimeTypeChange).toHaveBeenCalledWith('rapier3d')
     })
 
     it('has a visible label for the motion runtime select', () => {

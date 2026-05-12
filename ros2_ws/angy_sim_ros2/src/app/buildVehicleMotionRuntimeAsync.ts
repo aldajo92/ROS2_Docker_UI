@@ -1,5 +1,6 @@
 import { KinematicVehicleMotionRuntime } from '../simulation/physics/KinematicVehicleMotionRuntime'
 import { RapierVehicleMotionRuntime } from '../infrastructure/physics/rapier/RapierVehicleMotionRuntime'
+import { Rapier3DVehicleMotionRuntime } from '../infrastructure/physics/rapier3d/Rapier3DVehicleMotionRuntime'
 import { RemoteVehicleMotionRuntime } from '../infrastructure/physics/remote/RemoteVehicleMotionRuntime'
 import { InMemoryRemoteVehicleMotionClient } from '../infrastructure/physics/remote/InMemoryRemoteVehicleMotionClient'
 import type { VehicleMotionRuntime } from '../simulation/physics/VehicleMotionRuntime'
@@ -10,8 +11,9 @@ import type { VehicleMotionRuntimeConfig } from '../simulation/physics/VehicleMo
  *
  * Use this instead of `buildVehicleMotionRuntime` when the requested
  * runtime type may require async initialization:
- *   - `rapier` — one-shot WASM init via `RapierVehicleMotionRuntime.create()`
- *   - `remote` — client initialize() via `RemoteVehicleMotionRuntime.create()`
+ *   - `rapier`   — one-shot WASM init via `RapierVehicleMotionRuntime.create()`
+ *   - `rapier3d` — one-shot WASM init via `Rapier3DVehicleMotionRuntime.create()`
+ *   - `remote`   — client initialize() via `RemoteVehicleMotionRuntime.create()`
  *
  * `kinematic` is synchronous internally but is supported here so callers
  * can use a single code path regardless of the selected type.
@@ -28,6 +30,8 @@ export async function buildVehicleMotionRuntimeAsync(
       return new KinematicVehicleMotionRuntime()
     case 'rapier':
       return RapierVehicleMotionRuntime.create()
+    case 'rapier3d':
+      return Rapier3DVehicleMotionRuntime.create()
     case 'remote':
       return RemoteVehicleMotionRuntime.create(new InMemoryRemoteVehicleMotionClient())
   }

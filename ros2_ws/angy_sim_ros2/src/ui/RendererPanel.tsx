@@ -23,12 +23,14 @@ const RENDERER_OPTIONS: readonly RendererType[] = ['three', 'phaser']
 const MOTION_RUNTIME_OPTIONS: readonly VehicleMotionRuntimeType[] = [
   'kinematic',
   'rapier',
+  'rapier3d',
   'remote',
 ]
 
 const MOTION_RUNTIME_LABELS: Record<VehicleMotionRuntimeType, string> = {
   kinematic: 'Kinematic',
   rapier: 'Rapier (physics)',
+  rapier3d: 'Rapier 3D (Experimental)',
   remote: 'Remote (Pending)',
 }
 
