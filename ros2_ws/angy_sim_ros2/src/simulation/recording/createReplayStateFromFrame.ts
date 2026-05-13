@@ -76,6 +76,14 @@ export function createReplayStateFromFrame(
     }
   }
 
+  // Restore lidar scans. Replay must reproduce recorded noisy scans
+  // exactly without rerunning raycasts or noise generation.
+  if (frame.lidarScans) {
+    for (const scan of frame.lidarScans) {
+      state.lidarScans.add(scan)
+    }
+  }
+
   return state
 }
 

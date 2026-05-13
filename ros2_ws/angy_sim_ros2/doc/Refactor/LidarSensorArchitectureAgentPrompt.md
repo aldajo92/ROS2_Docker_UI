@@ -2,12 +2,14 @@
 
 Use this prompt when adding a simulated 2D lidar sensor to `angy_sim_ros2`.
 
-This prompt assumes:
+This prompt is aligned with the current repository architecture:
 
 - `doc/Architecture.md` and `doc/Development_Guide.md` are the source of truth.
-- `doc/Plugins.md` defines the current display plugin architecture.
+- `doc/Topic_Support_Guide.md` defines the current topic lifecycle rules.
+- `doc/Plugins.md` describes the current display-plugin architecture for
+  inbound rendered topics.
 - `doc/Refactor/FrameTransformArchitectureAgentPrompt.md` may later define
-  fixed-frame / TF support.
+  fixed-frame / TF support, but TF is not required for the first lidar pass.
 
 ---
 
@@ -16,21 +18,29 @@ This prompt assumes:
 You are an architecture-focused implementation agent for `angy_sim_ros2`.
 
 Your task is to add a deterministic simulated 2D lidar sensor with configurable
-measurement noise, while preserving the simulator's existing boundaries:
+measurement noise, while preserving the simulator's current boundaries:
 
 - Sensor simulation belongs in `src/simulation`.
 - Renderers read `SimulationState` and never mutate it.
-- ROS2-specific message formats belong in
-  `src/infrastructure/communication/rosbridge`.
 - Scenario JSON declares sensors and their initial configuration.
-- Replay must be able to reproduce recorded scans.
+- Replay must reproduce recorded scans exactly.
+- ROS-specific message shapes belong only in
+  `src/infrastructure/communication/rosbridge/` if ROS output is added later.
 
-The immediate goal is not to create an RViz display for external `LaserScan`
-topics. The immediate goal is to simulate lidar measurements inside the
-simulator.
+Immediate goal:
 
-The future goal is to publish simulated scans as `sensor_msgs/msg/LaserScan`
-through the transport layer.
+- simulate lidar measurements inside the simulator
+- store them in simulator-owned state
+- render them in Three.js and Phaser
+- persist them through replay
+
+Future goal:
+
+- publish simulated scans outward as ROS 2 `sensor_msgs/msg/LaserScan`
+  through the existing outbound publisher architecture
+
+Do not treat this as an inbound display-plugin task. This is simulator-owned
+sensor generation first.
 
 ---
 
@@ -48,13 +58,18 @@ Scenario sensors
   -> replay snapshot/restore
 ```
 
-Future ROS output:
+Future ROS output, if explicitly requested later:
 
 ```text
 SimulationState.lidarScans
-  -> SimLidarScanToRosLaserScanAdapter
+  -> outbound TopicBridge
+  -> MessageAdapter
   -> Transport.publish('/scan', sensor_msgs/msg/LaserScan)
 ```
+
+If ROS output is eventually added, it must follow the same outbound publisher
+pattern already used by simulator publishers declared in `ScenarioSpec.publishers[]`
+and wired by `CommunicationProvider` / `CommunicationSystem` / `PeriodicPublisher`.
 
 ---
 
@@ -62,15 +77,37 @@ SimulationState.lidarScans
 
 Follow these rules strictly:
 
-- Do not import ROS2, roslib, rosbridge, WebSocket APIs, React, DOM APIs,
+- Do not import ROS 2, roslib, rosbridge, WebSocket APIs, React, DOM APIs,
   Three.js, Phaser, or infrastructure modules inside `src/simulation/sensors`.
-- Do not compute sensor scans inside renderers.
-- Do not store Three.js/Phaser objects in sensor state.
-- Do not use non-deterministic `Math.random()` directly in simulation systems.
-  Use an injectable seeded RNG for noise.
+- Do not compute lidar scans inside renderers.
+- Do not store renderer objects in sensor state.
+- Do not use global `Math.random()` inside simulation systems.
+- Use deterministic seeded randomness for noise.
 - Do not publish ROS messages directly from `LidarSensorSystem`.
 - Do not mutate `SimulationState` outside `SimulationSystem.update(...)`.
-- Replay must restore recorded scans without recalculating raycasts/noise.
+- Replay must restore recorded scans without recalculating raycasts or noise.
+- Keep the first pass transport-agnostic. ROS output is a later boundary step.
+
+---
+
+## Current Repository Assumptions
+
+These are true in the current codebase and your implementation should match them:
+
+- `SimulationState` already owns registries such as `paths`, `poseArrays`,
+  and `trajectories`; lidar should follow that style.
+- Scenario entities already support:
+  - vehicles
+  - static obstacles, including circles and rectangles
+  - dynamic actors
+- Replay already persists entities, metrics, and optional trajectories through:
+  - `SimulationFrameSnapshot.ts`
+  - `createSnapshotFromState.ts`
+  - `createReplayStateFromFrame.ts`
+- Outbound ROS publishers already use scenario-driven `publishers[]` entries,
+  not hardcoded always-on transport hooks.
+
+Design lidar to fit into those patterns.
 
 ---
 
@@ -104,10 +141,15 @@ export interface LidarScan2D {
 
 Rules:
 
-- `ranges.length` must match the ray count implied by angular fields.
-- Ranges should be finite numbers or `Infinity` if the project chooses to encode
-  no-hit as `Infinity`. Pick one policy and test it.
+- `ranges.length` must match the ray count implied by the angular fields.
 - Keep the shape JSON-safe.
+- Prefer finite numeric ranges in the first pass so replay JSON stays simple.
+
+Recommended first-pass encoding:
+
+- no hit => `rangeMax`
+- dropout => `rangeMax`
+- all `ranges[]` values finite
 
 ### `LidarSensorSpec`
 
@@ -170,7 +212,10 @@ Validation:
 
 ## Scenario JSON Contract
 
-Add optional top-level `sensors`.
+Add optional top-level `sensors` support to the scenario model.
+
+This does not exist in the current `Scenario.ts` yet, so you must extend the
+scenario contract in a backward-compatible way.
 
 Example:
 
@@ -208,6 +253,9 @@ Example:
       "rayCount": 181,
       "rangeMin": 0.05,
       "rangeMax": 8,
+      "includeStaticObstacles": true,
+      "includeVehicles": false,
+      "includeDynamicActors": false,
       "noise": {
         "enabled": true,
         "rangeStdDev": 0.02,
@@ -231,8 +279,12 @@ ScenarioLoader.parse()
   -> LidarSensorSystem receives/reloads sensor specs
 ```
 
-Keep scenario support backward compatible: scenarios without `sensors` continue
-to parse and run.
+Backward-compatibility rules:
+
+- scenarios without `sensors` must still parse and run unchanged
+- old scenario files must remain valid
+- sensor validation errors should be reported the same way other scenario
+  validation errors are reported
 
 ---
 
@@ -284,23 +336,35 @@ src/ui/renderers/phaser/objects/
   PhaserLidarScanRenderer.ts
 ```
 
-Future ROS output:
+Future ROS output only if explicitly requested:
 
 ```text
-src/infrastructure/communication/rosbridge/adapters/
-  SimLidarScanToRosLaserScanAdapter.ts
+src/simulation/communication/messages/
+  SimLidarScanMessage.ts
 
 src/simulation/communication/bridges/
   LidarScanPublisherBridge.ts
+
+src/infrastructure/communication/rosbridge/adapters/
+  SimLidarScanToRosLaserScanAdapter.ts
 ```
 
-Only implement future ROS output if explicitly requested.
+If future ROS output is implemented, also extend scenario publisher support in:
+
+```text
+src/simulation/scenarios/Scenario.ts
+src/app/CommunicationProvider.tsx
+```
+
+following the existing `publishers[]` architecture instead of inventing a new
+transport path.
 
 ---
 
 ## Simulation State and Registry
 
-Add a registry similar to existing `PathRegistry` / `TrajectoryRegistry`.
+Add a registry similar to existing `PathRegistry`, `PoseArrayRegistry`, and
+`TrajectoryRegistry`.
 
 ```ts
 export class LidarScanRegistry {
@@ -327,6 +391,12 @@ SimulationEngine.reset()
   -> state.lidarScans.clear()
 ```
 
+Match the current style of other registries:
+
+- registry owned by `SimulationState`
+- renderer reads `state.lidarScans.toArray()`
+- replay restores into the registry instead of recomputing
+
 ---
 
 ## Lidar Sensor System
@@ -336,21 +406,21 @@ tick.
 
 Responsibilities:
 
-- Hold configured `LidarSensorSpec[]`.
-- Respect `enabled` and `rateHz`.
-- Resolve sensor pose:
-  - if `parentEntityId` exists, sensor pose is relative to that entity pose.
-  - if `parentEntityId` is absent, pose is in world/sim coordinates.
-- Cast rays against selected world objects.
-- Apply deterministic noise.
-- Write latest scan to `state.lidarScans`.
+- hold configured `LidarSensorSpec[]`
+- respect `enabled` and `rateHz`
+- resolve sensor pose
+  - if `parentEntityId` exists, sensor pose is relative to that entity pose
+  - if `parentEntityId` is absent, pose is in world coordinates
+- cast rays against selected world objects
+- apply deterministic noise
+- write the latest scan to `state.lidarScans`
 
 Non-responsibilities:
 
-- No rendering.
-- No ROS publishing.
-- No DOM/UI.
-- No direct network communication.
+- no rendering
+- no ROS publishing
+- no DOM/UI
+- no direct transport communication
 
 Rate policy:
 
@@ -361,8 +431,13 @@ if accumulated >= 1 / rateHz:
   subtract or reset accumulator
 ```
 
-Use the same simulation-time principle as `PeriodicPublisher`: paused sim means
-no new scans; fast-forward produces scans according to simulated time.
+Use the same simulation-time principle already used by `PeriodicPublisher`:
+
+- paused simulation => no new scans
+- fast-forward => scans advance with simulation time, not wall time
+
+Register the system in the explicit engine system order without breaking the
+existing order guarantees described in `Development_Guide.md`.
 
 ---
 
@@ -380,7 +455,7 @@ If practical, also support:
 
 Keep raycast math pure and testable.
 
-Suggested pure API:
+Suggested API:
 
 ```ts
 export interface RaycastInput2D {
@@ -399,22 +474,23 @@ export interface RaycastHit2D {
 
 export function castLidarRay2D(
   input: RaycastInput2D,
-  state: SimulationState,
-  options: {
-    includeStaticObstacles: boolean
-    includeVehicles: boolean
-    includeDynamicActors: boolean
-  },
+  shapes: readonly LidarRaycastShape2D[],
 ): RaycastHit2D | undefined
 ```
 
-If this pure function depending on `SimulationState` becomes hard to test, split
-shape extraction from intersection math:
+Recommended structure:
 
 ```text
-SimulationState -> CollisionShape2D[] / LidarRaycastShape2D[]
-pure ray vs shapes
+SimulationState
+  -> extract lidar-raycast shapes
+  -> pure ray-vs-shape intersection
 ```
+
+Do not bury geometry logic directly inside renderer code or transport code.
+
+Because static obstacles already have normalized circle/rectangle geometry in the
+current repo, prefer reusing that normalized shape contract instead of inventing
+another rectangle representation.
 
 ---
 
@@ -437,9 +513,9 @@ ideal range
 
 Important:
 
-- Noise must be deterministic for a fixed seed, scenario, and simulation tick.
-- Tests must not rely on global randomness.
-- Default noise disabled unless scenario enables it.
+- noise must be deterministic for a fixed seed, scenario, and simulation tick
+- tests must not rely on global randomness
+- default noise is disabled unless the scenario enables it
 
 Suggested API:
 
@@ -453,52 +529,32 @@ export function applyLidarRangeNoise(
 ): number
 ```
 
-Policy decisions to document:
-
-- no-hit value: `Infinity` or `rangeMax`
-- dropout value: `Infinity`, `NaN`, or `rangeMax`
-- outlier sampling range
-
-Prefer values that serialize cleanly in replay. If using `Infinity`, confirm
-the replay serializer/parser preserves it or encode no-hit explicitly. JSON does
-not preserve `Infinity`, so `rangeMax` or `null`-compatible encoding may be
-safer.
-
-Recommended first-pass policy:
-
-- no hit => `rangeMax`
-- dropout => `rangeMax`
-- all `ranges[]` values finite
-
-This keeps replay JSON simple.
-
 ---
 
 ## Rendering
 
-Add renderer support after the scan exists in state.
+Add renderer support only after the scan exists in simulator state.
 
 Three renderer:
 
-- Draw hit points and/or rays using Three.js primitives.
-- Read from `state.lidarScans.toArray()`.
-- Use centralized coordinate mapping helpers.
-- Keep renderer cache keyed by scan `id`.
-- Dispose objects when scans disappear.
+- draw hit points and/or rays using Three.js primitives
+- read from `state.lidarScans.toArray()`
+- use centralized coordinate mapping helpers
+- keep renderer cache keyed by scan `id`
+- dispose objects when scans disappear
 
 Phaser renderer:
 
-- Draw rays/hit points using Graphics.
-- Read from `state.lidarScans.toArray()`.
-- Respect viewport mapping.
+- draw rays/hit points using `Graphics`
+- read from `state.lidarScans.toArray()`
+- respect viewport mapping
 
 Initial visual style:
 
 - rays: faint cyan/blue lines
 - hit points: small brighter dots
-- optionally cap visible rays if performance is a concern
 
-Renderer config can be simple initially:
+Initial renderer config may be simple:
 
 ```ts
 {
@@ -510,7 +566,7 @@ Renderer config can be simple initially:
 }
 ```
 
-Do not expose UI controls in the first pass unless requested.
+Do not expose UI controls in the first pass unless explicitly requested.
 
 ---
 
@@ -518,7 +574,7 @@ Do not expose UI controls in the first pass unless requested.
 
 Lidar scans must be playback-safe.
 
-Add to `SimulationFrameSnapshot`:
+Extend `SimulationFrameSnapshot` with an optional field:
 
 ```ts
 lidarScans?: LidarScan2D[]
@@ -540,41 +596,54 @@ createReplayStateFromFrame()
      -> state.lidarScans.add(scan)
 ```
 
-Replay should reproduce recorded noisy measurements exactly. It should not
-rerun raycasts or regenerate random noise.
+Replay rules:
 
-Backward compatibility:
+- replay must reproduce recorded noisy measurements exactly
+- replay must not rerun raycasts
+- replay must not rerun random noise generation
+- old replay files without `lidarScans` must still load
+- the new field must remain optional
 
-- Old replay files without `lidarScans` still load.
-- New field is optional.
+Follow the current replay style already used in:
+
+- `SimulationFrameSnapshot.ts`
+- `createSnapshotFromState.ts`
+- `createReplayStateFromFrame.ts`
+
+In particular:
+
+- keep everything JSON-safe
+- omit empty optional fields where consistent
+- preserve backward compatibility with older replay files
 
 ---
 
-## Future ROS2 LaserScan Output
+## Future ROS 2 LaserScan Output
 
-Do not implement unless explicitly requested, but design so it is easy later.
+Do not implement unless explicitly requested, but keep the design compatible
+with the current outbound publisher architecture.
 
-Future adapter:
+If implemented later, the correct path is:
 
 ```text
-LidarScan2D
+ScenarioSpec.publishers[]
+  -> CommunicationProvider
+  -> TopicBridge
+  -> MessageAdapter
+  -> Transport.publish(...)
+```
+
+Do not create a side-channel publisher outside that architecture.
+
+Future adapter mapping:
+
+```text
+LidarScan2D or SimLidarScanMessage
   -> sensor_msgs/msg/LaserScan
 ```
 
-Mapping:
-
-- `header.frame_id = scan.frameId`
-- `header.stamp = scan.timeSec`
-- `angle_min = scan.angleMin`
-- `angle_max = scan.angleMax`
-- `angle_increment = scan.angleIncrement`
-- `range_min = scan.rangeMin`
-- `range_max = scan.rangeMax`
-- `ranges = scan.ranges`
-- `intensities = scan.intensities ?? []`
-
-Keep this adapter in rosbridge infrastructure. The simulation layer must not
-know `sensor_msgs/msg/LaserScan`.
+Keep ROS message naming and wire-format logic under rosbridge infrastructure
+only. The simulation layer must not know about `sensor_msgs/msg/LaserScan`.
 
 ---
 
@@ -585,7 +654,6 @@ Add tests for:
 1. Scenario parsing
    - accepts valid `sensors` block
    - rejects invalid `kind`
-   - rejects duplicate or empty ids if that is the scenario policy
    - validates `rateHz`, angle range, ray count, range limits
    - validates noise config
    - scenarios without sensors remain valid
@@ -626,9 +694,8 @@ Add tests for:
    - respect state changes
 
 8. Architecture
-   - `src/simulation/sensors` imports no ROS/UI/renderer/infrastructure code.
-   - ROS LaserScan adapter, if added later, lives under rosbridge
-     infrastructure.
+   - `src/simulation/sensors` imports no ROS/UI/renderer/infrastructure code
+   - ROS LaserScan adapter, if later added, lives under rosbridge infrastructure
 
 ---
 
@@ -643,7 +710,7 @@ npx tsc -b --noEmit
 ```
 
 If `tsc` has pre-existing unrelated failures, report those exact files and
-confirm new lidar files do not introduce additional TypeScript errors.
+confirm the lidar work does not introduce additional TypeScript errors.
 
 ---
 
@@ -651,29 +718,28 @@ confirm new lidar files do not introduce additional TypeScript errors.
 
 The lidar feature is complete when:
 
-- Scenario JSON can declare at least one `lidar2d` sensor.
-- The simulation produces deterministic `LidarScan2D` values at the configured
-  simulation-time rate.
-- Noise parameters are configurable and tested.
-- The latest scan is stored in `SimulationState.lidarScans`.
-- Three.js and Phaser can visualize the scan.
-- Replay snapshots and restores lidar scans.
-- The implementation does not introduce ROS types into simulation or renderer
-  code.
-- Existing tests remain green.
+- scenario JSON can declare at least one `lidar2d` sensor
+- the simulation produces deterministic `LidarScan2D` values at the configured
+  simulation-time rate
+- noise parameters are configurable and tested
+- the latest scan is stored in `SimulationState.lidarScans`
+- Three.js and Phaser can visualize the scan
+- replay snapshots and restores lidar scans
+- the implementation does not introduce ROS types into simulation or renderer
+  code
+- existing tests remain green
 
 ---
 
 ## Future Work
 
-After first implementation:
+After the first implementation:
 
-- Publish `LidarScan2D` as ROS2 `sensor_msgs/msg/LaserScan`.
-- Add lidar UI controls for noise/rate/range.
-- Add display plugin support for rendering external `LaserScan` topics.
-- Add frame transform support for sensor frames when TF is available.
-- Add raycast support through Rapier or another collision backend.
-- Add intensity simulation.
-- Add occlusion policies for vehicles/dynamic actors.
-- Add multi-echo or 3D lidar if needed.
-
+- publish `LidarScan2D` outward as ROS 2 `sensor_msgs/msg/LaserScan`
+- add lidar UI controls for noise/rate/range
+- add support for external `LaserScan` topic rendering only if explicitly needed
+- add frame transform support once TF/fixed-frame architecture exists
+- add raycast acceleration or backend integration if performance requires it
+- add intensity simulation
+- add occlusion policies for vehicles/dynamic actors
+- add multi-echo or 3D lidar only if needed

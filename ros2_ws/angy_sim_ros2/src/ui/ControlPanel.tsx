@@ -73,6 +73,10 @@ const SCENARIO_OPTIONS: readonly ScenarioOption[] = [
     label: 'Noisy pose publisher (ROS 2 PoseWithCovarianceStamped)',
     url: '/scenarios/noisy-pose-publisher.json',
   },
+  {
+    label: 'Lidar demo (2D lidar sensor with static obstacles)',
+    url: '/scenarios/lidar-demo.json',
+  },
 ]
 
 export function ControlPanel({

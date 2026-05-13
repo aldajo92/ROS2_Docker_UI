@@ -13,6 +13,7 @@ import { PhaserStaticObstacleRenderer } from '../objects/PhaserStaticObstacleRen
 import { PhaserDynamicActorRenderer } from '../objects/PhaserDynamicActorRenderer'
 import { PhaserPathRenderer } from '../objects/PhaserPathRenderer'
 import { PhaserPoseArrayRenderer } from '../objects/PhaserPoseArrayRenderer'
+import { PhaserLidarScanRenderer } from '../objects/PhaserLidarScanRenderer'
 import {
   PhaserTrajectoryRenderer,
   type PhaserTrajectoryRendererDebugSummary,
@@ -56,6 +57,7 @@ export class PhaserSimulationRenderer implements SimulationRenderer {
   private dynamicActorRenderer?: PhaserDynamicActorRenderer
   private pathRenderer?: PhaserPathRenderer
   private poseArrayRenderer?: PhaserPoseArrayRenderer
+  private lidarScanRenderer?: PhaserLidarScanRenderer
   private trajectoryRenderer?: PhaserTrajectoryRenderer
   private debugLayer?: PhaserDebugLayer
   private cameraController?: PhaserCameraController
@@ -137,6 +139,7 @@ export class PhaserSimulationRenderer implements SimulationRenderer {
   dispose(): void {
     this.cameraController?.detach()
     this.debugLayer?.dispose()
+    this.lidarScanRenderer?.dispose()
     this.poseArrayRenderer?.dispose()
     this.pathRenderer?.dispose()
     this.trajectoryRenderer?.dispose()
@@ -161,6 +164,7 @@ export class PhaserSimulationRenderer implements SimulationRenderer {
     this.dynamicActorRenderer = undefined
     this.pathRenderer = undefined
     this.poseArrayRenderer = undefined
+    this.lidarScanRenderer = undefined
     this.trajectoryRenderer = undefined
     this.debugLayer = undefined
     this.cameraController = undefined
@@ -280,6 +284,7 @@ export class PhaserSimulationRenderer implements SimulationRenderer {
 
     this.pathRenderer = new PhaserPathRenderer(this.context)
     this.poseArrayRenderer = new PhaserPoseArrayRenderer(this.context)
+    this.lidarScanRenderer = new PhaserLidarScanRenderer(this.context)
     this.staticObstacleRenderer = new PhaserStaticObstacleRenderer(this.context)
     this.dynamicActorRenderer = new PhaserDynamicActorRenderer(this.context)
     this.vehicleRenderer = new PhaserVehicleRenderer(this.context)
@@ -324,6 +329,7 @@ export class PhaserSimulationRenderer implements SimulationRenderer {
   private syncAll(state: SimulationState): void {
     this.pathRenderer?.sync(state)
     this.poseArrayRenderer?.sync(state)
+    this.lidarScanRenderer?.sync(state)
     this.staticObstacleRenderer?.sync(state)
     this.dynamicActorRenderer?.sync(state)
     this.vehicleRenderer?.sync(state)

@@ -1,0 +1,76 @@
+{
+  "name": "lidar-demo",
+  "description": "Demonstrates the simulated 2D lidar sensor mounted on the ego vehicle with static obstacles.",
+  "entities": [
+    {
+      "kind": "vehicle",
+      "id": "ego",
+      "pose": { "x": 0, "y": 0, "yaw": 0 }
+    },
+    {
+      "kind": "static_obstacle",
+      "id": "wall_north",
+      "shape": "rectangle",
+      "rectangle": {
+        "mode": "segment",
+        "start": { "x": -4, "y": 4 },
+        "end":   { "x":  4, "y": 4 },
+        "thickness": 0.2
+      }
+    },
+    {
+      "kind": "static_obstacle",
+      "id": "wall_east",
+      "shape": "rectangle",
+      "rectangle": {
+        "mode": "segment",
+        "start": { "x": 4, "y": -4 },
+        "end":   { "x": 4, "y":  4 },
+        "thickness": 0.2
+      }
+    },
+    {
+      "kind": "static_obstacle",
+      "id": "pillar_1",
+      "shape": "circle",
+      "position": { "x": 2.5, "y": 2.0 },
+      "radius": 0.3
+    },
+    {
+      "kind": "static_obstacle",
+      "id": "pillar_2",
+      "shape": "circle",
+      "position": { "x": -2.0, "y": 3.0 },
+      "radius": 0.3
+    }
+  ],
+  "sensors": [
+    {
+      "kind": "lidar2d",
+      "id": "front_lidar",
+      "parentEntityId": "ego",
+      "frameId": "ego/lidar",
+      "pose": { "x": 0.3, "y": 0, "yaw": 0 },
+      "rateHz": 10,
+      "angleMin": -1.5707963,
+      "angleMax":  1.5707963,
+      "rayCount": 181,
+      "rangeMin": 0.05,
+      "rangeMax": 8.0,
+      "includeStaticObstacles": true,
+      "includeVehicles": false,
+      "includeDynamicActors": false,
+      "noise": {
+        "enabled": true,
+        "rangeStdDev": 0.02,
+        "rangeBias": 0,
+        "dropoutProbability": 0.005,
+        "outlierProbability": 0.002,
+        "outlierMinRange": 0.1,
+        "outlierMaxRange": 7.9,
+        "quantizationStep": 0.001,
+        "seed": 1234
+      }
+    }
+  ]
+}

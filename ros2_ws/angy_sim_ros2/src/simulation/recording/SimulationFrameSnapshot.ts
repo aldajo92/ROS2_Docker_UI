@@ -1,4 +1,5 @@
 import type { EntityTrajectory2D } from '../trajectories/EntityTrajectory2D'
+import type { LidarScan2D } from '../sensors/LidarScan2D'
 
 /**
  * Per-tick simulation snapshot. JSON-friendly by construction so a
@@ -114,4 +115,10 @@ export interface SimulationFrameSnapshot {
     peakSpeed?: number
     collisionCount?: number
   }
+  /**
+   * Latest lidar scan per sensor at the time of this snapshot. Optional
+   * for backward compatibility — older replay files without this field
+   * still load correctly (the lidar registry will simply be empty).
+   */
+  lidarScans?: LidarScan2D[]
 }

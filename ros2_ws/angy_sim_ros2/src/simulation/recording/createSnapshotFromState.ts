@@ -53,6 +53,8 @@ export function createSnapshotFromState(
     collisionCount: state.metrics.collisionCount,
   }
 
+  const lidarScans = state.lidarScans.toArray()
+
   return {
     tick,
     timeSec,
@@ -62,6 +64,9 @@ export function createSnapshotFromState(
     // scenarios that don't enable tracking).
     ...(trajectories.length > 0 ? { trajectories } : {}),
     metrics,
+    // Omit lidarScans when the registry is empty — preserves byte
+    // equivalence for scenarios that have no sensors configured.
+    ...(lidarScans.length > 0 ? { lidarScans } : {}),
   }
 }
 

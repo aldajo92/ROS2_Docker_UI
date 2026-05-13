@@ -4,6 +4,7 @@ import { PathRegistry } from '../paths/PathRegistry'
 import { PoseArrayRegistry } from '../poses/PoseArrayRegistry'
 import { TrajectoryRegistry } from '../trajectories/TrajectoryRegistry'
 import { TrajectoryDebugRecorder } from '../trajectories/TrajectoryDebugRecorder'
+import { LidarScanRegistry } from '../sensors/LidarScanRegistry'
 import type { TypedEventBus } from '../events/EventBus'
 import type { SimulationEvents } from '../events/SimulationEvents'
 import type { Logger } from '../logging/Logger'
@@ -36,6 +37,7 @@ export class SimulationState {
   readonly poseArrays: PoseArrayRegistry
   readonly trajectories: TrajectoryRegistry
   readonly trajectoryDebug: TrajectoryDebugRecorder
+  readonly lidarScans: LidarScanRegistry
   scenarioName: string | null
 
   constructor(
@@ -52,6 +54,7 @@ export class SimulationState {
     this.poseArrays = new PoseArrayRegistry()
     this.trajectories = new TrajectoryRegistry()
     this.trajectoryDebug = new TrajectoryDebugRecorder()
+    this.lidarScans = new LidarScanRegistry()
     this.metrics = {
       collisionCount: 0,
       totalDistance: 0,

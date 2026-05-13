@@ -21,6 +21,7 @@ import { ExternalPathUpdateQueue } from '../simulation/paths/ExternalPathUpdateQ
 import { ExternalPathRenderSystem } from '../simulation/systems/ExternalPathRenderSystem'
 import { ExternalPoseArrayUpdateQueue } from '../simulation/poses/ExternalPoseArrayUpdateQueue'
 import { ExternalPoseArrayRenderSystem } from '../simulation/systems/ExternalPoseArrayRenderSystem'
+import { LidarSensorSystem } from '../simulation/systems/LidarSensorSystem'
 import { SimulationContext } from './SimulationContext'
 import type { SimulationContextValue } from './SimulationContext'
 
@@ -82,15 +83,17 @@ function buildContext(collisionConfig: CollisionConfig): SimulationContextValue 
   //   4. ExternalPoseArrayRenderSystem — drains pose-array updates into state.poseArrays
   //   5. VehicleDynamicsSystem        — integrates pose
   //   6. TrajectoryTrackingSystem     — appends to state.trajectories
-  //   7. CollisionSystem              — checks collisions
-  //   8. MetricsSystem                — observes final state
-  //   9. SimulationRecorderSystem     — snapshots the final post-tick state
+  //   7. LidarSensorSystem            — generates scans from current entity poses
+  //   8. CollisionSystem              — checks collisions
+  //   9. MetricsSystem                — observes final state
+  //  10. SimulationRecorderSystem     — snapshots the final post-tick state
   engine.systems.add(new ScenarioSystem())
   engine.systems.add(new VehicleCommandSystem(commandQueue))
   engine.systems.add(new ExternalPathRenderSystem(externalPathQueue))
   engine.systems.add(new ExternalPoseArrayRenderSystem(externalPoseArrayQueue))
   engine.systems.add(new VehicleDynamicsSystem())
   engine.systems.add(new TrajectoryTrackingSystem())
+  engine.systems.add(new LidarSensorSystem())
   engine.systems.add(new CollisionSystem(buildCollisionBackend(collisionConfig)))
   engine.systems.add(new MetricsSystem())
   engine.systems.add(new SimulationRecorderSystem(engine.recorder))

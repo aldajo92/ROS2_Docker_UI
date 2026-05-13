@@ -1,4 +1,5 @@
 import type { TrajectoryTrackingConfig } from '../trajectories/TrajectoryTrackingConfig'
+import type { LidarSensorSpec } from '../sensors/LidarSensorSpec'
 
 /**
  * Scenario data shapes. A "scenario" is a serializable description of
@@ -298,4 +299,7 @@ export interface ScenarioSpec {
   displays?: ScenarioDisplaySpec[]
   /** Outbound telemetry publishers (e.g. noisy pose → ROS 2 topic). */
   publishers?: ScenarioPublisherSpec[]
+  /** Simulated sensor configurations (e.g. lidar2d). Scenarios without
+   *  this field continue to parse and run unchanged. */
+  sensors?: LidarSensorSpec[]
 }

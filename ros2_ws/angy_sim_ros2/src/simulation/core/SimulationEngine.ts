@@ -112,6 +112,7 @@ export class SimulationEngine {
     this.state.paths.clear()
     this.state.poseArrays.clear()
     this.state.trajectories.clear()
+    this.state.lidarScans.clear()
     this.state.scenarioName = null
     this.systems.reset()
     this.profiler.clear()
@@ -148,6 +149,7 @@ export class SimulationEngine {
     }
     this.state.scenarioName = spec.name
     this.applyTrajectoryTrackingFromScenario(spec)
+    this.applyLidarSensorsFromScenario(spec)
     this.events.emit('scenarioLoaded', {
       name: spec.name,
       trajectoryTracking: spec.trajectoryTracking,
@@ -311,6 +313,17 @@ export class SimulationEngine {
       | { setConfig?: (c?: TrajectoryTrackingConfig) => void }
       | undefined
     sys?.setConfig?.(spec.trajectoryTracking)
+  }
+
+  /**
+   * Forwards scenario sensor specs to `LidarSensorSystem` when that
+   * system is registered under the name `'lidarSensor'`.
+   */
+  private applyLidarSensorsFromScenario(spec: ScenarioSpec): void {
+    const sys = this.systems.get('lidarSensor') as
+      | { loadSpecs?: (s: ScenarioSpec['sensors']) => void }
+      | undefined
+    sys?.loadSpecs?.(spec.sensors ?? [])
   }
 
   /* -- internals ------------------------------------------------------- */

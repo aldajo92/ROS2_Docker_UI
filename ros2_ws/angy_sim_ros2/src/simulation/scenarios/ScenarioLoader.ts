@@ -25,6 +25,7 @@ import type {
   ScenarioTopicSource,
   StaticObstacleSpec,
 } from './Scenario'
+import type { LidarSensorSpec, LidarNoiseConfig } from '../sensors/LidarSensorSpec'
 import type {
   EntityTrajectoryTrackingConfig,
   TrajectorySamplingMode,
@@ -91,6 +92,10 @@ export class ScenarioLoader {
       input.publishers !== undefined
         ? parsePublishers(input.publishers, 'scenario.publishers', connections ?? {})
         : undefined
+    const sensors =
+      input.sensors !== undefined
+        ? parseSensors(input.sensors, 'scenario.sensors')
+        : undefined
     return {
       name: input.name,
       description,
@@ -102,6 +107,7 @@ export class ScenarioLoader {
       ...(actions !== undefined && { actions }),
       ...(displays !== undefined && { displays }),
       ...(publishers !== undefined && { publishers }),
+      ...(sensors !== undefined && { sensors }),
     }
   }
 
@@ -1034,4 +1040,143 @@ export function normalizeRectangle(
     thickness: spec.thickness,
     yaw: Math.atan2(dy, dx),
   }
+}
+
+/* -------------------------------------------------------------------------
+ * Sensor parsing
+ * ---------------------------------------------------------------------- */
+
+function parseSensors(input: unknown, path: string): LidarSensorSpec[] {
+  if (!Array.isArray(input)) {
+    throw new ScenarioParseError(`${path} must be an array`)
+  }
+  return input.map((item: unknown, i: number) => parseSensorSpec(item, `${path}[${i}]`))
+}
+
+function parseSensorSpec(input: unknown, path: string): LidarSensorSpec {
+  if (!isObj(input)) throw new ScenarioParseError(`${path} must be an object`)
+
+  if (input.kind !== 'lidar2d') {
+    throw new ScenarioParseError(
+      `${path}.kind must be 'lidar2d' (got ${String(input.kind)})`,
+    )
+  }
+  if (typeof input.id !== 'string' || input.id.trim() === '') {
+    throw new ScenarioParseError(`${path}.id must be a non-empty string`)
+  }
+
+  const rateHz = input.rateHz !== undefined
+    ? requirePositiveNumber(input.rateHz, `${path}.rateHz`)
+    : undefined
+
+  const angleMin = requireNumber(input.angleMin, `${path}.angleMin`)
+  const angleMax = requireNumber(input.angleMax, `${path}.angleMax`)
+  if (angleMax <= angleMin) {
+    throw new ScenarioParseError(
+      `${path}.angleMax (${angleMax}) must be greater than ${path}.angleMin (${angleMin})`,
+    )
+  }
+
+  const rayCount = requireInteger(input.rayCount, `${path}.rayCount`)
+  if (rayCount < 2) {
+    throw new ScenarioParseError(`${path}.rayCount must be >= 2 (got ${rayCount})`)
+  }
+
+  const rangeMin = requireNonNegNumber(input.rangeMin, `${path}.rangeMin`)
+  const rangeMax = requirePositiveNumber(input.rangeMax, `${path}.rangeMax`)
+  if (rangeMax <= rangeMin) {
+    throw new ScenarioParseError(
+      `${path}.rangeMax (${rangeMax}) must be greater than ${path}.rangeMin (${rangeMin})`,
+    )
+  }
+
+  const noise =
+    input.noise !== undefined ? parseNoiseConfig(input.noise, `${path}.noise`) : undefined
+
+  const pose =
+    input.pose !== undefined ? parsePose(input.pose, `${path}.pose`) : undefined
+
+  return {
+    kind: 'lidar2d',
+    id: input.id as string,
+    ...(typeof input.parentEntityId === 'string' && { parentEntityId: input.parentEntityId }),
+    ...(typeof input.frameId === 'string' && { frameId: input.frameId }),
+    ...(pose !== undefined && { pose }),
+    ...(input.enabled !== undefined && { enabled: Boolean(input.enabled) }),
+    ...(rateHz !== undefined && { rateHz }),
+    angleMin,
+    angleMax,
+    rayCount,
+    rangeMin,
+    rangeMax,
+    ...(input.includeStaticObstacles !== undefined && {
+      includeStaticObstacles: Boolean(input.includeStaticObstacles),
+    }),
+    ...(input.includeVehicles !== undefined && {
+      includeVehicles: Boolean(input.includeVehicles),
+    }),
+    ...(input.includeDynamicActors !== undefined && {
+      includeDynamicActors: Boolean(input.includeDynamicActors),
+    }),
+    ...(noise !== undefined && { noise }),
+  }
+}
+
+function parseNoiseConfig(input: unknown, path: string): LidarNoiseConfig {
+  if (!isObj(input)) throw new ScenarioParseError(`${path} must be an object`)
+
+  const cfg: LidarNoiseConfig = {}
+
+  if (input.enabled !== undefined) cfg.enabled = Boolean(input.enabled)
+
+  const numFields: (keyof LidarNoiseConfig)[] = [
+    'rangeStdDev', 'rangeBias', 'angularStdDev',
+    'outlierMinRange', 'outlierMaxRange', 'quantizationStep',
+  ]
+  for (const field of numFields) {
+    if (input[field] !== undefined) {
+      cfg[field] = requireNonNegNumber(input[field], `${path}.${field}`) as never
+    }
+  }
+
+  const probFields: (keyof LidarNoiseConfig)[] = [
+    'dropoutProbability', 'outlierProbability',
+  ]
+  for (const field of probFields) {
+    if (input[field] !== undefined) {
+      const v = requireNonNegNumber(input[field], `${path}.${field}`)
+      if (v > 1) {
+        throw new ScenarioParseError(
+          `${path}.${field} must be in [0, 1] (got ${v})`,
+        )
+      }
+      cfg[field] = v as never
+    }
+  }
+
+  if (input.seed !== undefined) {
+    cfg.seed = requireInteger(input.seed, `${path}.seed`)
+  }
+
+  return cfg
+}
+
+function requirePositiveNumber(v: unknown, path: string): number {
+  const n = requireNumber(v, path)
+  if (n <= 0) throw new ScenarioParseError(`${path} must be > 0 (got ${n})`)
+  return n
+}
+
+function requireNonNegNumber(v: unknown, path: string): number {
+  const n = requireNumber(v, path)
+  if (n < 0) throw new ScenarioParseError(`${path} must be >= 0 (got ${n})`)
+  return n
+}
+
+function requireInteger(v: unknown, path: string): number {
+  const n = requireNumber(v, path)
+  if (!Number.isInteger(n)) {
+    throw new ScenarioParseError(`${path} must be an integer (got ${n})`)
+  }
+  return n
 }
