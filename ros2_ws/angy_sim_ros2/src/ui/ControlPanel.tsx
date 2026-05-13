@@ -77,6 +77,10 @@ const SCENARIO_OPTIONS: readonly ScenarioOption[] = [
     label: 'Lidar demo (2D lidar sensor with static obstacles)',
     url: '/scenarios/lidar-demo.json',
   },
+  {
+    label: 'Lidar + keyboard drive (enclosed room)',
+    url: '/scenarios/lidar-keyboard.json',
+  },
 ]
 
 export function ControlPanel({
